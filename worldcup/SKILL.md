@@ -49,8 +49,17 @@ context; pick sane defaults for the rest and state them.
    best third-placed). Default 32 unless the user has a natural 48-sized field.
 2. **Contestants source**:
    - *Generate (mass production)*: the user wants N variants of one thing (32 flavors
-     of an essay, 48 taglines, a dozen designs). You generate the field from a base
-     plus diverse seeds. This is the common case: any "make a lot and pick the best."
+     of an essay, 48 taglines, a dozen designs). You generate the field from a base via a
+     DESIGN spec (see "references/design-pass.md"). Three generation designs:
+       - *flat* — a hand-authored list of N angle seeds (the classic mode).
+       - *axes (forced)* — you give orthogonal axes (e.g. lead x spine x closer x length x
+         register); the cross-product is reconciled to N. Candidates become points in a
+         coordinate system, and the report gains a coordinate view + axis-effects analysis.
+       - *axes (dynamic)* — an axis-finder agent proposes the axes from the base + criteria
+         (one extra call), then the field is fit to N. Best when you do not know the axes yet.
+     Prefer an axes design when you want diversity you can read (which knob wins, the
+     predicted optimum); flat for a quick curated set. This is the common case: any
+     "make a lot and pick the best."
    - *Bring-your-own*: the user hands you the items. Skip generation; the field is given.
 3. **The criteria and domain profile**: what makes one entry better, and which judge
    profile runs. The judging structure is universal; the gate and lenses swap per domain
@@ -81,18 +90,21 @@ context; pick sane defaults for the rest and state them.
 
 ## Procedure
 
-1. **Read the references.** "references/judging.md" (the judge) and
-   "references/brackets.md" (exact group draw and knockout crossings for 32 and 48).
-   Both are load-bearing; do not reconstruct the bracket math from memory.
+1. **Read the references.** "references/judging.md" (the judge), "references/brackets.md"
+   (exact group draw and knockout crossings for 32 and 48), and for a factorial run
+   "references/design-pass.md" (the DESIGN spec + combinatorics) and
+   "references/coordinates.md" (coords, effects, the coordinate view). The bracket math
+   is load-bearing; do not reconstruct it from memory.
 2. **Assemble the criteria block.** Write the taste spec, the disqualifiers, and the
    incumbent into a single text block you will embed in every judge prompt. For
    Provi prose, invoke "/provi-voice" and distill its hard rules into this block.
 3. **Author the Workflow.** Read "references/workflow-template.js", copy it, and fill
-   in: the contestant source (generate vs given), the criteria block + fact ledger, the
-   field size, the domain profile (lenses + gate), and the cross-model toggle. The
-   template already encodes snake seeding, the group round-robin, the knockout crossings,
-   the multi-lens judge, the fabrication gate, the reference challenge, the trust report,
-   and the HTML report generator. You are filling holes, not writing orchestration.
+   in: the DESIGN (flat flavors, or axes for a factorial field, see design-pass.md), the
+   criteria block + fact ledger, the field size, the domain profile (lenses + gate), and
+   the cross-model toggle. The template already encodes the design pass, snake seeding, the
+   group round-robin, the knockout crossings, the multi-lens judge, the fabrication gate,
+   the reference challenge, the effects analysis, the trust report, and the HTML report
+   (mirror bracket + coordinate view). You are filling holes, not writing orchestration.
 4. **Run it** with the Workflow tool. It runs in the background and notifies on
    completion. Watchable via "/workflows".
 5. **Write and open the report.** The Workflow returns "reportHtml": a self-contained
@@ -176,6 +188,13 @@ not a surprise. Default to MVP unless the user asks for the full rigor.
 - "references/brackets.md" — exact formats: group draw from pots, round-robin
   scheduling, advancement (including 48-team best-third ranking), and the precise
   knockout crossings for both 32 and 48. Code-ready.
+- "references/design-pass.md" — how candidates are created: the DESIGN spec (flat |
+  axes), forced vs dynamic axis-finding, the deterministic factorize/reconcile
+  combinatorics, and coordinate-stamped prompt derivation.
+- "references/coordinates.md" — the coordinate model: per-candidate coords, the post-hoc
+  effects analysis (main effects, interactions, predicted optimum, estimability), the
+  optional predicted-optimum playoff, and the coordinate view in the report.
 - "references/workflow-template.js" — the ultracode Workflow you copy and fill in.
   Encodes everything above plus the HTML report generator (returns "reportHtml"); you
-  supply the contestants, the criteria block, and the domain profile.
+  supply the DESIGN, the criteria block, and the domain profile. For a factorial run,
+  fill DESIGN.kind='axes' with your axes (or mode:'dynamic'); flat is the classic mode.
