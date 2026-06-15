@@ -661,7 +661,7 @@ function renderReportV2() {
   for (const k of order) (history[k] || []).forEach(m => addLog(k, m.winner.label, m.loser.label, m.margin, m.reason))
   if (referenceChallenge) addLog('Reference', referenceChallenge.championBeatOriginal ? champion.label : 'ORIGINAL', referenceChallenge.championBeatOriginal ? 'ORIGINAL' : champion.label, referenceChallenge.margin, referenceChallenge.reason)
   const DATA = {}
-  pool.forEach(t => { DATA[t.label] = { title: t.title || '', angle: t.oneLineAngle || '', seed: seeded.findIndex(x => x.id === t.id) + 1, rating: Math.round(ratingById.get(t.id) || 0), dq: !!(t.flaw && t.flaw.disqualified), flaw: t.flaw ? (t.flaw.flaw || '') : '', matches: mlog[t.label] || [], text: t.markdown || '' } })
+  pool.forEach(t => { DATA[t.label] = { title: t.title || '', angle: t.oneLineAngle || '', coords: t.coords || {}, seed: seeded.findIndex(x => x.id === t.id) + 1, rating: Math.round(ratingById.get(t.id) || 0), dq: !!(t.flaw && t.flaw.disqualified), flaw: t.flaw ? (t.flaw.flaw || '') : '', matches: mlog[t.label] || [], text: t.markdown || '' } })
   const dataJson = JSON.stringify(DATA).replace(/</g, '\\u003c').replace(/|/g, '')
   const entry = label => `<span class="entry" onclick="show('${String(label).replace(/'/g, '')}')">${esc(label)}</span>`
   const card = m => m ? `<div class="match"><div class="slot win">${entry(m.winner.label)}<span class="mg">${esc(m.margin || '')}</span></div><div class="slot lose">${entry(m.loser.label)}</div></div>` : `<div class="match empty"></div>`
@@ -678,6 +678,43 @@ function renderReportV2() {
   const dq = pool.filter(t => t.flaw && t.flaw.disqualified)
   const dqHtml = dq.length ? `<div class="panel"><h3>Disqualified at the gate (${dq.length})</h3><ul>${dq.map(t => `<li>${entry(t.label)}: ${esc(t.flaw.flaw)}</li>`).join('')}</ul></div>` : `<div class="panel"><h3>Fabrication gate</h3><div class="muted">0 disqualified.</div></div>`
   const refTxt = referenceChallenge ? (referenceChallenge.championBeatOriginal ? `champion beat the original (${esc(referenceChallenge.margin)})` : 'champion did NOT beat the original') : 'no incumbent'
+  // ─── coordinate view (axes only): parallel coordinates + axis effects + a 2-axis explorer
+  const cv_axes = (DESIGN.kind === 'axes' && DESIGN.resolved && DESIGN.resolved.axes && effects) ? DESIGN.resolved.axes : null
+  let coordPanel = '', coordScript = ''
+  if (cv_axes) {
+    const W = 760, H = 240, padX = 64, padY = 34
+    const axX = i => padX + (cv_axes.length <= 1 ? 0 : i * (W - 2 * padX) / (cv_axes.length - 1))
+    const valY = (ax, v) => { const n = ax.values.length, idx = Math.max(0, ax.values.indexOf(v)); return n <= 1 ? H / 2 : padY + idx * (H - 2 * padY) / (n - 1) }
+    const ratingByIdC = new Map(globalRating)
+    const axisSvg = cv_axes.map((ax, i) => {
+      const x = axX(i)
+      const ticks = ax.values.map(v => `<text x="${x}" y="${valY(ax, v) + 4}" text-anchor="middle" font-size="10" fill="#cdb9c8">${esc(v)}</text>`).join('')
+      return `<line x1="${x}" y1="${padY}" x2="${x}" y2="${H - padY}" stroke="rgba(245,197,66,.3)"/><text x="${x}" y="18" text-anchor="middle" font-size="11" fill="#f5c542" font-weight="700">${esc(ax.name)}</text>${ticks}`
+    }).join('')
+    const poly = (coords, cls) => `<polyline points="${cv_axes.map((ax, i) => `${axX(i)},${valY(ax, coords[ax.name])}`).join(' ')}" fill="none" class="${cls}"/>`
+    const lines = pool.filter(t => t.id !== champion.id).map(t => poly(t.coords, 'pc')).join('')
+    const optLine = effects.predictedOptimum.inField ? '' : poly(effects.predictedOptimum.coords, 'pc opt')
+    const pcSvg = `<svg viewBox="0 0 ${W} ${H}" class="pc-svg" preserveAspectRatio="xMidYMid meet">${axisSvg}${lines}${optLine}${poly(champion.coords, 'pc champ')}</svg>`
+    const effRows = effects.mainEffects.map(me => {
+      const vals = me.byValue.filter(b => b.mean != null), mx = Math.max(...vals.map(v => v.mean)), mn = Math.min(...vals.map(v => v.mean)), rng = Math.max(1, mx - mn)
+      const bars = me.byValue.map(b => b.mean == null ? '' : `<div class="ebar"><span class="ev ${b.value === me.best ? 'best' : ''}">${esc(b.value)}</span><span class="etrack"><span class="efill" style="width:${Math.round(15 + 85 * (b.mean - mn) / rng)}%"></span></span><span class="enum">${b.mean}</span></div>`).join('')
+      return `<div class="erow"><div class="eax">${esc(me.axis)} <span class="muted">spread ${me.spread}</span></div>${bars}</div>`
+    }).join('')
+    const interTxt = effects.interactions.length ? effects.interactions.slice(0, 4).map(x => `${esc(x.axes.join('&times;'))} ${x.strength}`).join(' &middot; ') : 'none notable'
+    const estLabel = effects.estimable === 'none' ? '<span class="warn">empirical, not fitted</span>' : `fitted (${esc(effects.estimable)})`
+    const opt = effects.predictedOptimum, optTxt = `${esc(opt.label)} ${opt.inField ? '(in field)' : '(synthesized)'}`
+    const axSel = id => `<select id="${id}" onchange="grid()">${cv_axes.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`).join('')}</select>`
+    coordPanel = `<div class="panel coord"><h3>Coordinate space &middot; ${esc(effects.strategy)} &middot; effects ${estLabel}</h3>
+<div class="pc-wrap">${pcSvg}</div><div class="pc-key"><span class="champ">champion</span>${optLine ? '<span class="opt">predicted optimum</span>' : ''}</div>
+<div class="eff">${effRows}<div class="erow"><div class="eax">predicted optimum</div><div class="muted">${optTxt} &middot; top interactions: ${interTxt}</div></div></div>
+<div class="explorer"><div class="exsel">explore two axes &mdash; X ${axSel('gx')} Y ${axSel('gy')}</div><div id="grid"></div></div></div>`
+    const J = o => JSON.stringify(o).replace(/</g, '\\u003c')
+    coordScript = `
+var AXES=${J(cv_axes.map(a => ({ name: a.name, values: a.values })))};
+var PTS=${J(pool.map(t => ({ label: t.label, coords: t.coords, rating: Math.round(ratingByIdC.get(t.id) || 0), champ: t.id === champion.id })))};
+function grid(){var gx=+document.getElementById('gx').value,gy=+document.getElementById('gy').value;if(gx===gy){gy=(gy+1)%AXES.length;document.getElementById('gy').value=gy;}var ax=AXES[gx],ay=AXES[gy],cells={};PTS.forEach(function(p){var k=p.coords[ax.name]+'|'+p.coords[ay.name];(cells[k]=cells[k]||[]).push(p);});var h='<table class="gridtab"><tr><td></td>'+ay.values.map(function(v){return '<th>'+he(v)+'</th>';}).join('')+'</tr>';ax.values.forEach(function(xv){h+='<tr><th>'+he(xv)+'</th>';ay.values.forEach(function(yv){var arr=cells[xv+'|'+yv]||[];var avg=arr.length?Math.round(arr.reduce(function(s,p){return s+p.rating;},0)/arr.length):0;var sh=arr.length?Math.max(0,Math.min(1,(avg-1450)/200)):0;h+='<td style="background:rgba(245,197,66,'+(0.04+0.5*sh).toFixed(2)+')">'+arr.map(function(p){return '<span class="entry'+(p.champ?' gold':'')+'" onclick="show(\\''+p.label+'\\')">'+he(p.label)+'</span>';}).join(' ')+(arr.length?'<div class="cavg">'+avg+'</div>':'')+'</td>';});h+='</tr>';});h+='</table>';document.getElementById('grid').innerHTML=h;}
+if(document.getElementById('gy')){document.getElementById('gy').value=Math.min(1,AXES.length-1);grid();}`
+  }
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>World Cup: ${esc(champion.label)}</title><style>
 :root{--bg1:#2b0a26;--bg2:#4a1140;--bg3:#5e1650;--gold:#f5c542;--line:rgba(245,197,66,.45);--card:rgba(255,255,255,.06);--cardbd:rgba(255,255,255,.14);--txt:#f3e9f0}
 *{box-sizing:border-box}body{margin:0;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:var(--txt);background:radial-gradient(120% 80% at 50% 0%,var(--bg3),var(--bg2) 45%,var(--bg1));min-height:100vh}
@@ -728,6 +765,17 @@ ul{margin:.2em 0;padding-left:1.1em}
 .mlog{list-style:none;padding:0}.mlog li{padding:5px 0;border-bottom:1px solid rgba(255,255,255,.08)}
 .mlog .w{color:var(--gold);font-weight:700}.mlog .l{color:#e58ab0}.why{color:#c2adbd;font-size:12px}
 .essay p{margin:.55em 0;color:#ece0e9}.x{float:right;cursor:pointer;color:#cdb9c8;font-size:22px;line-height:1}
+.coord{margin-top:16px}
+.pc-wrap{overflow-x:auto}.pc-svg{width:100%;max-width:780px;height:auto;display:block;margin:0 auto}
+.pc{stroke:rgba(255,255,255,.16);stroke-width:1}.pc.champ{stroke:var(--gold);stroke-width:2.5}.pc.opt{stroke:#7fd1ff;stroke-width:2;stroke-dasharray:5 4}
+.pc-key{text-align:center;font-size:11px;color:#cdb9c8;margin-top:2px}.pc-key .champ{color:var(--gold);margin-right:14px}.pc-key .opt{color:#7fd1ff}
+.eff{margin-top:12px}.erow{margin:7px 0;font-size:12px}.eax{color:#f5c542;font-weight:700;margin-bottom:3px}
+.ebar{display:flex;align-items:center;gap:8px;margin:2px 0}.ev{width:96px;color:#d9c4d4}.ev.best{color:var(--gold);font-weight:700}
+.etrack{flex:1;height:8px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden}.efill{display:block;height:100%;background:var(--gold)}.enum{width:44px;text-align:right;color:#cdb9c8}
+.warn{color:#ffb38a}
+.explorer{margin-top:14px}.exsel{font-size:12px;color:#cdb9c8;margin-bottom:6px}.exsel select{background:#2b0a26;color:#f3e9f0;border:1px solid var(--cardbd);border-radius:6px;padding:2px 6px;margin:0 4px}
+.gridtab{border-collapse:collapse;font-size:11px}.gridtab th{color:#f5c542;padding:3px 6px;text-align:left}.gridtab td{border:1px solid rgba(255,255,255,.1);padding:4px 6px;vertical-align:top;min-width:84px}
+.cavg{font-size:9px;color:#b9a7b4;margin-top:2px}.entry.gold{color:var(--gold);font-weight:700}
 </style></head><body>
 <header><div class="fifa">&#127942; World Cup</div><h1>${esc((typeof meta !== 'undefined' && meta.name ? meta.name : 'WORLD CUP').toUpperCase())}</h1>
 <div class="sub">champion <b style="color:var(--gold)">${esc(champion.label)}</b> &middot; ${esc(trustVerdict)} &middot; ${refTxt}</div>
@@ -740,19 +788,21 @@ ul{margin:.2em 0;padding-left:1.1em}
 <div class="panel"><h3>Group stage</h3><div class="groups">${groupCards}</div></div>
 ${dqHtml}
 <div class="panel"><h3>Global rating (Elo)</h3><table class="rank"><tr><td>#</td><td>entry</td><td>rating</td></tr>${ratingRows}</table></div>
-</div></div>
+</div>${coordPanel}</div>
 <div class="modal" id="modal" onclick="if(event.target===this)hide()"><div class="sheet"><span class="x" onclick="hide()">&times;</span><div id="mbody"></div></div></div>
 <script>
 var DATA=${dataJson};
 function he(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function show(k){var d=DATA[k];if(!d)return;var h='<h2>'+he(k)+(d.dq?' <span class="dqtag">DISQUALIFIED</span>':'')+'</h2>';
 h+='<div class="meta">seed #'+d.seed+' &middot; rating '+d.rating+(d.angle?(' &middot; '+he(d.angle)):'')+'</div>';
+if(d.coords&&Object.keys(d.coords).filter(function(k){return k!=='__rep';}).length)h+='<div class="meta">at '+Object.keys(d.coords).filter(function(k){return k!=='__rep';}).map(function(k){return he(k)+'='+he(d.coords[k]);}).join(', ')+'</div>';
 if(d.dq)h+='<div class="meta" style="color:#f3a">gate: '+he(d.flaw)+'</div>';
 if(d.matches&&d.matches.length){h+='<h3>matches</h3><ul class="mlog">';d.matches.forEach(function(x){h+='<li><span class="'+(x.won?'w':'l')+'">'+(x.won?'beat':'lost to')+' '+he(x.opp)+'</span> <span class="why">&middot; '+he(x.round)+' &middot; '+he(x.margin||'')+'</span><div class="why">'+he(x.reason||'')+'</div></li>';});h+='</ul>';}
 h+='<h3>full text</h3><div class="essay">'+String(d.text||'').split(/\\n\\n+/).map(function(p){return '<p>'+he(p)+'</p>';}).join('')+'</div>';
 document.getElementById('mbody').innerHTML=h;document.getElementById('modal').classList.add('show');}
 function hide(){document.getElementById('modal').classList.remove('show');}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')hide();});
+${coordScript}
 </script></body></html>`
 }
 
