@@ -29,6 +29,19 @@ const BANS = {                 // FILL: deterministic preflight bans (cheap, run
 }
 const LETTERS = 'ABCDEFGHIJKL'.split('')
 
+// ─── DESIGN — how candidates are created (see references/design-pass.md).
+// kind:'flat' = the classic FLAVORS list (one nominal axis). kind:'axes' = a factorial
+// grid: candidates are points in a coordinate system, the field is a (possibly fractional)
+// cross-product of orthogonal axes. ('sections' is reserved -> PLAN_2.)
+const DESIGN = {
+  kind: 'flat',                 // 'flat' | 'axes'
+  // --- kind:'flat' (FILL: FIELD distinct angle seeds) ---
+  flavors: [ /* { name, brief }, ... length === FIELD */ ],
+  // --- kind:'axes' ---
+  mode: 'forced',               // 'forced' (axes given) | 'dynamic' (axis-finder proposes them)
+  axes: [ /* { name, values: { valueLabel: 'prompt fragment', ... } }, ...; product reconciled to FIELD */ ],
+}
+
 // ──────────────────────────────────────────── (3) CRITERIA + INCUMBENT (FILL)
 // The taste spec + hard disqualifiers, pasted into every juror prompt. For Provi
 // prose, distill the /provi-voice hard rules here. Be specific; vagueness = no taste.
@@ -231,16 +244,14 @@ function eloRatings(entries, decided, K = 24, base = 1500) {
 }
 
 // ─────────────────────────────────────────────────────── (4) CONTESTANTS (FILL)
-// SOURCE === 'generate': FILL the FLAVORS list (one distinct angle each, length FIELD)
-// and the BASE artifact, and write genPrompt. SOURCE === 'given': set pool from args.
+// Candidates come from DESIGN (see references/design-pass.md). kind:'flat' is the
+// degenerate single-axis design (the old FLAVORS list); kind:'axes' is a factorial grid.
+// Every candidate carries `coords` (its point in the design space) for the report + effects.
 const decided = []  // every decided head-to-head, for Elo
 
-let pool
-if (SOURCE === 'generate') {
-  const BASE = `FILL: the base artifact being varied (essay, brief, spec, design, prompt...).`
-  const SPEC = CRITERIA_BLOCK
-  const FLAVORS = [ /* FILL: FIELD distinct {name, brief} angle seeds — one per variant */ ]
-  const genPrompt = f => `Produce a distinct VARIANT of the artifact below. ANGLE: ${f.name}: ${f.brief}.
+const BASE = `FILL: the base artifact being varied (essay, brief, spec, design, prompt...).`
+const SPEC = CRITERIA_BLOCK
+const flatGenPrompt = (name, brief) => `Produce a distinct VARIANT of the artifact below. ANGLE: ${name}: ${brief}.
 Realize the angle fully; keep what the brief says must stay true. Constraints / criteria:
 ${SPEC}
 BASE ARTIFACT:
@@ -248,22 +259,38 @@ BASE ARTIFACT:
 ${BASE}
 ---
 Return JSON { title, oneLineAngle, markdown (the full artifact) }.`
+
+// deriveCandidates: DESIGN -> [{ id, label, coords, prompt }], length must === FIELD.
+async function deriveCandidates(design) {
+  if (design.kind === 'flat') {
+    return design.flavors.map((f, i) => ({ id: i, label: f.name, coords: { flavor: f.name }, prompt: flatGenPrompt(f.name, f.brief) }))
+  }
+  if (design.kind === 'axes') {
+    return await deriveAxes(design, BASE, SPEC)   // U3
+  }
+  throw new Error(`DESIGN.kind '${design.kind}' unsupported (sections -> PLAN_2)`)
+}
+
+let pool
+if (SOURCE === 'generate') {
+  const specs = await deriveCandidates(DESIGN)
+  if (specs.length !== FIELD) return { error: `design produced ${specs.length} candidates, need FIELD=${FIELD}` }
   phase('Generate')
-  log(`Generating ${FIELD} variants..`)
+  log(`Generating ${specs.length} variants (DESIGN.kind=${DESIGN.kind})..`)
   let got = []
-  for (let attempt = 0; got.length < FIELD && attempt < 3; attempt++) {
-    const todo = FLAVORS.filter((_, i) => !got.some(g => g.id === i))
-    const r = (await parallel(todo.map((f, k) => () =>
-      agent(genPrompt(f), { label: `gen:${f.name}`, phase: 'Generate', schema: GEN_SCHEMA })
-        .then(x => x && ({ id: FLAVORS.indexOf(f), label: f.name, ...x }))))).filter(Boolean)
+  for (let attempt = 0; got.length < specs.length && attempt < 3; attempt++) {
+    const todo = specs.filter(s => !got.some(g => g.id === s.id))
+    const r = (await parallel(todo.map(s => () =>
+      agent(s.prompt, { label: `gen:${s.label}`, phase: 'Generate', schema: GEN_SCHEMA })
+        .then(x => x && ({ id: s.id, label: s.label, coords: s.coords, ...x }))))).filter(Boolean)
     got = got.concat(r)
   }
   if (got.length < FIELD) return { error: `generated ${got.length}/${FIELD}; rerun` }
-  pool = got.slice(0, FIELD).sort((a, b) => a.id - b.id)
+  pool = got.sort((a, b) => a.id - b.id)
 } else {
-  // GIVEN: args is the array of items. Normalize to { id, label, markdown }.
+  // GIVEN: args is the array of items. Normalize to { id, label, coords, markdown }.
   pool = (args || []).slice(0, FIELD).map((it, i) => ({
-    id: i, label: it.label || `entry-${i + 1}`, markdown: it.markdown || it.text || String(it) }))
+    id: i, label: it.label || `entry-${i + 1}`, coords: { entry: it.label || `entry-${i + 1}` }, markdown: it.markdown || it.text || String(it) }))
   if (pool.length !== FIELD) return { error: `expected ${FIELD} items, got ${pool.length}` }
 }
 
