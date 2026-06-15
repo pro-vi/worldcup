@@ -304,7 +304,12 @@ function reconcile(axes, N) {
   if (M < N) {
     const r = Math.ceil(N / M), cells = []
     for (let k = 0; cells.length < N; k++) for (const c of full) if (cells.length < N) cells.push({ ...c, __rep: k })
-    return { cells, strategy: 'replicate', estimable: 'all-2way', meta: { M, N, replicas: r } }
+    // A balanced replicate (N a multiple of M) stays orthogonal -> all-2way. A partial
+    // replicate (N % M !== 0) concentrates extra runs in early coordinate levels, so its
+    // estimability must be probed, not assumed.
+    const balanced = N % M === 0
+    const estimable = balanced ? 'all-2way' : (mainEffectsEstimable(cells, axes) ? 'main-effects' : 'none')
+    return { cells, strategy: balanced ? 'replicate' : 'partial-replicate', estimable, meta: { M, N, replicas: r, balanced } }
   }
   let cells, strategy
   if (radices.every(rd => rd === 2) && isPow2(N) && Math.log2(N) < radices.length) {
@@ -663,7 +668,7 @@ function renderReportV2() {
   const DATA = {}
   pool.forEach(t => { DATA[t.label] = { title: t.title || '', angle: t.oneLineAngle || '', coords: t.coords || {}, seed: seeded.findIndex(x => x.id === t.id) + 1, rating: Math.round(ratingById.get(t.id) || 0), dq: !!(t.flaw && t.flaw.disqualified), flaw: t.flaw ? (t.flaw.flaw || '') : '', matches: mlog[t.label] || [], text: t.markdown || '' } })
   const dataJson = JSON.stringify(DATA).replace(/</g, '\\u003c').replace(/|/g, '')
-  const entry = label => `<span class="entry" onclick="show('${String(label).replace(/'/g, '')}')">${esc(label)}</span>`
+  const entry = label => `<span class="entry" data-k="${esc(label)}">${esc(label)}</span>`
   const card = m => m ? `<div class="match"><div class="slot win">${entry(m.winner.label)}<span class="mg">${esc(m.margin || '')}</span></div><div class="slot lose">${entry(m.loser.label)}</div></div>` : `<div class="match empty"></div>`
   const playedRounds = order.filter(k => history[k] && history[k].length)
   const finalKey = playedRounds[playedRounds.length - 1]
@@ -712,7 +717,7 @@ function renderReportV2() {
     coordScript = `
 var AXES=${J(cv_axes.map(a => ({ name: a.name, values: a.values })))};
 var PTS=${J(pool.map(t => ({ label: t.label, coords: t.coords, rating: Math.round(ratingByIdC.get(t.id) || 0), champ: t.id === champion.id })))};
-function grid(){var gx=+document.getElementById('gx').value,gy=+document.getElementById('gy').value;if(gx===gy){gy=(gy+1)%AXES.length;document.getElementById('gy').value=gy;}var ax=AXES[gx],ay=AXES[gy],cells={};PTS.forEach(function(p){var k=p.coords[ax.name]+'|'+p.coords[ay.name];(cells[k]=cells[k]||[]).push(p);});var h='<table class="gridtab"><tr><td></td>'+ay.values.map(function(v){return '<th>'+he(v)+'</th>';}).join('')+'</tr>';ax.values.forEach(function(xv){h+='<tr><th>'+he(xv)+'</th>';ay.values.forEach(function(yv){var arr=cells[xv+'|'+yv]||[];var avg=arr.length?Math.round(arr.reduce(function(s,p){return s+p.rating;},0)/arr.length):0;var sh=arr.length?Math.max(0,Math.min(1,(avg-1450)/200)):0;h+='<td style="background:rgba(245,197,66,'+(0.04+0.5*sh).toFixed(2)+')">'+arr.map(function(p){return '<span class="entry'+(p.champ?' gold':'')+'" onclick="show(\\''+p.label+'\\')">'+he(p.label)+'</span>';}).join(' ')+(arr.length?'<div class="cavg">'+avg+'</div>':'')+'</td>';});h+='</tr>';});h+='</table>';document.getElementById('grid').innerHTML=h;}
+function grid(){var gx=+document.getElementById('gx').value,gy=+document.getElementById('gy').value;if(gx===gy){gy=(gy+1)%AXES.length;document.getElementById('gy').value=gy;}var ax=AXES[gx],ay=AXES[gy],cells={};PTS.forEach(function(p){var k=p.coords[ax.name]+'|'+p.coords[ay.name];(cells[k]=cells[k]||[]).push(p);});var h='<table class="gridtab"><tr><td></td>'+ay.values.map(function(v){return '<th>'+he(v)+'</th>';}).join('')+'</tr>';ax.values.forEach(function(xv){h+='<tr><th>'+he(xv)+'</th>';ay.values.forEach(function(yv){var arr=cells[xv+'|'+yv]||[];var avg=arr.length?Math.round(arr.reduce(function(s,p){return s+p.rating;},0)/arr.length):0;var sh=arr.length?Math.max(0,Math.min(1,(avg-1450)/200)):0;h+='<td style="background:rgba(245,197,66,'+(0.04+0.5*sh).toFixed(2)+')">'+arr.map(function(p){return '<span class="entry'+(p.champ?' gold':'')+'" data-k="'+he(p.label)+'">'+he(p.label)+'</span>';}).join(' ')+(arr.length?'<div class="cavg">'+avg+'</div>':'')+'</td>';});h+='</tr>';});h+='</table>';document.getElementById('grid').innerHTML=h;}
 if(document.getElementById('gy')){document.getElementById('gy').value=Math.min(1,AXES.length-1);grid();}`
   }
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>World Cup: ${esc(champion.label)}</title><style>
@@ -802,6 +807,7 @@ h+='<h3>full text</h3><div class="essay">'+String(d.text||'').split(/\\n\\n+/).m
 document.getElementById('mbody').innerHTML=h;document.getElementById('modal').classList.add('show');}
 function hide(){document.getElementById('modal').classList.remove('show');}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')hide();});
+document.addEventListener('click',function(e){var t=e.target;if(t&&t.classList&&t.classList.contains('entry')&&t.getAttribute('data-k'))show(t.getAttribute('data-k'));});
 ${coordScript}
 </script></body></html>`
 }
