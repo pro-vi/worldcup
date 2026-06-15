@@ -36,7 +36,8 @@ Either way the product `M = ∏ |values|` is reconciled to exactly `FIELD` cells
 | Condition | strategy | estimable |
 |---|---|---|
 | `M === N` | `full` (the whole cross-product) | all-2way |
-| `M < N` | `replicate` (repeat cells `⌈N/M⌉×`, tagged for label uniqueness) | all-2way |
+| `M < N`, `N` a multiple of `M` | `replicate` (balanced, `N/M×`) | all-2way |
+| `M < N`, `N` not a multiple of `M` | `partial-replicate` (imbalanced, early levels over-represented) | probe-backed |
 | `M > N`, all-binary, `N` a power of two | `fractional` (resolution generators) | probe-backed |
 | `M > N`, mixed radix or non-power-of-two | `subsample` (deterministic stride) | probe-backed |
 

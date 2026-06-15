@@ -579,12 +579,18 @@ if (PLAYOFF && effects && !effects.predictedOptimum.inField && DESIGN.resolved &
   const optPrompt = `Produce a VARIANT of the artifact below at this exact design point:\n${fragments}\nRealize every setting. Constraints / criteria:\n${SPEC}\nBASE ARTIFACT:\n---\n${BASE}\n---\nReturn JSON { title, oneLineAngle, markdown }.`
   const og = await agent(optPrompt, { label: 'predicted-optimum', phase: 'Knockout', schema: GEN_SCHEMA })
   if (og) {
-    const optEntry = { id: -2, label: 'PREDICTED-OPTIMUM', coords: opt, markdown: og.markdown, rating: 1500, group: '-', flaw: { disqualified: false } }
-    const incumbentEntry = { id: -1, label: 'ORIGINAL', markdown: INCUMBENT, rating: 1500, group: '-', flaw: { disqualified: false } }
-    const m1 = await playMatch(optEntry, champion, 0, 'FINAL', 'Knockout', [])
-    const m2 = await playMatch(optEntry, incumbentEntry, 1, 'FINAL', 'Knockout', [])
-    playoff = { beatChampion: m1.winner.id === optEntry.id, beatOriginal: m2.winner.id === optEntry.id, markdown: og.markdown }
-    log(`Playoff: predicted optimum ${playoff.beatChampion ? 'beat' : 'lost to'} champion; ${playoff.beatOriginal ? 'beat' : 'lost to'} original.`)
+    const optEntry = { id: -2, label: 'PREDICTED-OPTIMUM', coords: opt, markdown: og.markdown, rating: 1500, group: '-' }
+    await screenAll([optEntry], 'Knockout')  // same fabrication gate as the field; a fabricated optimum forfeits
+    if (optEntry.flaw && optEntry.flaw.disqualified) {
+      playoff = { disqualified: true, flaw: optEntry.flaw.flaw, markdown: og.markdown }
+      log(`Playoff: predicted optimum disqualified at the gate (${optEntry.flaw.flaw}); skipped.`)
+    } else {
+      const incumbentEntry = { id: -1, label: 'ORIGINAL', markdown: INCUMBENT, rating: 1500, group: '-', flaw: { disqualified: false } }
+      const m1 = await playMatch(optEntry, champion, 0, 'FINAL', 'Knockout', [])
+      const m2 = await playMatch(optEntry, incumbentEntry, 1, 'FINAL', 'Knockout', [])
+      playoff = { beatChampion: m1.winner.id === optEntry.id, beatOriginal: m2.winner.id === optEntry.id, markdown: og.markdown }
+      log(`Playoff: predicted optimum ${playoff.beatChampion ? 'beat' : 'lost to'} champion; ${playoff.beatOriginal ? 'beat' : 'lost to'} original.`)
+    }
   }
 }
 
