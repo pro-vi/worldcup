@@ -249,16 +249,6 @@ function eloRatings(entries, decided, K = 24, base = 1500) {
 // See references/design-pass.md.
 function isPow2(n) { return n >= 1 && (n & (n - 1)) === 0 }
 
-function factorizations(n) { // ordered non-decreasing radix tuples, factors >= 2
-  const out = []
-  const rec = (rem, min, acc) => {
-    if (rem === 1) { if (acc.length) out.push(acc.slice()); return }
-    for (let f = min; f <= rem; f++) if (rem % f === 0) { acc.push(f); rec(rem / f, f, acc); acc.pop() }
-  }
-  rec(n, 2, [])
-  return out // 32 -> [[2,2,2,2,2],[2,2,2,4],[2,2,8],[2,4,4],[2,16],[4,8],[32]]
-}
-
 function crossProduct(axes) { // -> [{ axisName: value, ... }, ...]
   return axes.reduce((cells, ax) => {
     const next = []
@@ -315,7 +305,11 @@ function reconcile(axes, N) {
   if (radices.every(rd => rd === 2) && isPow2(N) && Math.log2(N) < radices.length) {
     cells = binaryFraction(axes, Math.round(Math.log2(N))); strategy = `fractional 2^(${radices.length}-${Math.round(radices.length - Math.log2(N))})`
   } else {
-    cells = []; for (let i = 0; i < N; i++) cells.push(full[Math.round(i * M / N) % M]); strategy = 'subsample'
+    // coprime stride avoids the row-major aliasing that can strand a low-order axis on one level
+    const cgcd = (a, b) => b ? cgcd(b, a % b) : a
+    let step = Math.max(1, Math.round(M / N)); while (step < M && cgcd(step, M) !== 1) step++
+    if (cgcd(step, M) !== 1) step = 1
+    cells = []; for (let i = 0; i < N; i++) cells.push(full[(i * step) % M]); strategy = 'subsample'
   }
   return { cells, strategy, estimable: mainEffectsEstimable(cells, axes) ? 'main-effects' : 'none', meta: { M, N } }
 }
@@ -576,7 +570,7 @@ function computeEffects(pool, globalRating, resolved) {
     interactions.push({ axes: [A.name, B.name], strength: Math.round(Math.abs((m11 - m10) - (m01 - m00)) / 2) })
   }
   interactions.sort((a, b) => b.strength - a.strength)
-  const optimum = {}; mainEffects.forEach(me => { if (me.best) optimum[me.axis] = me.best })
+  const optimum = {}; mainEffects.forEach(me => { const a = axes.find(x => x.name === me.axis); optimum[me.axis] = me.best != null ? me.best : (a && a.values[0]) })
   const inField = pool.find(t => axes.every(ax => t.coords[ax.name] === optimum[ax.name]))
   return { estimable: resolved.estimable, strategy: resolved.strategy, mainEffects, interactions: interactions.slice(0, 6),
     predictedOptimum: { coords: optimum, inField: !!inField, label: inField ? inField.label : axes.map(ax => shortVal(optimum[ax.name])).join('-') } }
