@@ -243,6 +243,78 @@ function eloRatings(entries, decided, K = 24, base = 1500) {
   return [...R.entries()].sort((a, b) => b[1] - a[1])
 }
 
+// ─────────────────────────────────────────────────────── DESIGN COMBINATORICS
+// Deterministic (no RNG). Axes here are { name, values: [label, ...] } (value labels only;
+// the DESIGN value->fragment map is applied separately when assembling prompts in U3).
+// See references/design-pass.md.
+function isPow2(n) { return n >= 1 && (n & (n - 1)) === 0 }
+
+function factorizations(n) { // ordered non-decreasing radix tuples, factors >= 2
+  const out = []
+  const rec = (rem, min, acc) => {
+    if (rem === 1) { if (acc.length) out.push(acc.slice()); return }
+    for (let f = min; f <= rem; f++) if (rem % f === 0) { acc.push(f); rec(rem / f, f, acc); acc.pop() }
+  }
+  rec(n, 2, [])
+  return out // 32 -> [[2,2,2,2,2],[2,2,2,4],[2,2,8],[2,4,4],[2,16],[4,8],[32]]
+}
+
+function crossProduct(axes) { // -> [{ axisName: value, ... }, ...]
+  return axes.reduce((cells, ax) => {
+    const next = []
+    for (const cell of cells) for (const v of ax.values) next.push({ ...cell, [ax.name]: v })
+    return next
+  }, [{}])
+}
+
+// Binary fractional factorial: k binary axes -> 2^p runs. Base = first p axes (full 2^p);
+// each generated axis = product of a fixed subset of base-axis signs (deterministic).
+function binaryFraction(axes, p) {
+  const base = axes.slice(0, p), gen = axes.slice(p)
+  const fromSign = (ax, s) => s < 0 ? ax.values[0] : ax.values[1]
+  const baseSubset = j => { const idx = base.map((_, i) => i); return (j === 0 || p <= 3) ? idx : idx.filter((_, i) => i !== ((j - 1) % p)) }
+  const generators = gen.map((_, j) => baseSubset(j))
+  const cells = []
+  for (let m = 0; m < (1 << p); m++) {
+    const signs = base.map((_, i) => ((m >> i) & 1) ? 1 : -1)
+    const coord = {}
+    base.forEach((ax, i) => { coord[ax.name] = fromSign(ax, signs[i]) })
+    gen.forEach((ax, j) => { const s = generators[j].reduce((acc, bi) => acc * signs[bi], 1); coord[ax.name] = fromSign(ax, s) })
+    cells.push(coord)
+  }
+  return cells
+}
+
+// Are main effects estimable from these cells? (orthogonal, non-degenerate contrast columns.)
+function mainEffectsEstimable(cells, axes) {
+  const cols = []
+  for (const ax of axes) for (let li = 1; li < ax.values.length; li++)
+    cols.push(cells.map(c => c[ax.name] === ax.values[li] ? 1 : (c[ax.name] === ax.values[0] ? -1 : 0)))
+  for (let i = 0; i < cols.length; i++) for (let j = i + 1; j < cols.length; j++)
+    if (Math.abs(cols[i].reduce((a, _, t) => a + cols[i][t] * cols[j][t], 0)) > 1e-9) return false
+  return cols.length > 0 && cols.every(col => col.some(v => v !== 0))
+}
+
+// Reconcile axes (product M) to exactly N cells. estimable is probe-backed (not theory-claimed).
+function reconcile(axes, N) {
+  const radices = axes.map(a => a.values.length)
+  const M = radices.reduce((a, b) => a * b, 1)
+  const full = crossProduct(axes)
+  if (M === N) return { cells: full, strategy: 'full', estimable: 'all-2way', meta: { M, N } }
+  if (M < N) {
+    const r = Math.ceil(N / M), cells = []
+    for (let k = 0; cells.length < N; k++) for (const c of full) if (cells.length < N) cells.push({ ...c, __rep: k })
+    return { cells, strategy: 'replicate', estimable: 'all-2way', meta: { M, N, replicas: r } }
+  }
+  let cells, strategy
+  if (radices.every(rd => rd === 2) && isPow2(N) && Math.log2(N) < radices.length) {
+    cells = binaryFraction(axes, Math.round(Math.log2(N))); strategy = `fractional 2^(${radices.length}-${Math.round(radices.length - Math.log2(N))})`
+  } else {
+    cells = []; for (let i = 0; i < N; i++) cells.push(full[Math.round(i * M / N) % M]); strategy = 'subsample'
+  }
+  return { cells, strategy, estimable: mainEffectsEstimable(cells, axes) ? 'main-effects' : 'none', meta: { M, N } }
+}
+
 // ─────────────────────────────────────────────────────── (4) CONTESTANTS (FILL)
 // Candidates come from DESIGN (see references/design-pass.md). kind:'flat' is the
 // degenerate single-axis design (the old FLAVORS list); kind:'axes' is a factorial grid.
