@@ -315,6 +315,62 @@ function reconcile(axes, N) {
   return { cells, strategy, estimable: mainEffectsEstimable(cells, axes) ? 'main-effects' : 'none', meta: { M, N } }
 }
 
+// ─── axis-finder + prompt derivation (U3)
+const AXIS_SCHEMA = { type: 'object', additionalProperties: false, required: ['axes'],
+  properties: { axes: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'values'],
+    properties: { name: { type: 'string' },
+      values: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['value', 'fragment'],
+        properties: { value: { type: 'string' }, fragment: { type: 'string' } } } } } } } } }
+
+const shortVal = s => { s = String(s); return s.length <= 10 ? s : s.slice(0, 10) }
+
+// deriveAxes: forced (axes given) or dynamic (axis-finder agent) -> coord-stamped specs.
+async function deriveAxes(design, BASE, SPEC) {
+  let rawAxes
+  if (design.mode === 'dynamic') {
+    const finderPrompt = `Propose orthogonal DESIGN AXES for generating diverse variants of the artifact below.
+Each axis is an independent knob with 2 or 3 discrete VALUES; each value is a short prompt FRAGMENT telling the generator how to realize that setting. Axes must be genuinely independent: changing one must not force another. Aim for about ${Math.max(2, Math.round(Math.log2(FIELD)))} axes so the cross-product is near FIELD=${FIELD}. Keep fragments concrete and mutually exclusive within an axis.
+WHAT THE ARTIFACT IS / CRITERIA:
+${SPEC}
+BASE ARTIFACT:
+---
+${BASE}
+---
+Return JSON { axes: [ { name, values: [ { value, fragment } ] } ] }.`
+    const found = await agent(finderPrompt, { label: 'axis-finder', phase: 'Generate', schema: AXIS_SCHEMA })
+    rawAxes = (found && found.axes && found.axes.length)
+      ? found.axes.map(a => ({ name: a.name, valuesObj: Object.fromEntries(a.values.map(v => [v.value, v.fragment])) }))
+      : [{ name: 'variant', valuesObj: { a: 'one strong take', b: 'a different strong take' } }]
+  } else {
+    rawAxes = design.axes.map(a => ({ name: a.name, valuesObj: a.values }))
+  }
+  const seen = new Set()
+  rawAxes = rawAxes.filter(a => Object.keys(a.valuesObj || {}).length >= 2 && !seen.has(a.name) && seen.add(a.name))
+  const comboAxes = rawAxes.map(a => ({ name: a.name, values: Object.keys(a.valuesObj) }))
+  const frag = {}; rawAxes.forEach(a => { frag[a.name] = a.valuesObj })
+  const { cells, strategy, estimable, meta } = reconcile(comboAxes, FIELD)
+  design.resolved = { axes: comboAxes, strategy, estimable, meta }
+  log(`Design: ${comboAxes.length} axes (${comboAxes.map(a => a.values.length).join('x')}=${meta.M}) -> ${strategy} -> ${FIELD} cells; effects estimable: ${estimable}.`)
+  const used = new Set()
+  return cells.map((coord, i) => {
+    const clean = {}; for (const k of Object.keys(coord)) if (k !== '__rep') clean[k] = coord[k]
+    let baseLabel = comboAxes.map(a => shortVal(clean[a.name])).join('-'), label = baseLabel, n = 1
+    while (used.has(label)) label = `${baseLabel}#${++n}`
+    used.add(label)
+    const fragments = comboAxes.map(a => `- ${a.name} = ${clean[a.name]}: ${frag[a.name][clean[a.name]]}`).join('\n')
+    const prompt = `Produce a VARIANT of the artifact below at this exact design point:
+${fragments}
+Realize every setting above faithfully. Constraints / criteria:
+${SPEC}
+BASE ARTIFACT:
+---
+${BASE}
+---
+Return JSON { title, oneLineAngle, markdown (the full artifact) }.`
+    return { id: i, label, coords: clean, prompt }
+  })
+}
+
 // ─────────────────────────────────────────────────────── (4) CONTESTANTS (FILL)
 // Candidates come from DESIGN (see references/design-pass.md). kind:'flat' is the
 // degenerate single-axis design (the old FLAVORS list); kind:'axes' is a factorial grid.
