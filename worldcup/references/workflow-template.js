@@ -351,6 +351,12 @@ Return JSON { axes: [ { name, values: [ { value, fragment } ] } ] }.`
   }
   const seen = new Set()
   rawAxes = rawAxes.filter(a => Object.keys(a.valuesObj || {}).length >= 2 && !seen.has(a.name) && seen.add(a.name))
+  if (!rawAxes.length) {
+    // Every proposed axis was unusable (e.g. single-value, or all duplicate names). Re-apply
+    // the binary fallback so a dynamic run never silently collapses to an empty design.
+    log('No usable axes after filtering (each needs >=2 distinct values); using a single binary fallback axis.')
+    rawAxes = [{ name: 'variant', valuesObj: { a: 'one strong take', b: 'a different strong take' } }]
+  }
   const comboAxes = rawAxes.map(a => ({ name: a.name, values: Object.keys(a.valuesObj) }))
   const frag = {}; rawAxes.forEach(a => { frag[a.name] = a.valuesObj })
   const { cells, strategy, estimable, meta } = reconcile(comboAxes, FIELD)
