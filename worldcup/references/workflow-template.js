@@ -349,7 +349,7 @@ Return JSON { axes: [ { name, values: [ { value, fragment } ] } ] }.`
   const comboAxes = rawAxes.map(a => ({ name: a.name, values: Object.keys(a.valuesObj) }))
   const frag = {}; rawAxes.forEach(a => { frag[a.name] = a.valuesObj })
   const { cells, strategy, estimable, meta } = reconcile(comboAxes, FIELD)
-  design.resolved = { axes: comboAxes, strategy, estimable, meta }
+  design.resolved = { axes: comboAxes, frag, strategy, estimable, meta }
   log(`Design: ${comboAxes.length} axes (${comboAxes.map(a => a.values.length).join('x')}=${meta.M}) -> ${strategy} -> ${FIELD} cells; effects estimable: ${estimable}.`)
   const used = new Set()
   return cells.map((coord, i) => {
@@ -529,6 +529,59 @@ const recommendation = (USE_INCUMBENT && referenceChallenge && !referenceChallen
   ? 'KEEP THE ORIGINAL: the field did not clearly beat the incumbent'
   : championIsLeader ? 'ADOPT THE CHAMPION: bracket winner is also the rating leader'
   : 'ADOPT ONLY AFTER A TOP-4 RUNOFF: bracket variance, champion is not the rating leader'
+
+// ─────────────────────────────────────────────────────── EFFECTS (factorial analysis)
+const PLAYOFF = false  // CONFIG: generate the predicted optimum and play it vs champion + incumbent
+// Deterministic post-hoc effects from coords + Elo. Null for kind:'flat' (one nominal axis).
+function computeEffects(pool, globalRating, resolved) {
+  if (!resolved || !resolved.axes || !resolved.axes.length) return null
+  const ratingById = new Map(globalRating)
+  const ratingOf = t => ratingById.get(t.id) || 0
+  const axes = resolved.axes
+  const mainEffects = axes.map(ax => {
+    const byValue = ax.values.map(v => {
+      const members = pool.filter(t => t.coords && t.coords[ax.name] === v)
+      const mean = members.length ? members.reduce((s, t) => s + ratingOf(t), 0) / members.length : null
+      return { value: v, mean: mean == null ? null : Math.round(mean), n: members.length }
+    })
+    const means = byValue.filter(b => b.mean != null).map(b => b.mean)
+    const spread = means.length ? Math.max(...means) - Math.min(...means) : 0
+    const best = byValue.filter(b => b.mean != null).sort((a, b) => b.mean - a.mean)[0]
+    return { axis: ax.name, byValue, spread, best: best ? best.value : null }
+  }).sort((a, b) => b.spread - a.spread)
+  const interactions = []
+  for (let i = 0; i < axes.length; i++) for (let j = i + 1; j < axes.length; j++) {
+    const A = axes[i], B = axes[j]
+    if (A.values.length !== 2 || B.values.length !== 2) continue
+    const cm = (av, bv) => { const m = pool.filter(t => t.coords && t.coords[A.name] === av && t.coords[B.name] === bv); return m.length ? m.reduce((s, t) => s + ratingOf(t), 0) / m.length : null }
+    const m00 = cm(A.values[0], B.values[0]), m01 = cm(A.values[0], B.values[1]), m10 = cm(A.values[1], B.values[0]), m11 = cm(A.values[1], B.values[1])
+    if ([m00, m01, m10, m11].some(x => x == null)) continue
+    interactions.push({ axes: [A.name, B.name], strength: Math.round(Math.abs((m11 - m10) - (m01 - m00)) / 2) })
+  }
+  interactions.sort((a, b) => b.strength - a.strength)
+  const optimum = {}; mainEffects.forEach(me => { if (me.best) optimum[me.axis] = me.best })
+  const inField = pool.find(t => axes.every(ax => t.coords[ax.name] === optimum[ax.name]))
+  return { estimable: resolved.estimable, strategy: resolved.strategy, mainEffects, interactions: interactions.slice(0, 6),
+    predictedOptimum: { coords: optimum, inField: !!inField, label: inField ? inField.label : axes.map(ax => shortVal(optimum[ax.name])).join('-') } }
+}
+const effects = computeEffects(pool, globalRating, DESIGN.resolved)
+if (effects) log(`Effects: top axis "${effects.mainEffects[0].axis}" (spread ${effects.mainEffects[0].spread}); predicted optimum ${effects.predictedOptimum.label}${effects.predictedOptimum.inField ? ' (in field)' : ' (synthesized)'}.`)
+
+let playoff = null
+if (PLAYOFF && effects && !effects.predictedOptimum.inField && DESIGN.resolved && DESIGN.resolved.frag && INCUMBENT) {
+  const opt = effects.predictedOptimum.coords
+  const fragments = DESIGN.resolved.axes.map(a => `- ${a.name} = ${opt[a.name]}: ${DESIGN.resolved.frag[a.name][opt[a.name]]}`).join('\n')
+  const optPrompt = `Produce a VARIANT of the artifact below at this exact design point:\n${fragments}\nRealize every setting. Constraints / criteria:\n${SPEC}\nBASE ARTIFACT:\n---\n${BASE}\n---\nReturn JSON { title, oneLineAngle, markdown }.`
+  const og = await agent(optPrompt, { label: 'predicted-optimum', phase: 'Knockout', schema: GEN_SCHEMA })
+  if (og) {
+    const optEntry = { id: -2, label: 'PREDICTED-OPTIMUM', coords: opt, markdown: og.markdown, rating: 1500, group: '-', flaw: { disqualified: false } }
+    const incumbentEntry = { id: -1, label: 'ORIGINAL', markdown: INCUMBENT, rating: 1500, group: '-', flaw: { disqualified: false } }
+    const m1 = await playMatch(optEntry, champion, 0, 'FINAL', 'Knockout', [])
+    const m2 = await playMatch(optEntry, incumbentEntry, 1, 'FINAL', 'Knockout', [])
+    playoff = { beatChampion: m1.winner.id === optEntry.id, beatOriginal: m2.winner.id === optEntry.id, markdown: og.markdown }
+    log(`Playoff: predicted optimum ${playoff.beatChampion ? 'beat' : 'lost to'} champion; ${playoff.beatOriginal ? 'beat' : 'lost to'} original.`)
+  }
+}
 
 function pathOf(champ) {
   const steps = []
@@ -718,6 +771,8 @@ return {
   },
   referenceChallenge,
   recommendation,
+  effects,
+  playoff,
   disqualified: pool.filter(t => t.flaw?.disqualified).map(t => ({ label: t.label, flaw: t.flaw.flaw })),
   graph: {
     groups: groups.map((g, gi) => ({ group: LETTERS[gi], standings: adv[gi].ranked.map(t => ({ label: t.label, pts: adv[gi].pts.get(t.id) })), advanced: [adv[gi].ranked[0].label, adv[gi].ranked[1].label] })),
