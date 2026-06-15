@@ -352,10 +352,16 @@ Return JSON { axes: [ { name, values: [ { value, fragment } ] } ] }.`
   const seen = new Set()
   rawAxes = rawAxes.filter(a => Object.keys(a.valuesObj || {}).length >= 2 && !seen.has(a.name) && seen.add(a.name))
   if (!rawAxes.length) {
-    // Every proposed axis was unusable (e.g. single-value, or all duplicate names). Re-apply
-    // the binary fallback so a dynamic run never silently collapses to an empty design.
-    log('No usable axes after filtering (each needs >=2 distinct values); using a single binary fallback axis.')
-    rawAxes = [{ name: 'variant', valuesObj: { a: 'one strong take', b: 'a different strong take' } }]
+    // Every proposed axis was unusable (single-value, or all duplicate names). In DYNAMIC
+    // mode the binary fallback is the documented graceful degradation. In FORCED mode the
+    // author specified the axes, so fail fast and surface the mistake rather than silently
+    // running a whole tournament on a generic design.
+    if (design.mode === 'dynamic') {
+      log('No usable axes from the finder (each needs >=2 distinct values); using a single binary fallback axis.')
+      rawAxes = [{ name: 'variant', valuesObj: { a: 'one strong take', b: 'a different strong take' } }]
+    } else {
+      throw new Error('DESIGN.kind=axes mode=forced but no usable axes (each needs a name and >=2 distinct values). Fix DESIGN.axes, or use mode:dynamic.')
+    }
   }
   const comboAxes = rawAxes.map(a => ({ name: a.name, values: Object.keys(a.valuesObj) }))
   const frag = {}; rawAxes.forEach(a => { frag[a.name] = a.valuesObj })
