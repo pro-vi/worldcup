@@ -4,3 +4,7 @@ logs/
 node_modules/
 *.tmp
 /scratch/
+
+# local agent session data — not part of the repo
+.prov/
+.claude/
