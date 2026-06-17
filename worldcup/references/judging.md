@@ -157,6 +157,13 @@ others. Diversity kills shared failure modes; replicas only reduce noise.
 - **cold-reader** — an intelligent reader with no obligation to be impressed. Which would
   you rather finish, remember, and send to one thoughtful friend, with no reward for fake
   intimacy or LLM polish.
+- **coherence** *(seated for assembled candidates — the section / recombination route)* —
+  does the piece read as one continuous whole, or a stapled lineup of mismatched parts.
+  Penalizes tonal breaks, a dropped throughline, and seams where one section's voice or
+  stance clashes with the next. The section route judges slots in isolation, so this is the
+  juror that catches the Frankenstein an all-best-parts assembly can become — a coherent
+  piece can rightly beat a higher-sum-of-parts rival. (A team that plays together, not
+  eleven soloists.)
 
 ### Domain profiles (the judge is general; the gate and lenses swap)
 
@@ -193,6 +200,10 @@ champion is provisional until the rating confirms it.
 | Semi-final        | the 5 lenses, run mirrored (A/B swapped), +cross-model | 5-6   |
 | Final             | the 5 lenses + cross-model, re-run on a split          | 5-7   |
 | Reference challenge | champion vs the true original, full panel            | 5-7   |
+
+For the **section / recombination route** (assembled candidates), a **coherence** juror is
+seated in *every* panel above (+1 vote per match): an assembly is stapled from independently
+judged slots, so the seam check has to run throughout, not just at the end.
 
 Any juror at any stage may raise a `fatal_concern`; if it does, route that entry back
 through the fabrication gate before its result counts. Fabrication can hide until a close

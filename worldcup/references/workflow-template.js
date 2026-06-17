@@ -32,14 +32,21 @@ const LETTERS = 'ABCDEFGHIJKL'.split('')
 // ─── DESIGN — how candidates are created (see references/design-pass.md).
 // kind:'flat' = the classic FLAVORS list (one nominal axis). kind:'axes' = a factorial
 // grid: candidates are points in a coordinate system, the field is a (possibly fractional)
-// cross-product of orthogonal axes. ('sections' is reserved -> PLAN_2.)
+// cross-product of orthogonal axes. kind:'sections' = a compositional design: the artifact
+// is S slots (positions), each with its own candidates (players); a candidate is a chosen
+// LINEUP (one variant per slot), assembled deterministically and judged with a coherence lens.
 const DESIGN = {
-  kind: 'flat',                 // 'flat' | 'axes'
+  kind: 'flat',                 // 'flat' | 'axes' | 'sections'
   // --- kind:'flat' (FILL: FIELD distinct angle seeds) ---
   flavors: [ /* { name, brief }, ... length === FIELD */ ],
   // --- kind:'axes' ---
   mode: 'forced',               // 'forced' (axes given) | 'dynamic' (axis-finder proposes them)
   axes: [ /* { name, values: { valueLabel: 'prompt fragment', ... } }, ...; product reconciled to FIELD */ ],
+  // --- kind:'sections' (FILL the slots; ∏ survivors is reconciled to FIELD like axes) ---
+  sections: {
+    keepPerSlot: 2,             // top-k variants kept per slot — the squad depth at each position
+    slots: [ /* { slot: 'hook', count: 4, brief: 'how to open the piece' }, ...; >=2 slots */ ],
+  },
 }
 
 // ──────────────────────────────────────────── (3) CRITERIA + INCUMBENT (FILL)
@@ -92,13 +99,21 @@ const LENSES = {
   substance: 'Strip the style. Is there a real claim earned by real reasoning, or vibes and momentum. Does the argument advance and land.',
   taste:     'You are a discerning editor who has read ten thousand of these. Fresh or formulaic. Earned or performed. Would you publish it.',
   integrity: 'Is the concrete detail honest or manufactured. For nonfiction, does it buy vividness with invented fact. Penalize performed authenticity; reward earned, plausibly-true specifics and honest understatement.',
+  coherence: 'Does this read as one continuous piece, or a stapled lineup of mismatched parts? Penalize tonal breaks, a dropped throughline, and seams where one section\'s voice or stance clashes with the next. Reward a single argument carried across every section in one register — a team that plays together, not eleven soloists.',
 }
-const panelFor = stakes => ({
-  R32: ['voice', 'substance', 'taste'], R16: ['voice', 'substance', 'taste'],
-  QF: ['voice', 'substance', 'taste', 'integrity'],
-  SF: ['voice', 'substance', 'taste', 'integrity'],
-  FINAL: ['voice', 'substance', 'taste', 'integrity'],
-}[stakes] || ['voice', 'substance', 'taste'])
+// Assembled (kind:'sections') candidates are stapled from independently-judged slots, so a
+// coherence juror rides in every panel to catch Frankenstein seams a whole-generated piece
+// never has. Whole-generated fields (flat/axes) are coherent by construction and skip it.
+const COHERENCE_ON = DESIGN.kind === 'sections'
+const panelFor = stakes => {
+  const base = {
+    R32: ['voice', 'substance', 'taste'], R16: ['voice', 'substance', 'taste'],
+    QF: ['voice', 'substance', 'taste', 'integrity'],
+    SF: ['voice', 'substance', 'taste', 'integrity'],
+    FINAL: ['voice', 'substance', 'taste', 'integrity'],
+  }[stakes] || ['voice', 'substance', 'taste']
+  return COHERENCE_ON ? [...base, 'coherence'] : base
+}
 
 // ─────────────────────────────────────────────────────── PROMPTS
 const flawPrompt = e => `You are screening ONE entry for FATAL FLAWS before it competes. Not judging quality; checking for disqualification.
@@ -382,6 +397,92 @@ Return JSON { title, oneLineAngle, markdown (the full artifact) }.`
   })
 }
 
+// ─────────────────────────────────────────────────── SECTION ROUTE (U4/U5)
+// Compositional design (see references/design-pass.md). STAGE 1: per slot, generate `count`
+// candidates and judge them IN ISOLATION — fit to the rest of the piece, not the slot in a
+// vacuum — keeping the top `keepPerSlot`. STAGE 2: treat slot survivors as categorical axes,
+// reconcile the assembly cross-product to FIELD (reusing the axes machinery, so effects + the
+// coordinate view come for free), and staple each chosen LINEUP into one markdown. The engine
+// is untouched: an assembly enters the pool as a normal candidate with coords = slot->survivor.
+const slotGenPrompt = (s, k, BASE, SPEC) => `Produce ONE candidate for the "${s.slot}" section of the artifact below — variant #${k + 1}. ${s.brief || ''}
+Write ONLY this section, but make it fit the WHOLE piece (given as fixed context): it must hand off cleanly to the sections around it, in one consistent voice. Do not rewrite the rest.
+Constraints / criteria:
+${SPEC}
+THE WHOLE PIECE (fixed context — the rest of the squad this section plays with):
+---
+${BASE}
+---
+Return JSON { markdown (just the "${s.slot}" section) }.`
+
+const slotJudgePrompt = (s, X, Y, BASE, SPEC) => `Two candidates for the "${s.slot}" section compete. Pick the one that better serves THIS piece — judge FIT with the surrounding sections and the throughline, plus intrinsic quality. Not the section in a vacuum. No ties.
+Criteria:
+${SPEC}
+THE WHOLE PIECE (fixed context):
+---
+${BASE}
+---
+CANDIDATE X (a "${s.slot}"):
+---
+${X.markdown}
+---
+CANDIDATE Y (a "${s.slot}"):
+---
+${Y.markdown}
+---
+Return JSON { winner:"X"|"Y", confidence }.`
+
+// deriveSections: DESIGN -> [{ id, label, coords, markdown }], length === FIELD. Markdown is
+// ASSEMBLED here (no per-candidate generation agent in the outer loop).
+async function deriveSections(design, BASE, SPEC) {
+  const cfg = design.sections || {}
+  const slots = (cfg.slots || []).filter(s => s && s.slot && (s.count || 0) >= 1)
+  if (slots.length < 2) throw new Error(`DESIGN.kind=sections needs >=2 slots, each { slot, count, brief }. Got ${slots.length}.`)
+  const names = slots.map(s => s.slot)
+  // Each slot is a distinct coordinate dimension; coords/effects/the lineup view key by slot
+  // name (like axis names), so a duplicate name would silently collapse two positions into one
+  // (one slot's survivors dropped from the assembly). Unlike deriveAxes (which can quietly drop
+  // a dup axis), every slot here is load-bearing — so fail fast on the authoring error.
+  if (new Set(names).size !== names.length) throw new Error(`DESIGN.sections has duplicate slot names (${names.join(', ')}); each slot must be a distinct position. Rename the duplicates.`)
+  const keepPerSlot = Math.max(1, cfg.keepPerSlot || 2)
+  phase('Generate')
+  // STAGE 1 — per-slot squads: generate `count` candidates, judge in isolation, keep top-k.
+  const survivors = {}
+  for (const s of slots) {
+    const V = Math.max(2, s.count)
+    const variants = (await parallel(Array.from({ length: V }, (_, k) => () =>
+      agent(slotGenPrompt(s, k, BASE, SPEC), { label: `slot:${s.slot}:v${k + 1}`, phase: 'Generate', schema: GEN_SCHEMA })
+        .then(x => x && { id: k, slot: s.slot, label: `${s.slot}${k + 1}`, markdown: x.markdown, rating: 1500 })))).filter(Boolean)
+    if (variants.length < 2) { survivors[s.slot] = variants; log(`Slot "${s.slot}": only ${variants.length} variant(s) generated; kept as-is.`); continue }
+    const sd = []  // slot-local decided, for a slot Elo (single 'fit' juror, V is small)
+    await parallel(roundRobin(variants).map(([X, Y], idx) => () => {
+      const flip = idx % 2 === 1, [A, B] = flip ? [Y, X] : [X, Y]
+      return agent(slotJudgePrompt(s, A, B, BASE, SPEC), { label: `slotjudge:${s.slot}:${A.label}>${B.label}`, phase: 'Generate', schema: SEED_SCHEMA })
+        .then(v => { if (v) sd.push({ winnerId: v.winner === 'X' ? A.id : B.id, loserId: v.winner === 'X' ? B.id : A.id }) })
+    }))
+    const r = new Map(eloRatings(variants, sd))
+    variants.forEach(v => { v.rating = r.get(v.id) })
+    survivors[s.slot] = [...variants].sort((a, b) => b.rating - a.rating).slice(0, Math.min(keepPerSlot, variants.length))
+    log(`Slot "${s.slot}": ${variants.length} tried -> kept ${survivors[s.slot].length} (${survivors[s.slot].map(t => t.label).join(', ')}).`)
+  }
+  // STAGE 2 — survivors are categorical axes; reconcile the assembly cross-product to FIELD.
+  const sectionAxes = slots.map(s => ({ name: s.slot, values: (survivors[s.slot] || []).map(v => v.label) }))
+  if (sectionAxes.some(a => a.values.length < 1)) throw new Error('A slot produced no usable variants; cannot assemble lineups.')
+  const md = {}; slots.forEach(s => { md[s.slot] = Object.fromEntries((survivors[s.slot] || []).map(v => [v.label, v.markdown])) })
+  const { cells, strategy, estimable, meta } = reconcile(sectionAxes, FIELD)
+  design.resolved = { axes: sectionAxes, frag: null, strategy, estimable, meta }
+  if (meta.M < FIELD) log(`Sections: only ${meta.M} distinct lineups < FIELD=${FIELD}; some will repeat — raise keepPerSlot or slot counts to fill the field.`)
+  log(`Sections: ${slots.length} slots (${sectionAxes.map(a => a.values.length).join('x')}=${meta.M}) -> ${strategy} -> ${FIELD} lineups; effects estimable: ${estimable}.`)
+  const used = new Set()
+  return cells.map((coord, i) => {
+    const clean = {}; for (const k of Object.keys(coord)) if (k !== '__rep') clean[k] = coord[k]
+    let baseLabel = slots.map(s => clean[s.slot]).join('+'), label = baseLabel, n = 1
+    while (used.has(label)) label = `${baseLabel}#${++n}`
+    used.add(label)
+    const markdown = slots.map(s => md[s.slot][clean[s.slot]]).join('\n\n')
+    return { id: i, label, coords: clean, markdown }
+  })
+}
+
 // ─────────────────────────────────────────────────────── (4) CONTESTANTS (FILL)
 // Candidates come from DESIGN (see references/design-pass.md). kind:'flat' is the
 // degenerate single-axis design (the old FLAVORS list); kind:'axes' is a factorial grid.
@@ -407,7 +508,10 @@ async function deriveCandidates(design) {
   if (design.kind === 'axes') {
     return await deriveAxes(design, BASE, SPEC)   // U3
   }
-  throw new Error(`DESIGN.kind '${design.kind}' unsupported (sections -> PLAN_2)`)
+  if (design.kind === 'sections') {
+    return await deriveSections(design, BASE, SPEC)   // U4/U5 — specs carry assembled markdown
+  }
+  throw new Error(`DESIGN.kind '${design.kind}' unsupported`)
 }
 
 let pool
@@ -415,17 +519,24 @@ if (SOURCE === 'generate') {
   const specs = await deriveCandidates(DESIGN)
   if (specs.length !== FIELD) return { error: `design produced ${specs.length} candidates, need FIELD=${FIELD}` }
   phase('Generate')
-  log(`Generating ${specs.length} variants (DESIGN.kind=${DESIGN.kind})..`)
-  let got = []
-  for (let attempt = 0; got.length < specs.length && attempt < 3; attempt++) {
-    const todo = specs.filter(s => !got.some(g => g.id === s.id))
-    const r = (await parallel(todo.map(s => () =>
-      agent(s.prompt, { label: `gen:${s.label}`, phase: 'Generate', schema: GEN_SCHEMA })
-        .then(x => x && ({ id: s.id, label: s.label, coords: s.coords, ...x }))))).filter(Boolean)
-    got = got.concat(r)
+  if (specs.every(s => s.markdown != null)) {
+    // sections: candidates are deterministically ASSEMBLED from slot survivors (no per-candidate
+    // generation agent) — Stage 1 already spent its agent calls generating + judging the slots.
+    log(`Assembled ${specs.length} lineups from slot survivors (DESIGN.kind=sections)..`)
+    pool = specs.map(s => ({ id: s.id, label: s.label, coords: s.coords, markdown: s.markdown, title: '', oneLineAngle: '' }))
+  } else {
+    log(`Generating ${specs.length} variants (DESIGN.kind=${DESIGN.kind})..`)
+    let got = []
+    for (let attempt = 0; got.length < specs.length && attempt < 3; attempt++) {
+      const todo = specs.filter(s => !got.some(g => g.id === s.id))
+      const r = (await parallel(todo.map(s => () =>
+        agent(s.prompt, { label: `gen:${s.label}`, phase: 'Generate', schema: GEN_SCHEMA })
+          .then(x => x && ({ id: s.id, label: s.label, coords: s.coords, ...x }))))).filter(Boolean)
+      got = got.concat(r)
+    }
+    if (got.length < FIELD) return { error: `generated ${got.length}/${FIELD}; rerun` }
+    pool = got.sort((a, b) => a.id - b.id)
   }
-  if (got.length < FIELD) return { error: `generated ${got.length}/${FIELD}; rerun` }
-  pool = got.sort((a, b) => a.id - b.id)
 } else {
   // GIVEN: args is the array of items. Normalize to { id, label, coords, markdown }.
   pool = (args || []).slice(0, FIELD).map((it, i) => ({
@@ -695,8 +806,16 @@ function renderReportV2() {
   const dq = pool.filter(t => t.flaw && t.flaw.disqualified)
   const dqHtml = dq.length ? `<div class="panel"><h3>Disqualified at the gate (${dq.length})</h3><ul>${dq.map(t => `<li>${entry(t.label)}: ${esc(t.flaw.flaw)}</li>`).join('')}</ul></div>` : `<div class="panel"><h3>Fabrication gate</h3><div class="muted">0 disqualified.</div></div>`
   const refTxt = referenceChallenge ? (referenceChallenge.championBeatOriginal ? `champion beat the original (${esc(referenceChallenge.margin)})` : 'champion did NOT beat the original') : 'no incumbent'
-  // ─── coordinate view (axes only): parallel coordinates + axis effects + a 2-axis explorer
-  const cv_axes = (DESIGN.kind === 'axes' && DESIGN.resolved && DESIGN.resolved.axes && effects) ? DESIGN.resolved.axes : null
+  // ─── coordinate view (axes + sections): parallel coordinates + effects + a 2-axis explorer.
+  // For sections it reads as a LINEUP: each axis is a position (slot), each value a player
+  // (slot survivor), each polyline a candidate lineup, the champion drawn gold; effects bars
+  // are per-player form (marginal Elo), the explorer compares any two positions.
+  const cv_axes = ((DESIGN.kind === 'axes' || DESIGN.kind === 'sections') && DESIGN.resolved && DESIGN.resolved.axes && effects) ? DESIGN.resolved.axes : null
+  const isSec = !!cv_axes && DESIGN.kind === 'sections'
+  const cvTitle = isSec ? 'Lineup space &middot; positions &times; players' : 'Coordinate space'
+  const cvChampKey = isSec ? 'winning lineup' : 'champion'
+  const cvOptLbl = isSec ? 'best XI (top player per position)' : 'predicted optimum'
+  const cvExplore = isSec ? 'compare two positions' : 'explore two axes'
   let coordPanel = '', coordScript = ''
   if (cv_axes) {
     const W = 760, H = 240, padX = 64, padY = 34
@@ -721,10 +840,10 @@ function renderReportV2() {
     const estLabel = effects.estimable === 'none' ? '<span class="warn">empirical, not fitted</span>' : `fitted (${esc(effects.estimable)})`
     const opt = effects.predictedOptimum, optTxt = `${esc(opt.label)} ${opt.inField ? '(in field)' : '(synthesized)'}`
     const axSel = id => `<select id="${id}" onchange="grid()">${cv_axes.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`).join('')}</select>`
-    coordPanel = `<div class="panel coord"><h3>Coordinate space &middot; ${esc(effects.strategy)} &middot; effects ${estLabel}</h3>
-<div class="pc-wrap">${pcSvg}</div><div class="pc-key"><span class="champ">champion</span>${optLine ? '<span class="opt">predicted optimum</span>' : ''}</div>
-<div class="eff">${effRows}<div class="erow"><div class="eax">predicted optimum</div><div class="muted">${optTxt} &middot; top interactions: ${interTxt}</div></div></div>
-<div class="explorer"><div class="exsel">explore two axes &mdash; X ${axSel('gx')} Y ${axSel('gy')}</div><div id="grid"></div></div></div>`
+    coordPanel = `<div class="panel coord"><h3>${cvTitle} &middot; ${esc(effects.strategy)} &middot; effects ${estLabel}</h3>
+<div class="pc-wrap">${pcSvg}</div><div class="pc-key"><span class="champ">${cvChampKey}</span>${optLine ? `<span class="opt">${cvOptLbl}</span>` : ''}</div>
+<div class="eff">${effRows}<div class="erow"><div class="eax">${cvOptLbl}</div><div class="muted">${optTxt} &middot; top interactions: ${interTxt}</div></div></div>
+<div class="explorer"><div class="exsel">${cvExplore} &mdash; X ${axSel('gx')} Y ${axSel('gy')}</div><div id="grid"></div></div></div>`
     const J = o => JSON.stringify(o).replace(/</g, '\\u003c')
     coordScript = `
 var AXES=${J(cv_axes.map(a => ({ name: a.name, values: a.values })))};
