@@ -89,10 +89,20 @@ The candidate enters the engine as a normal pool item (`{ id, label, coords, mar
 The one engine change: a **coherence** lens is seated in every panel (see judging.md), because
 an assembly stapled from independently-judged slots can be a Frankenstein the slot judges
 never saw. A coherent lineup can rightly beat a higher-sum-of-parts rival — that interaction
-is exactly what the section route exists to surface. If `∏ keepPerSlot < FIELD`, lineups
-repeat (logged, not silent); raise `keepPerSlot` or slot `count` to fill the field. Evolve
-mode (genetic crossover over lineups) and an optimal-design solver are deferred to PLAN_2
-U9/U10.
+is exactly what the section route exists to surface.
+
+Each slot is a contest (`count >= 2`; malformed or missing slots fail fast — they are never
+silently dropped, since every slot is a load-bearing section of the artifact). The field must
+be genuinely diverse: if `∏ survivors` falls below `FIELD/4` the run **errors** (a clone-vs-clone
+bracket would let the trust verdict certify a coin flip as "robust"); between `FIELD/4` and
+`FIELD` it warns about the replicated duplicates. Size the slots so
+`∏ min(keepPerSlot, count) >= FIELD` (e.g. `keepPerSlot: 2` needs ≥5 slots for FIELD=32). Cost:
+Stage 1 is `≈ Σ_slot [count + count·(count−1)/2]` BASE-bearing calls — generation and judging
+are flattened across slots (parallel, slowest-slot wall-clock) with a 3× retry on transient
+failures, but token cost grows quadratically in `count`, so keep `count` modest.
+
+Evolve mode (genetic crossover over lineups; opt-in, default off) and an optimal-design solver
+are deferred to PLAN_2 U9/U10.
 
 ## What this does NOT do (PLAN_1 + section-route scope)
 

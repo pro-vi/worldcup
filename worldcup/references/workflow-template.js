@@ -43,9 +43,12 @@ const DESIGN = {
   mode: 'forced',               // 'forced' (axes given) | 'dynamic' (axis-finder proposes them)
   axes: [ /* { name, values: { valueLabel: 'prompt fragment', ... } }, ...; product reconciled to FIELD */ ],
   // --- kind:'sections' (FILL the slots; ∏ survivors is reconciled to FIELD like axes) ---
+  // Each slot is a CONTEST: count>=2 (a fixed section belongs in BASE, not here). Size it so
+  // ∏(min(keepPerSlot,count)) is >= FIELD/4 (hard floor) and ideally >= FIELD, else the field
+  // is mostly replicated clones — e.g. keepPerSlot:2 needs >=5 slots to reach 32 distinct.
   sections: {
     keepPerSlot: 2,             // top-k variants kept per slot — the squad depth at each position
-    slots: [ /* { slot: 'hook', count: 4, brief: 'how to open the piece' }, ...; >=2 slots */ ],
+    slots: [ /* { slot: 'hook', count: 4, brief: 'how to open the piece' }, ...; >=2 slots, count>=2 */ ],
   },
 }
 
@@ -435,42 +438,68 @@ Return JSON { winner:"X"|"Y", confidence }.`
 // ASSEMBLED here (no per-candidate generation agent in the outer loop).
 async function deriveSections(design, BASE, SPEC) {
   const cfg = design.sections || {}
-  const slots = (cfg.slots || []).filter(s => s && s.slot && (s.count || 0) >= 1)
-  if (slots.length < 2) throw new Error(`DESIGN.kind=sections needs >=2 slots, each { slot, count, brief }. Got ${slots.length}.`)
+  const declared = cfg.slots || []
+  if (declared.length < 2) throw new Error(`DESIGN.kind=sections needs >=2 slots, each { slot, count>=2, brief }. Got ${declared.length}.`)
+  // Validate EVERY declared slot and fail fast — never silently drop a malformed slot, because
+  // each slot is a load-bearing section of the final artifact (dropping one assembles an
+  // incomplete piece). A slot is a CONTEST, so count>=2; a fixed section belongs in BASE, not
+  // declared here. Mirrors deriveAxes's fail-fast on unusable forced axes.
+  declared.forEach((s, i) => {
+    if (!s || typeof s.slot !== 'string' || !s.slot) throw new Error(`DESIGN.sections.slots[${i}] has no 'slot' name.`)
+    if (!Number.isInteger(s.count) || s.count < 2) throw new Error(`DESIGN.sections slot "${s.slot || i}" needs an integer count>=2 (a slot is a contest; bake a fixed section into BASE instead). Got count=${s.count}.`)
+  })
+  const slots = declared
   const names = slots.map(s => s.slot)
   // Each slot is a distinct coordinate dimension; coords/effects/the lineup view key by slot
-  // name (like axis names), so a duplicate name would silently collapse two positions into one
-  // (one slot's survivors dropped from the assembly). Unlike deriveAxes (which can quietly drop
-  // a dup axis), every slot here is load-bearing — so fail fast on the authoring error.
+  // name, so a duplicate name would silently collapse two positions into one. Fail fast.
   if (new Set(names).size !== names.length) throw new Error(`DESIGN.sections has duplicate slot names (${names.join(', ')}); each slot must be a distinct position. Rename the duplicates.`)
   const keepPerSlot = Math.max(1, cfg.keepPerSlot || 2)
   phase('Generate')
-  // STAGE 1 — per-slot squads: generate `count` candidates, judge in isolation, keep top-k.
-  const survivors = {}
-  for (const s of slots) {
-    const V = Math.max(2, s.count)
-    const variants = (await parallel(Array.from({ length: V }, (_, k) => () =>
+  // STAGE 1 — per-slot squads. Slots are independent, so generation AND judging are FLATTENED
+  // across all slots into two big parallels (slots overlap; wall-clock = the slowest slot, not
+  // the sum). Generation retries transient failures up to 3x, parity with the flat/axes path.
+  const gen = {}; slots.forEach(s => { gen[s.slot] = [] })
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const need = []
+    slots.forEach(s => { for (let k = 0; k < s.count; k++) if (!gen[s.slot].some(v => v.id === k)) need.push({ s, k }) })
+    if (!need.length) break
+    const got = (await parallel(need.map(({ s, k }) => () =>
       agent(slotGenPrompt(s, k, BASE, SPEC), { label: `slot:${s.slot}:v${k + 1}`, phase: 'Generate', schema: GEN_SCHEMA })
         .then(x => x && { id: k, slot: s.slot, label: `${s.slot}${k + 1}`, markdown: x.markdown, rating: 1500 })))).filter(Boolean)
-    if (variants.length < 2) { survivors[s.slot] = variants; log(`Slot "${s.slot}": only ${variants.length} variant(s) generated; kept as-is.`); continue }
-    const sd = []  // slot-local decided, for a slot Elo (single 'fit' juror, V is small)
-    await parallel(roundRobin(variants).map(([X, Y], idx) => () => {
-      const flip = idx % 2 === 1, [A, B] = flip ? [Y, X] : [X, Y]
-      return agent(slotJudgePrompt(s, A, B, BASE, SPEC), { label: `slotjudge:${s.slot}:${A.label}>${B.label}`, phase: 'Generate', schema: SEED_SCHEMA })
-        .then(v => { if (v) sd.push({ winnerId: v.winner === 'X' ? A.id : B.id, loserId: v.winner === 'X' ? B.id : A.id }) })
-    }))
-    const r = new Map(eloRatings(variants, sd))
+    got.forEach(v => gen[v.slot].push(v))
+  }
+  for (const s of slots) if (gen[s.slot].length < 2) throw new Error(`Slot "${s.slot}" produced only ${gen[s.slot].length} variant(s) after 3 attempts (need >=2 to hold a contest); rerun, or check the generator.`)
+  // Judge each slot IN ISOLATION (fit to the rest of the piece, not the slot in a vacuum),
+  // flattened across slots; per-slot results feed a per-slot Elo.
+  const sd = {}; slots.forEach(s => { sd[s.slot] = [] })
+  const judgeTasks = []
+  slots.forEach(s => roundRobin(gen[s.slot]).forEach(([X, Y], idx) => judgeTasks.push({ s, X, Y, idx })))
+  await parallel(judgeTasks.map(({ s, X, Y, idx }) => () => {
+    const flip = idx % 2 === 1, [A, B] = flip ? [Y, X] : [X, Y]
+    return agent(slotJudgePrompt(s, A, B, BASE, SPEC), { label: `slotjudge:${s.slot}:${A.label}>${B.label}`, phase: 'Generate', schema: SEED_SCHEMA })
+      .then(v => { if (v) sd[s.slot].push({ winnerId: v.winner === 'X' ? A.id : B.id, loserId: v.winner === 'X' ? B.id : A.id }) })
+  }))
+  const survivors = {}
+  for (const s of slots) {
+    const variants = gen[s.slot]
+    const r = new Map(eloRatings(variants, sd[s.slot]))
     variants.forEach(v => { v.rating = r.get(v.id) })
     survivors[s.slot] = [...variants].sort((a, b) => b.rating - a.rating).slice(0, Math.min(keepPerSlot, variants.length))
     log(`Slot "${s.slot}": ${variants.length} tried -> kept ${survivors[s.slot].length} (${survivors[s.slot].map(t => t.label).join(', ')}).`)
   }
   // STAGE 2 — survivors are categorical axes; reconcile the assembly cross-product to FIELD.
-  const sectionAxes = slots.map(s => ({ name: s.slot, values: (survivors[s.slot] || []).map(v => v.label) }))
-  if (sectionAxes.some(a => a.values.length < 1)) throw new Error('A slot produced no usable variants; cannot assemble lineups.')
-  const md = {}; slots.forEach(s => { md[s.slot] = Object.fromEntries((survivors[s.slot] || []).map(v => [v.label, v.markdown])) })
+  const sectionAxes = slots.map(s => ({ name: s.slot, values: survivors[s.slot].map(v => v.label) }))
+  const md = {}; slots.forEach(s => { md[s.slot] = Object.fromEntries(survivors[s.slot].map(v => [v.label, v.markdown])) })
   const { cells, strategy, estimable, meta } = reconcile(sectionAxes, FIELD)
   design.resolved = { axes: sectionAxes, frag: null, strategy, estimable, meta }
-  if (meta.M < FIELD) log(`Sections: only ${meta.M} distinct lineups < FIELD=${FIELD}; some will repeat — raise keepPerSlot or slot counts to fill the field.`)
+  // Distinctness floor: if the survivor product M is far below FIELD the field is mostly
+  // replicated clones, the bracket is clone-vs-clone (forced coin flips), and the trust verdict
+  // would certify a coin-flip champion as "robust". Fail fast (parity with deriveAxes) rather
+  // than burn the agent budget on a meaningless tournament. M in [floor, FIELD) is allowed but
+  // warned. Raise keepPerSlot or add slots so the field is genuinely diverse.
+  const floor = Math.max(2, Math.floor(FIELD / 4))
+  if (meta.M < floor) throw new Error(`Sections produced only ${meta.M} distinct lineup(s) (< floor ${floor} for FIELD=${FIELD}); the field would be mostly duplicates and the trust verdict meaningless. Add slots or raise keepPerSlot so ∏ survivors >= ${floor} (ideally >= ${FIELD}).`)
+  if (meta.M < FIELD) log(`Sections: ${meta.M} distinct lineups for FIELD=${FIELD} — ${FIELD - meta.M} bracket slots are replicated duplicates; raise keepPerSlot or slot counts to fill the field with distinct lineups.`)
   log(`Sections: ${slots.length} slots (${sectionAxes.map(a => a.values.length).join('x')}=${meta.M}) -> ${strategy} -> ${FIELD} lineups; effects estimable: ${estimable}.`)
   const used = new Set()
   return cells.map((coord, i) => {

@@ -203,7 +203,9 @@ champion is provisional until the rating confirms it.
 
 For the **section / recombination route** (assembled candidates), a **coherence** juror is
 seated in *every* panel above (+1 vote per match): an assembly is stapled from independently
-judged slots, so the seam check has to run throughout, not just at the end.
+judged slots, so the seam check has to run throughout, not just at the end. This makes the
+early-round panels even (R32/R16 become 4 jurors); a tied panel is resolved by the existing
+even-split tiebreak (seat one more juror, then fall back to the higher rating).
 
 Any juror at any stage may raise a `fatal_concern`; if it does, route that entry back
 through the fabrication gate before its result counts. Fabrication can hide until a close
