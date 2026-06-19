@@ -92,7 +92,10 @@ never saw. A coherent lineup can rightly beat a higher-sum-of-parts rival — th
 is exactly what the section route exists to surface.
 
 Each slot is a contest (`count >= 2`; malformed or missing slots fail fast — they are never
-silently dropped, since every slot is a load-bearing section of the artifact). The field must
+silently dropped, since every slot is a load-bearing section of the artifact). The assembled
+artifact is *exactly* these slots joined in declared order: `BASE` is reference context for
+generation and judging and is **not** part of the output, so a fixed (non-contested) section
+cannot live in `BASE` and appear in the result — every output section must be a contested slot. The field must
 be genuinely diverse: if `∏ survivors` falls below `FIELD/4` the run **errors** (a clone-vs-clone
 bracket would let the trust verdict certify a coin flip as "robust"); between `FIELD/4` and
 `FIELD` it warns about the replicated duplicates. Size the slots so

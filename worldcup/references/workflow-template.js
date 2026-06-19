@@ -506,7 +506,7 @@ async function deriveSections(design, BASE, SPEC) {
   // declared here. Mirrors deriveAxes's fail-fast on unusable forced axes.
   declared.forEach((s, i) => {
     if (!s || typeof s.slot !== 'string' || !s.slot) throw new Error(`DESIGN.sections.slots[${i}] has no 'slot' name.`)
-    if (!Number.isInteger(s.count) || s.count < 2) throw new Error(`DESIGN.sections slot "${s.slot || i}" needs an integer count>=2 (a slot is a contest; bake a fixed section into BASE instead). Got count=${s.count}.`)
+    if (!Number.isInteger(s.count) || s.count < 2) throw new Error(`DESIGN.sections slot "${s.slot || i}" needs an integer count>=2 (a slot is a contest). The section route assembles ONLY the declared slots, joined in order; BASE is reference context for generation/judging and is NOT part of the output, so a fixed section cannot be "baked into BASE" and still appear — every output section must be a contested slot. Got count=${s.count}.`)
   })
   const slots = declared
   const names = slots.map(s => s.slot)
@@ -607,6 +607,10 @@ async function deriveSections(design, BASE, SPEC) {
     let baseLabel = slots.map(s => clean[s.slot]).join('+'), label = baseLabel, n = 1
     while (used.has(label)) label = `${baseLabel}#${++n}`
     used.add(label)
+    // The artifact IS the declared slots joined in order. BASE is reference context for
+    // generation/judging and is deliberately NOT spliced in here, so anything you want in the
+    // output must be a contested slot (see the count>=2 guard). A fixed section left in BASE
+    // would be silently dropped — the count guard's message states this contract.
     const markdown = slots.map(s => md[s.slot][clean[s.slot]]).join('\n\n')
     return { id: i, label, coords: clean, markdown }
   })
