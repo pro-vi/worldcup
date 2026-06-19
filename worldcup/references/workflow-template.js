@@ -519,17 +519,18 @@ async function deriveSections(design, BASE, SPEC) {
   // Run the cheap DETERMINISTIC gate on slot variants BEFORE judging/keeping. screenAll only
   // runs after assembly, so a hard-preflight violation (e.g. the em-dash ban) that wins its slot
   // gets stapled into every lineup that uses it and auto-DQs the assembled field — the whole
-  // field when keepPerSlot=1. Drop hard-DQ variants when >=2 clean remain (so the contest still
-  // runs); otherwise keep them and let the post-assembly gate stay the backstop. (The full LLM
-  // fatal-flaw gate is intentionally NOT run per slot variant — that would multiply Stage 1 cost;
-  // the deterministic preflight catches the cited auto-DQ case here.)
+  // field when keepPerSlot=1. Restrict each slot to its CLEAN variants and NEVER retain a hard-DQ
+  // one as a survivor: >=2 clean hold the contest; exactly 1 clean auto-advances (the slot judge
+  // is blind to preflight, so a lone clean candidate must not be made to "lose" to a hard-DQ one,
+  // which under keepPerSlot=1 would staple the bad section into the whole field); 0 clean fails
+  // the slot. (The full LLM fatal-flaw gate is intentionally NOT run per slot variant — that would
+  // multiply Stage 1 cost; the deterministic preflight catches the cited auto-DQ case here.)
   for (const s of slots) {
     const clean = gen[s.slot].filter(v => !preflight(v.markdown).hardDQ)
-    if (clean.length >= 2 && clean.length < gen[s.slot].length) {
-      log(`Slot "${s.slot}": ${gen[s.slot].length - clean.length} variant(s) failed the deterministic gate (e.g. em dash) and were dropped before judging.`)
+    if (clean.length === 0) throw new Error(`Slot "${s.slot}": all ${gen[s.slot].length} variant(s) fail the deterministic gate (e.g. em dash); no eligible section to field. Rerun, or fix the generator/bans.`)
+    if (clean.length < gen[s.slot].length) {
+      log(`Slot "${s.slot}": ${gen[s.slot].length - clean.length} hard-DQ variant(s) dropped${clean.length === 1 ? '; the single clean candidate auto-advances (no contest)' : ' before judging'}.`)
       gen[s.slot] = clean
-    } else if (clean.length < gen[s.slot].length) {
-      log(`Slot "${s.slot}": only ${clean.length} variant(s) pass the deterministic gate; keeping all ${gen[s.slot].length} so the contest can run — the post-assembly gate remains the backstop.`)
     }
   }
   // Judge each slot IN ISOLATION (fit to the rest of the piece, not the slot in a vacuum),
