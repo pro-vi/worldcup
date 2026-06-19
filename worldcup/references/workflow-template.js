@@ -65,7 +65,8 @@ const DESIGN = {
 // a claim to verify, not ground truth. Put target material ONLY in TARGET, never inline in
 // the rubric. Leave TARGET='' for runs with no external target (the default). For headless /
 // no-operator runs, a phase-0 fetch agent using built-in WebFetch/WebSearch is the fallback.
-const TARGET = ''  // FILL for critique/response runs only; '' otherwise (see note above)
+const TARGET_RAW = ''  // FILL for critique/response runs only; '' otherwise (see note above)
+const TARGET = TARGET_RAW.trim()  // whitespace-only is NOT a target — activation requires a real anchor, not just a truthy string
 
 const CRITERIA_BASE = `FILL: the source packet — rubric, fact ledger, disqualifiers.
 Example for Provi prose:
@@ -103,6 +104,18 @@ const HARD_DQ_CATEGORIES = ['FABRICATED_CONCRETE_DETAIL', 'FAKE_AUTHORITY_SIGNAL
   'FALSE_AUTHORIAL_EXPERIENCE', 'CONTRADICTS_SOURCE',
   ...(TARGET ? ['MISREPRESENTS_TARGET'] : []),
   'GENRE_BREACH', 'HOUSE_STYLE_HARD_BAN', 'PLAGIARISTIC_OR_NON_RESPONSIVE']
+// Violation FAMILIES for the gate tally. A real fabrication is usually several overlapping
+// subtypes at once (an invented first-person stack trace is FABRICATED_CONCRETE_DETAIL AND
+// FAKE_AUTHORITY_SIGNAL AND FALSE_AUTHORIAL_EXPERIENCE), so requiring the same SUBTYPE would let
+// three screeners who all correctly see fabrication — but name it differently — wrongly PASS it.
+// The overlapping fabrication subtypes share one family; distinct failure modes (genre, style,
+// responsiveness) stay separate so two unrelated hallucinations can't combine to DQ a clean entry.
+const DQ_FAMILY = {
+  FABRICATED_CONCRETE_DETAIL: 'fabrication', FAKE_AUTHORITY_SIGNAL: 'fabrication',
+  FALSE_AUTHORIAL_EXPERIENCE: 'fabrication', CONTRADICTS_SOURCE: 'fabrication',
+  MISREPRESENTS_TARGET: 'fabrication', GENRE_BREACH: 'genre',
+  HOUSE_STYLE_HARD_BAN: 'style', PLAGIARISTIC_OR_NON_RESPONSIVE: 'responsiveness',
+}
 
 const INCUMBENT = USE_INCUMBENT ? `FILL: the author's true original essay/artifact.` : ''
 const INCUMBENT_CLAUSE = USE_INCUMBENT ? `
@@ -234,14 +247,23 @@ async function screenAll(entries, phase) {
     if (pf.hardDQ) return { disqualified: true, category: 'HOUSE_STYLE_HARD_BAN', flaw: pf.hard.join(', '), soft: pf.soft, votes: SCREENERS }
     const screens = (await parallel(Array.from({ length: SCREENERS }, (_, i) => () =>
       agent(flawPrompt(e0), { label: `flaw${i + 1}:${e0.label}`, phase, schema: FLAW_SCHEMA })))).filter(Boolean)
-    // Same-category majority: DQ only when a STRICT majority of screeners (votes > SCREENERS/2,
-    // i.e. floor(SCREENERS/2)+1) cite the SAME hard-DQ category. Two judges flagging DIFFERENT
-    // violations must not kill a clean entry — that protection is the whole point of the gate.
-    const byCat = {}
-    for (const s of screens) if (s.disqualified && s.category && s.category !== 'NONE' && HARD_DQ_CATEGORIES.includes(s.category)) byCat[s.category] = (byCat[s.category] || 0) + 1
-    const [topCat, topVotes] = Object.entries(byCat).sort((a, b) => b[1] - a[1])[0] || [null, 0]
-    const disqualified = topVotes > SCREENERS / 2
-    return { disqualified, category: disqualified ? topCat : null,
+    // Same-FAMILY majority: DQ when a STRICT majority of screeners (votes > SCREENERS/2) flag the
+    // same violation FAMILY (see DQ_FAMILY). This still stops ONE hallucinating judge from killing a
+    // clean entry (1 vote is never a majority) AND stops a fabricator from slipping through when three
+    // judges all see fabrication but name different subtypes — requiring the same SUBTYPE would wrongly
+    // PASS that. Label the DQ with the most-cited subtype inside the winning family.
+    const byFam = {}
+    for (const s of screens) {
+      if (!(s.disqualified && s.category && s.category !== 'NONE' && HARD_DQ_CATEGORIES.includes(s.category))) continue
+      const fam = DQ_FAMILY[s.category] || s.category
+      const f = byFam[fam] || (byFam[fam] = { votes: 0, cats: {} })
+      f.votes++; f.cats[s.category] = (f.cats[s.category] || 0) + 1
+    }
+    const top = Object.entries(byFam).sort((a, b) => b[1].votes - a[1].votes)[0]
+    const disqualified = !!top && top[1].votes > SCREENERS / 2
+    const topCat = disqualified ? Object.entries(top[1].cats).sort((a, b) => b[1] - a[1])[0][0] : null
+    const topVotes = top ? top[1].votes : 0
+    return { disqualified, category: topCat,
       flaw: disqualified ? ((screens.find(s => s.disqualified && s.category === topCat) || {}).flaw || topCat) : '',
       soft: pf.soft, votes: topVotes }
   }))

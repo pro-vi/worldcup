@@ -146,8 +146,10 @@ Full version in "references/judging.md". The non-negotiables:
 - **Truth is a gate, not a score.** A regex preflight kills the cheap violations (em
   dashes, banned vocab) before any agent runs. Then a 3-judge fabrication gate, armed
   with the fact ledger, disqualifies entries that invent specifics — DQ needs 2 of 3
-  judges agreeing on the same hard-DQ category, so one hallucinating judge cannot wrongly
-  kill a clean entry. A vivid fabricated entry forfeits; it does not lose "some points."
+  judges agreeing on the same violation family (overlapping fabrication subtypes count as
+  one family), so one hallucinating judge cannot wrongly kill a clean entry, yet three
+  judges naming different fabrication subtypes still forfeit it. A vivid fabricated entry
+  forfeits; it does not lose "some points."
   This is the rule that flips the previous bad result.
 - **The reference challenge.** Surviving the bracket is not enough: the champion must
   beat the author's true original head-to-head by a supermajority. If it cannot, the

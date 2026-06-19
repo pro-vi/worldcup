@@ -118,10 +118,15 @@ the title/opening/closing, escalate toward a style DQ.
 
 The most important LLM layer. It asks "is this entry allowed to compete," not "is it
 good." Run **3 independent screeners** (ideally different model families). Disqualify
-only when a **strict majority agree on the same hard-DQ category** (2 of 3 at the maximal
-tier), so two judges flagging *different* violations cannot together kill a clean entry.
-Each screener returns one canonical `category` (NONE when it does not disqualify); the gate
-tallies categories and disqualifies only the one that reaches a majority. Each screener classifies
+only when a **strict majority agree on the same violation FAMILY** (2 of 3 at the maximal
+tier), so two judges flagging *unrelated* violations cannot together kill a clean entry. Family,
+not exact subtype: a real fabrication is usually several overlapping subtypes at once (an invented
+first-person stack trace is fabricated-detail AND fake-authority AND false-experience), so requiring
+the identical subtype would let three screeners who all correctly see fabrication — but name it
+differently — wrongly PASS it. The overlapping fabrication subtypes share one family; genre, style,
+and responsiveness stay separate. Each screener returns one canonical `category` (NONE when it does
+not disqualify); the gate maps it to a family, tallies families, and disqualifies on a family
+majority, labelling the entry with the most-cited subtype in that family. Each screener classifies
 every concrete detail not inherited from the source as
 SUPPORTED / REASONABLE_INFERENCE / UNSUPPORTED_MINOR / FABRICATED.
 
@@ -159,10 +164,10 @@ with `additionalProperties:false` — which collapses `verdict` into `disqualifi
 `soft_fail_categories` / `fabricated_spans` arrays. The `category` enum there is derived from the
 active `HARD_DQ_CATEGORIES`, so `MISREPRESENTS_TARGET` is offered only when a TARGET is in the packet.
 
-Aggregate by category: disqualify an entry only when a strict majority of screeners name the
-SAME category (so split votes on different violations cannot kill a clean entry); record the
-winning category and a representative ruling. Disqualified entries are removed from the field
-before the bracket; record them and why.
+Aggregate by family: disqualify an entry only when a strict majority of screeners name the
+same violation FAMILY (so unrelated split votes cannot kill a clean entry, but overlapping
+fabrication subtypes still combine into a DQ); record the winning subtype and a representative
+ruling. Disqualified entries are removed from the field before the bracket; record them and why.
 
 ## 4. Pairwise, never scalar (for the contest)
 
