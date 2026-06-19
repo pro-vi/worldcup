@@ -219,11 +219,20 @@ function preflight(text) {
 // Fabrication gate: preflight, then SCREENERS independent judges; DQ needs majority.
 // Computed ONCE per entry and cached. The most important call in the system.
 async function screenAll(entries, phase) {
-  return parallel(entries.map(e => async () => {
-    const pf = preflight(e.markdown)
-    if (pf.hardDQ) { e.flaw = { disqualified: true, category: 'HOUSE_STYLE_HARD_BAN', flaw: pf.hard.join(', '), soft: pf.soft, votes: SCREENERS }; return e }
+  // De-dup by markdown BEFORE screening. When sections has meta.M < FIELD, reconcile replicates
+  // lineups, so the pool holds multiple entries with IDENTICAL markdown under #n labels. Screening
+  // each clone independently would let the SAME text be disqualified for one copy and allowed for
+  // another (LLM nondeterminism), undermining the truth gate. Screen each distinct text ONCE and
+  // share one verdict across its replicas (also fewer gate calls on replicated fields).
+  const byText = new Map()
+  for (const e of entries) { if (!byText.has(e.markdown)) byText.set(e.markdown, []); byText.get(e.markdown).push(e) }
+  const reps = [...byText.keys()]
+  const verdicts = await parallel(reps.map(text => async () => {
+    const e0 = byText.get(text)[0]
+    const pf = preflight(text)
+    if (pf.hardDQ) return { disqualified: true, category: 'HOUSE_STYLE_HARD_BAN', flaw: pf.hard.join(', '), soft: pf.soft, votes: SCREENERS }
     const screens = (await parallel(Array.from({ length: SCREENERS }, (_, i) => () =>
-      agent(flawPrompt(e), { label: `flaw${i + 1}:${e.label}`, phase, schema: FLAW_SCHEMA })))).filter(Boolean)
+      agent(flawPrompt(e0), { label: `flaw${i + 1}:${e0.label}`, phase, schema: FLAW_SCHEMA })))).filter(Boolean)
     // Same-category majority: DQ only when a STRICT majority of screeners (votes > SCREENERS/2,
     // i.e. floor(SCREENERS/2)+1) cite the SAME hard-DQ category. Two judges flagging DIFFERENT
     // violations must not kill a clean entry — that protection is the whole point of the gate.
@@ -231,11 +240,15 @@ async function screenAll(entries, phase) {
     for (const s of screens) if (s.disqualified && s.category && s.category !== 'NONE' && HARD_DQ_CATEGORIES.includes(s.category)) byCat[s.category] = (byCat[s.category] || 0) + 1
     const [topCat, topVotes] = Object.entries(byCat).sort((a, b) => b[1] - a[1])[0] || [null, 0]
     const disqualified = topVotes > SCREENERS / 2
-    e.flaw = { disqualified, category: disqualified ? topCat : null,
+    return { disqualified, category: disqualified ? topCat : null,
       flaw: disqualified ? ((screens.find(s => s.disqualified && s.category === topCat) || {}).flaw || topCat) : '',
       soft: pf.soft, votes: topVotes }
-    return e
   }))
+  reps.forEach((text, i) => {
+    const v = verdicts[i] || { disqualified: false, category: null, flaw: '', soft: [], votes: 0 }
+    for (const e of byText.get(text)) e.flaw = { ...v }  // own copy per entry, no aliasing
+  })
+  return entries
 }
 
 // One head-to-head. orderIdx parity flips X/Y to cancel position bias.
@@ -500,7 +513,12 @@ async function deriveSections(design, BASE, SPEC) {
   // Each slot is a distinct coordinate dimension; coords/effects/the lineup view key by slot
   // name, so a duplicate name would silently collapse two positions into one. Fail fast.
   if (new Set(names).size !== names.length) throw new Error(`DESIGN.sections has duplicate slot names (${names.join(', ')}); each slot must be a distinct position. Rename the duplicates.`)
-  const keepPerSlot = Math.max(1, cfg.keepPerSlot || 2)
+  // Validate keepPerSlot like count: a truthy non-integer would make Math.max/Math.min produce NaN,
+  // the survivor slice() keep zero per slot, and reconcile() see length-0 axes and spin forever in
+  // its M < N replication loop. Fail fast instead of hanging.
+  if (cfg.keepPerSlot !== undefined && (!Number.isInteger(cfg.keepPerSlot) || cfg.keepPerSlot < 1))
+    throw new Error(`DESIGN.sections.keepPerSlot must be a positive integer (got ${JSON.stringify(cfg.keepPerSlot)}); a non-integer empties every slot's survivors and reconcile would loop forever.`)
+  const keepPerSlot = cfg.keepPerSlot || 2
   phase('Generate')
   // STAGE 1 — per-slot squads. Slots are independent, so generation AND judging are FLATTENED
   // across all slots into two big parallels (slots overlap; wall-clock = the slowest slot, not
