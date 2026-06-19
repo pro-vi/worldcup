@@ -516,16 +516,43 @@ async function deriveSections(design, BASE, SPEC) {
     got.forEach(v => gen[v.slot].push(v))
   }
   for (const s of slots) if (gen[s.slot].length < 2) throw new Error(`Slot "${s.slot}" produced only ${gen[s.slot].length} variant(s) after 3 attempts (need >=2 to hold a contest); rerun, or check the generator.`)
+  // Run the cheap DETERMINISTIC gate on slot variants BEFORE judging/keeping. screenAll only
+  // runs after assembly, so a hard-preflight violation (e.g. the em-dash ban) that wins its slot
+  // gets stapled into every lineup that uses it and auto-DQs the assembled field — the whole
+  // field when keepPerSlot=1. Drop hard-DQ variants when >=2 clean remain (so the contest still
+  // runs); otherwise keep them and let the post-assembly gate stay the backstop. (The full LLM
+  // fatal-flaw gate is intentionally NOT run per slot variant — that would multiply Stage 1 cost;
+  // the deterministic preflight catches the cited auto-DQ case here.)
+  for (const s of slots) {
+    const clean = gen[s.slot].filter(v => !preflight(v.markdown).hardDQ)
+    if (clean.length >= 2 && clean.length < gen[s.slot].length) {
+      log(`Slot "${s.slot}": ${gen[s.slot].length - clean.length} variant(s) failed the deterministic gate (e.g. em dash) and were dropped before judging.`)
+      gen[s.slot] = clean
+    } else if (clean.length < gen[s.slot].length) {
+      log(`Slot "${s.slot}": only ${clean.length} variant(s) pass the deterministic gate; keeping all ${gen[s.slot].length} so the contest can run — the post-assembly gate remains the backstop.`)
+    }
+  }
   // Judge each slot IN ISOLATION (fit to the rest of the piece, not the slot in a vacuum),
-  // flattened across slots; per-slot results feed a per-slot Elo.
+  // flattened across slots; per-slot results feed a per-slot Elo. Retry failed/incomplete judge
+  // calls (parity with generation): a silently-dropped decision would leave variants tied at the
+  // base rating, and with keepPerSlot<count the first-generated variant could be kept without ever
+  // winning a contest. Re-run only undecided pairs each attempt; fail the slot if still incomplete.
   const sd = {}; slots.forEach(s => { sd[s.slot] = [] })
-  const judgeTasks = []
-  slots.forEach(s => roundRobin(gen[s.slot]).forEach(([X, Y], idx) => judgeTasks.push({ s, X, Y, idx })))
-  await parallel(judgeTasks.map(({ s, X, Y, idx }) => () => {
-    const flip = idx % 2 === 1, [A, B] = flip ? [Y, X] : [X, Y]
-    return agent(slotJudgePrompt(s, A, B, BASE, SPEC), { label: `slotjudge:${s.slot}:${A.label}>${B.label}`, phase: 'Generate', schema: SEED_SCHEMA })
-      .then(v => { if (v) sd[s.slot].push({ winnerId: v.winner === 'X' ? A.id : B.id, loserId: v.winner === 'X' ? B.id : A.id }) })
-  }))
+  const pairKey = (a, b) => a < b ? `${a}:${b}` : `${b}:${a}`
+  const slotPairs = {}; slots.forEach(s => { slotPairs[s.slot] = roundRobin(gen[s.slot]) })
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const decided = {}; slots.forEach(s => { decided[s.slot] = new Set(sd[s.slot].map(d => pairKey(d.winnerId, d.loserId))) })
+    const todo = []
+    slots.forEach(s => slotPairs[s.slot].forEach(([X, Y], idx) => { if (!decided[s.slot].has(pairKey(X.id, Y.id))) todo.push({ s, X, Y, idx }) }))
+    if (!todo.length) break
+    await parallel(todo.map(({ s, X, Y, idx }) => () => {
+      const flip = idx % 2 === 1, [A, B] = flip ? [Y, X] : [X, Y]
+      return agent(slotJudgePrompt(s, A, B, BASE, SPEC), { label: `slotjudge:${s.slot}:${A.label}>${B.label}`, phase: 'Generate', schema: SEED_SCHEMA })
+        .then(v => { if (v) sd[s.slot].push({ winnerId: v.winner === 'X' ? A.id : B.id, loserId: v.winner === 'X' ? B.id : A.id }) })
+    }))
+  }
+  for (const s of slots) if (sd[s.slot].length < slotPairs[s.slot].length)
+    throw new Error(`Slot "${s.slot}" round-robin incomplete: ${sd[s.slot].length}/${slotPairs[s.slot].length} judge decisions after 3 attempts; survivors would be picked from unjudged ties. Rerun, or check the judge.`)
   const survivors = {}
   for (const s of slots) {
     const variants = gen[s.slot]
