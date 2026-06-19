@@ -42,7 +42,16 @@ miss. Off by default because it adds agent calls.
   - **a 2-axis grid**: pick two axes, see the cells, shaded by mean rating.
   - **an axis-effects panel**: per-axis value bars (best value highlighted), the top
     interactions, the predicted optimum, and the estimability label.
-- **sections** — a slot×variant path grid (PLAN_2).
+- **sections** — the **lineup view**: the same panel as `axes`, reframed as positions ×
+  players. Each vertical axis is a slot (position); each candidate lineup is a polyline
+  across its chosen players; the champion is the gold "winning lineup" and the predicted
+  optimum is the dashed "best XI" (top player per position). The effects bars are per-player
+  marginal form (mean Elo), the explorer compares any two positions, and the cells shade by
+  mean rating. It reuses the `axes` machinery because slot survivors *are* categorical axes
+  (see design-pass.md) — so `coords`, effects, and estimability carry over, with one refinement:
+  a slot that collapses to a single surviving player is a constant (it never varies across
+  lineups), so it is excluded from the effects/estimability axes though it still rides in every
+  assembled lineup.
 
 Every entry in the coordinate view is clickable and opens the same info sheet as the
 bracket (seed, rating, angle, match log, full text).

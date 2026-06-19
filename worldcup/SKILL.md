@@ -78,6 +78,14 @@ context; pick sane defaults for the rest and state them.
    fabricated specificity without it. The incumbent is also the bar: an entry must
    beat it on merit, not by sounding flashier. See "references/judging.md" section 1
    for the template. Skip only when there is no truth to protect and no incumbent.
+   When the field critiques, responds to, or makes factual claims about a named external
+   work, add a third element: (c) a TARGET built from that work's ACTUAL fetched source
+   (WebFetch the original; WebSearch/exa/grep/context7 to locate and corroborate by domain),
+   not the draft's summary of it. Put it in the template's dedicated `TARGET` field (which is
+   what drives the MISREPRESENTS_TARGET gate), never inline in the criteria text. The draft's
+   characterization of the target is a claim to verify. This is target-truth, the companion to
+   the author-truth ledger; without it a critique can pass the fabrication gate and still
+   misrepresent the work it answers.
 5. **Hard disqualifiers**: things that auto-kill an entry regardless of appeal. For
    Provi prose: em dashes, banned LLM vocab, announced thesis, and the big one,
    fabricated specifics presented as lived fact. The cheap ones (em dashes, banned
@@ -97,7 +105,12 @@ context; pick sane defaults for the rest and state them.
    is load-bearing; do not reconstruct it from memory.
 2. **Assemble the criteria block.** Write the taste spec, the disqualifiers, and the
    incumbent into a single text block you will embed in every judge prompt. For
-   Provi prose, invoke "/provi-voice" and distill its hard rules into this block.
+   Provi prose, invoke "/provi-voice" and distill its hard rules into this block. For a
+   critique/response run, fetch the target first and put it in the template's dedicated
+   `TARGET` field — NOT in the criteria text. The template threads TARGET into the criteria
+   channel for you AND derives the MISREPRESENTS_TARGET gate enforcement from that field;
+   pasting target material into the criteria block instead reaches the prompts but leaves the
+   gate unable to return MISREPRESENTS_TARGET, silently disabling the enforcement.
 3. **Author the Workflow.** Read "references/workflow-template.js", copy it, and fill
    in: the DESIGN (flat flavors, or axes for a factorial field, see design-pass.md), the
    criteria block + fact ledger, the field size, the domain profile (lenses + gate), and
@@ -133,8 +146,10 @@ Full version in "references/judging.md". The non-negotiables:
 - **Truth is a gate, not a score.** A regex preflight kills the cheap violations (em
   dashes, banned vocab) before any agent runs. Then a 3-judge fabrication gate, armed
   with the fact ledger, disqualifies entries that invent specifics — DQ needs 2 of 3
-  judges agreeing on the same fabricated span, so one hallucinating judge cannot wrongly
-  kill a clean entry. A vivid fabricated entry forfeits; it does not lose "some points."
+  judges agreeing on the same violation family (overlapping fabrication subtypes count as
+  one family), so one hallucinating judge cannot wrongly kill a clean entry, yet three
+  judges naming different fabrication subtypes still forfeit it. A vivid fabricated entry
+  forfeits; it does not lose "some points."
   This is the rule that flips the previous bad result.
 - **The reference challenge.** Surviving the bracket is not enough: the champion must
   beat the author's true original head-to-head by a supermajority. If it cannot, the

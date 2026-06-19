@@ -1,6 +1,6 @@
 // WORLD CUP — ultracode Workflow template.
 // Copy this into a Workflow({ script }) call and fill the four FILL blocks:
-//   (1) meta, (2) CONFIG, (3) CRITERIA_BLOCK + INCUMBENT, (4) the contestant source.
+//   (1) meta, (2) CONFIG, (3) CRITERIA + INCUMBENT + TARGET, (4) the contestant source.
 // Everything else (seeding, groups, knockout crossings, the judge pipeline, Elo,
 // trust report) is done. See references/judging.md and references/brackets.md for
 // the why. Workflow scripts are plain JS: no Date.now / Math.random / new Date.
@@ -22,7 +22,7 @@ const FIELD = 32                // 32 or 48
 const GROUPS = FIELD === 48 ? 12 : 8
 const SOURCE = 'generate'      // 'generate' | 'given'
 const USE_INCUMBENT = true     // is there a reference original to beat? (enables the reference challenge)
-const SCREENERS = 3            // fabrication-gate judges per entry: 1 = MVP, 3 = maximal (DQ needs majority)
+const SCREENERS = 3            // fabrication-gate judges per entry: 1 = MVP, 3 = maximal (DQ needs same-category majority)
 const BANS = {                 // FILL: deterministic preflight bans (cheap, run before any agent)
   emDash: true,                // em dash is an auto-DQ for Provi prose
   vocab: ['delve', 'harness', 'unlock', 'realm', 'seamless', 'ultimately', 'furthermore', 'profound', 'tapestry', 'testament'],
@@ -32,20 +32,43 @@ const LETTERS = 'ABCDEFGHIJKL'.split('')
 // ─── DESIGN — how candidates are created (see references/design-pass.md).
 // kind:'flat' = the classic FLAVORS list (one nominal axis). kind:'axes' = a factorial
 // grid: candidates are points in a coordinate system, the field is a (possibly fractional)
-// cross-product of orthogonal axes. ('sections' is reserved -> PLAN_2.)
+// cross-product of orthogonal axes. kind:'sections' = a compositional design: the artifact
+// is S slots (positions), each with its own candidates (players); a candidate is a chosen
+// LINEUP (one variant per slot), assembled deterministically and judged with a coherence lens.
 const DESIGN = {
-  kind: 'flat',                 // 'flat' | 'axes'
+  kind: 'flat',                 // 'flat' | 'axes' | 'sections'
   // --- kind:'flat' (FILL: FIELD distinct angle seeds) ---
   flavors: [ /* { name, brief }, ... length === FIELD */ ],
   // --- kind:'axes' ---
   mode: 'forced',               // 'forced' (axes given) | 'dynamic' (axis-finder proposes them)
   axes: [ /* { name, values: { valueLabel: 'prompt fragment', ... } }, ...; product reconciled to FIELD */ ],
+  // --- kind:'sections' (FILL the slots; ∏ survivors is reconciled to FIELD like axes) ---
+  // Each slot is a CONTEST: count>=2. The output is exactly the declared slots joined in order
+  // (BASE is reference context, not output), so every output section must be a contested slot.
+  // Size it so ∏(min(keepPerSlot,count)) is >= FIELD/4 (hard floor) and ideally >= FIELD, else the
+  // field is mostly replicated clones — e.g. keepPerSlot:2 needs >=5 slots to reach 32 distinct.
+  sections: {
+    keepPerSlot: 2,             // top-k variants kept per slot — the squad depth at each position
+    slots: [ /* { slot: 'hook', count: 4, brief: 'how to open the piece' }, ...; >=2 slots, count>=2 */ ],
+  },
 }
 
-// ──────────────────────────────────────────── (3) CRITERIA + INCUMBENT (FILL)
+// ──────────────────────────────────────────── (3) CRITERIA + INCUMBENT + TARGET (FILL)
 // The taste spec + hard disqualifiers, pasted into every juror prompt. For Provi
 // prose, distill the /provi-voice hard rules here. Be specific; vagueness = no taste.
-const CRITERIA_BLOCK = `FILL: the source packet — rubric, fact ledger, disqualifiers.
+//
+// CRITIQUE / RESPONSE RUNS: if the field critiques, responds to, or makes factual claims
+// about a NAMED EXTERNAL WORK, do not trust the draft's summary of that work. FETCH it
+// first (WebFetch the original as the spine; WebSearch/exa/grep/context7 to locate +
+// corroborate by domain; second-source it) and paste its real claims/scope/quotes — with
+// SOURCES + FETCHED date — into TARGET below. The draft's characterization of the target is
+// a claim to verify, not ground truth. Put target material ONLY in TARGET, never inline in
+// the rubric. Leave TARGET='' for runs with no external target (the default). For headless /
+// no-operator runs, a phase-0 fetch agent using built-in WebFetch/WebSearch is the fallback.
+const TARGET_RAW = ''  // FILL for critique/response runs only; '' otherwise (see note above)
+const TARGET = TARGET_RAW.trim()  // whitespace-only is NOT a target — activation requires a real anchor, not just a truthy string
+
+const CRITERIA_BASE = `FILL: the source packet — rubric, fact ledger, disqualifiers.
 Example for Provi prose:
 - Voice: follow-the-thought, affirmative not question-led, cross-domain without
   signposting, deflating close, varied sentence length, non-native texture is fine.
@@ -59,6 +82,40 @@ Example for Provi prose:
   as lived fact. For a personal essay that is a lie and an automatic disqualification.
 - TASTE IS EARNEDNESS: concrete detail counts only if source-supported and necessary;
   rhythm only if it clarifies thought; an ending only if it lands without inflating.`
+
+// TARGET feeds the criteria/packet channel (reaches generation, seed, gate, and lenses via
+// CRITERIA_BLOCK), and the gate clause is CO-DERIVED from the same TARGET const, so the
+// packet material and its enforcement cannot desync. All separators live inside the truthy
+// branch: TARGET='' contributes literally zero bytes (construction invariant asserted below).
+const TARGET_BLOCK = TARGET ? `\n\nTARGET (the external work this field critiques/responds to — verify every candidate claim ABOUT it against this; do not inherit the draft's characterization):\n${TARGET}` : ''
+const CRITERIA_BLOCK = CRITERIA_BASE + TARGET_BLOCK
+const targetGateClause = TARGET ? `\n\nTARGET FIDELITY: if the entry attributes to the TARGET any claim, concession, or scope its source above does not support (including broadening the target's claim into a strawman), disqualify with category MISREPRESENTS_TARGET.` : ''
+// Construction invariant (not a full byte-identity proof): with no target, the target layer
+// adds nothing on top of the base. It cannot police target material pasted into CRITERIA_BASE
+// — that is doctrine's job (keep target material in TARGET only).
+if (!TARGET && (TARGET_BLOCK !== '' || targetGateClause !== '' || CRITERIA_BLOCK !== CRITERIA_BASE))
+  throw new Error('TARGET empty but the target layer leaked text — construction invariant violated')
+
+// Hard-DQ category vocabulary — the SINGLE source of truth for the schema enum, the gate
+// prompt, and the tally. MISREPRESENTS_TARGET is present ONLY when a TARGET exists, so a
+// non-target run cannot offer it, cannot return it (schema forbids), and the tally ignores it
+// even if a screener invents it — inert by construction, not just by doctrine.
+const HARD_DQ_CATEGORIES = ['FABRICATED_CONCRETE_DETAIL', 'FAKE_AUTHORITY_SIGNAL',
+  'FALSE_AUTHORIAL_EXPERIENCE', 'CONTRADICTS_SOURCE',
+  ...(TARGET ? ['MISREPRESENTS_TARGET'] : []),
+  'GENRE_BREACH', 'HOUSE_STYLE_HARD_BAN', 'PLAGIARISTIC_OR_NON_RESPONSIVE']
+// Violation FAMILIES for the gate tally. A real fabrication is usually several overlapping
+// subtypes at once (an invented first-person stack trace is FABRICATED_CONCRETE_DETAIL AND
+// FAKE_AUTHORITY_SIGNAL AND FALSE_AUTHORIAL_EXPERIENCE), so requiring the same SUBTYPE would let
+// three screeners who all correctly see fabrication — but name it differently — wrongly PASS it.
+// The overlapping fabrication subtypes share one family; distinct failure modes (genre, style,
+// responsiveness) stay separate so two unrelated hallucinations can't combine to DQ a clean entry.
+const DQ_FAMILY = {
+  FABRICATED_CONCRETE_DETAIL: 'fabrication', FAKE_AUTHORITY_SIGNAL: 'fabrication',
+  FALSE_AUTHORIAL_EXPERIENCE: 'fabrication', CONTRADICTS_SOURCE: 'fabrication',
+  MISREPRESENTS_TARGET: 'fabrication', GENRE_BREACH: 'genre',
+  HOUSE_STYLE_HARD_BAN: 'style', PLAGIARISTIC_OR_NON_RESPONSIVE: 'responsiveness',
+}
 
 const INCUMBENT = USE_INCUMBENT ? `FILL: the author's true original essay/artifact.` : ''
 const INCUMBENT_CLAUSE = USE_INCUMBENT ? `
@@ -74,8 +131,12 @@ const GEN_SCHEMA = { type: 'object', additionalProperties: false,
   required: ['markdown'],
   properties: { title: { type: 'string' }, oneLineAngle: { type: 'string' }, markdown: { type: 'string' } } }
 const FLAW_SCHEMA = { type: 'object', additionalProperties: false,
-  required: ['disqualified'],
+  required: ['disqualified', 'category'],
   properties: { disqualified: { type: 'boolean' }, flaw: { type: 'string' },
+    // The named hard-DQ category. Same-category majority across screeners is what disqualifies
+    // (see screenAll), so this must be one canonical value, not free text. NONE when not DQ'ing.
+    // Enum is derived from HARD_DQ_CATEGORIES, so MISREPRESENTS_TARGET is absent for non-target runs.
+    category: { type: 'string', enum: ['NONE', ...HARD_DQ_CATEGORIES] },
     confidence: { type: 'string', enum: ['low', 'medium', 'high'] }, note: { type: 'string' } } }
 const LENS_SCHEMA = { type: 'object', additionalProperties: false,
   required: ['winner', 'reason'],
@@ -92,13 +153,21 @@ const LENSES = {
   substance: 'Strip the style. Is there a real claim earned by real reasoning, or vibes and momentum. Does the argument advance and land.',
   taste:     'You are a discerning editor who has read ten thousand of these. Fresh or formulaic. Earned or performed. Would you publish it.',
   integrity: 'Is the concrete detail honest or manufactured. For nonfiction, does it buy vividness with invented fact. Penalize performed authenticity; reward earned, plausibly-true specifics and honest understatement.',
+  coherence: 'Does this read as one continuous piece, or a stapled lineup of mismatched parts? Penalize tonal breaks, a dropped throughline, and seams where one section\'s voice or stance clashes with the next. Reward a single argument carried across every section in one register — a team that plays together, not eleven soloists.',
 }
-const panelFor = stakes => ({
-  R32: ['voice', 'substance', 'taste'], R16: ['voice', 'substance', 'taste'],
-  QF: ['voice', 'substance', 'taste', 'integrity'],
-  SF: ['voice', 'substance', 'taste', 'integrity'],
-  FINAL: ['voice', 'substance', 'taste', 'integrity'],
-}[stakes] || ['voice', 'substance', 'taste'])
+// Assembled (kind:'sections') candidates are stapled from independently-judged slots, so a
+// coherence juror rides in every panel to catch Frankenstein seams a whole-generated piece
+// never has. Whole-generated fields (flat/axes) are coherent by construction and skip it.
+const COHERENCE_ON = DESIGN.kind === 'sections'
+const panelFor = stakes => {
+  const base = {
+    R32: ['voice', 'substance', 'taste'], R16: ['voice', 'substance', 'taste'],
+    QF: ['voice', 'substance', 'taste', 'integrity'],
+    SF: ['voice', 'substance', 'taste', 'integrity'],
+    FINAL: ['voice', 'substance', 'taste', 'integrity'],
+  }[stakes] || ['voice', 'substance', 'taste']
+  return COHERENCE_ON ? [...base, 'coherence'] : base
+}
 
 // ─────────────────────────────────────────────────────── PROMPTS
 const flawPrompt = e => `You are screening ONE entry for FATAL FLAWS before it competes. Not judging quality; checking for disqualification.
@@ -106,13 +175,15 @@ const flawPrompt = e => `You are screening ONE entry for FATAL FLAWS before it c
 CRITERIA AND HARD DISQUALIFIERS:
 ${CRITERIA_BLOCK}
 
-Disqualify (name the rule) only if the entry: presents invented specifics as lived fact (suspiciously perfect, load-bearing, almost certainly fabricated to manufacture authenticity — treat manufactured specificity as a flaw, not a strength), OR breaks a hard disqualifier above. Do not disqualify for being merely weak.
+Disqualify (name the rule) only if the entry: presents invented specifics as lived fact (suspiciously perfect, load-bearing, almost certainly fabricated to manufacture authenticity — treat manufactured specificity as a flaw, not a strength), OR breaks a hard disqualifier above. Do not disqualify for being merely weak.${targetGateClause}
+
+When you disqualify, name the single best-fitting hard-DQ category: ${HARD_DQ_CATEGORIES.join(', ')}. Use NONE when not disqualifying.
 
 ENTRY:
 ---
 ${e.markdown}
 ---
-Return JSON { disqualified, flaw, confidence, note }. Default disqualified=false unless you can name the specific rule broken.`
+Return JSON { disqualified, category, flaw, confidence, note }. Default disqualified=false and category="NONE" unless you can name the specific rule broken.`
 
 const lensPrompt = (lens, X, Y) => `Two entries compete head to head. Pick the better. No ties — choose and give a margin. You wear ONE lens and judge on it ruthlessly; ignore other axes.
 
@@ -162,15 +233,45 @@ function preflight(text) {
 // Fabrication gate: preflight, then SCREENERS independent judges; DQ needs majority.
 // Computed ONCE per entry and cached. The most important call in the system.
 async function screenAll(entries, phase) {
-  return parallel(entries.map(e => async () => {
-    const pf = preflight(e.markdown)
-    if (pf.hardDQ) { e.flaw = { disqualified: true, flaw: pf.hard.join(', '), soft: pf.soft, votes: SCREENERS }; return e }
+  // De-dup by markdown BEFORE screening. When sections has meta.M < FIELD, reconcile replicates
+  // lineups, so the pool holds multiple entries with IDENTICAL markdown under #n labels. Screening
+  // each clone independently would let the SAME text be disqualified for one copy and allowed for
+  // another (LLM nondeterminism), undermining the truth gate. Screen each distinct text ONCE and
+  // share one verdict across its replicas (also fewer gate calls on replicated fields).
+  const byText = new Map()
+  for (const e of entries) { if (!byText.has(e.markdown)) byText.set(e.markdown, []); byText.get(e.markdown).push(e) }
+  const reps = [...byText.keys()]
+  const verdicts = await parallel(reps.map(text => async () => {
+    const e0 = byText.get(text)[0]
+    const pf = preflight(text)
+    if (pf.hardDQ) return { disqualified: true, category: 'HOUSE_STYLE_HARD_BAN', flaw: pf.hard.join(', '), soft: pf.soft, votes: SCREENERS }
     const screens = (await parallel(Array.from({ length: SCREENERS }, (_, i) => () =>
-      agent(flawPrompt(e), { label: `flaw${i + 1}:${e.label}`, phase, schema: FLAW_SCHEMA })))).filter(Boolean)
-    const dq = screens.filter(s => s.disqualified).length
-    e.flaw = { disqualified: dq > SCREENERS / 2, flaw: (screens.find(s => s.disqualified) || {}).flaw || '', soft: pf.soft, votes: dq }
-    return e
+      agent(flawPrompt(e0), { label: `flaw${i + 1}:${e0.label}`, phase, schema: FLAW_SCHEMA })))).filter(Boolean)
+    // Same-FAMILY majority: DQ when a STRICT majority of screeners (votes > SCREENERS/2) flag the
+    // same violation FAMILY (see DQ_FAMILY). This still stops ONE hallucinating judge from killing a
+    // clean entry (1 vote is never a majority) AND stops a fabricator from slipping through when three
+    // judges all see fabrication but name different subtypes — requiring the same SUBTYPE would wrongly
+    // PASS that. Label the DQ with the most-cited subtype inside the winning family.
+    const byFam = {}
+    for (const s of screens) {
+      if (!(s.disqualified && s.category && s.category !== 'NONE' && HARD_DQ_CATEGORIES.includes(s.category))) continue
+      const fam = DQ_FAMILY[s.category] || s.category
+      const f = byFam[fam] || (byFam[fam] = { votes: 0, cats: {} })
+      f.votes++; f.cats[s.category] = (f.cats[s.category] || 0) + 1
+    }
+    const top = Object.entries(byFam).sort((a, b) => b[1].votes - a[1].votes)[0]
+    const disqualified = !!top && top[1].votes > SCREENERS / 2
+    const topCat = disqualified ? Object.entries(top[1].cats).sort((a, b) => b[1] - a[1])[0][0] : null
+    const topVotes = top ? top[1].votes : 0
+    return { disqualified, category: topCat,
+      flaw: disqualified ? ((screens.find(s => s.disqualified && s.category === topCat) || {}).flaw || topCat) : '',
+      soft: pf.soft, votes: topVotes }
   }))
+  reps.forEach((text, i) => {
+    const v = verdicts[i] || { disqualified: false, category: null, flaw: '', soft: [], votes: 0 }
+    for (const e of byText.get(text)) e.flaw = { ...v }  // own copy per entry, no aliasing
+  })
+  return entries
 }
 
 // One head-to-head. orderIdx parity flips X/Y to cancel position bias.
@@ -241,6 +342,25 @@ function eloRatings(entries, decided, K = 24, base = 1500) {
     R.set(m.winnerId, rw + K * (1 - ew)); R.set(m.loserId, rl - K * (1 - ew))
   }
   return [...R.entries()].sort((a, b) => b[1] - a[1])
+}
+
+// ─────────────────────────────────────────────── LIVE EVENT STREAM (realtime view hook)
+// The workflow is sandboxed (no fs, no sockets); its ONLY egress mid-run is log(). `emit`
+// piggybacks that stream with a greppable `WCEVENT ` prefix so an EXTERNAL watcher can tail
+// the run's persisted jsonl, parse the events, and re-render a self-refreshing static HTML of
+// the live bracket — no server, no deps (Tier 1, see references/live-view.js). With no watcher
+// attached the same lines are just structured progress you can read in /workflows (Tier 0).
+// emit is pure logging: it never feeds back in and never affects determinism. The workflow
+// PRODUCES events; it never consumes its own.
+const emit = ev => { try { log('WCEVENT ' + JSON.stringify(ev)) } catch (e) { /* logging must never break a run */ } }
+// Compact monospace standings for the free Tier-0 watch-in-/workflows view (no artifact needed).
+// 'Q' marks a qualifier (top 2), '.' an eliminated team. ASCII only so it survives any log sink.
+function standingsBlock(groups, adv) {
+  return groups.map((g, gi) => {
+    const rows = adv[gi].ranked.map((t, i) =>
+      `  ${i < 2 ? 'Q' : '.'} ${String(adv[gi].pts.get(t.id)).padStart(2)}pt  ${t.label}`).join('\n')
+    return `Group ${LETTERS[gi]}\n${rows}`
+  }).join('\n')
 }
 
 // ─────────────────────────────────────────────────────── DESIGN COMBINATORICS
@@ -382,6 +502,172 @@ Return JSON { title, oneLineAngle, markdown (the full artifact) }.`
   })
 }
 
+// ─────────────────────────────────────────────────── SECTION ROUTE (U4/U5)
+// Compositional design (see references/design-pass.md). STAGE 1: per slot, generate `count`
+// candidates and judge them IN ISOLATION — fit to the rest of the piece, not the slot in a
+// vacuum — keeping the top `keepPerSlot`. STAGE 2: treat slot survivors as categorical axes,
+// reconcile the assembly cross-product to FIELD (reusing the axes machinery, so effects + the
+// coordinate view come for free), and staple each chosen LINEUP into one markdown. The engine
+// is untouched: an assembly enters the pool as a normal candidate with coords = slot->survivor.
+const slotGenPrompt = (s, k, BASE, SPEC) => `Produce ONE candidate for the "${s.slot}" section of the artifact below — variant #${k + 1}. ${s.brief || ''}
+Write ONLY this section, but make it fit the WHOLE piece (given as fixed context): it must hand off cleanly to the sections around it, in one consistent voice. Do not rewrite the rest.
+Constraints / criteria:
+${SPEC}
+THE WHOLE PIECE (fixed context — the rest of the squad this section plays with):
+---
+${BASE}
+---
+Return JSON { markdown (just the "${s.slot}" section) }.`
+
+const slotJudgePrompt = (s, X, Y, BASE, SPEC) => `Two candidates for the "${s.slot}" section compete. Pick the one that better serves THIS piece — judge FIT with the surrounding sections and the throughline, plus intrinsic quality. Not the section in a vacuum. No ties.
+Criteria:
+${SPEC}
+THE WHOLE PIECE (fixed context):
+---
+${BASE}
+---
+CANDIDATE X (a "${s.slot}"):
+---
+${X.markdown}
+---
+CANDIDATE Y (a "${s.slot}"):
+---
+${Y.markdown}
+---
+Return JSON { winner:"X"|"Y", confidence }.`
+
+// deriveSections: DESIGN -> [{ id, label, coords, markdown }], length === FIELD. Markdown is
+// ASSEMBLED here (no per-candidate generation agent in the outer loop).
+async function deriveSections(design, BASE, SPEC) {
+  const cfg = design.sections || {}
+  const declared = cfg.slots || []
+  if (declared.length < 2) throw new Error(`DESIGN.kind=sections needs >=2 slots, each { slot, count>=2, brief }. Got ${declared.length}.`)
+  // Validate EVERY declared slot and fail fast — never silently drop a malformed slot, because
+  // each slot is a load-bearing section of the final artifact (dropping one assembles an
+  // incomplete piece). A slot is a CONTEST, so count>=2; the assembled artifact is exactly the
+  // declared slots joined in order (BASE is reference context, not output), so every output
+  // section must be a contested slot — a fixed section cannot be carried via BASE. Mirrors
+  // deriveAxes's fail-fast on unusable forced axes.
+  declared.forEach((s, i) => {
+    if (!s || typeof s.slot !== 'string' || !s.slot) throw new Error(`DESIGN.sections.slots[${i}] has no 'slot' name.`)
+    if (!Number.isInteger(s.count) || s.count < 2) throw new Error(`DESIGN.sections slot "${s.slot || i}" needs an integer count>=2 (a slot is a contest). The section route assembles ONLY the declared slots, joined in order; BASE is reference context for generation/judging and is NOT part of the output, so a fixed section cannot be "baked into BASE" and still appear — every output section must be a contested slot. Got count=${s.count}.`)
+  })
+  const slots = declared
+  const names = slots.map(s => s.slot)
+  // Each slot is a distinct coordinate dimension; coords/effects/the lineup view key by slot
+  // name, so a duplicate name would silently collapse two positions into one. Fail fast.
+  if (new Set(names).size !== names.length) throw new Error(`DESIGN.sections has duplicate slot names (${names.join(', ')}); each slot must be a distinct position. Rename the duplicates.`)
+  // Validate keepPerSlot like count: a truthy non-integer would make Math.max/Math.min produce NaN,
+  // the survivor slice() keep zero per slot, and reconcile() see length-0 axes and spin forever in
+  // its M < N replication loop. Fail fast instead of hanging.
+  if (cfg.keepPerSlot !== undefined && (!Number.isInteger(cfg.keepPerSlot) || cfg.keepPerSlot < 1))
+    throw new Error(`DESIGN.sections.keepPerSlot must be a positive integer (got ${JSON.stringify(cfg.keepPerSlot)}); a non-integer empties every slot's survivors and reconcile would loop forever.`)
+  const keepPerSlot = cfg.keepPerSlot || 2
+  phase('Generate')
+  // STAGE 1 — per-slot squads. Slots are independent, so generation AND judging are FLATTENED
+  // across all slots into two big parallels (slots overlap; wall-clock = the slowest slot, not
+  // the sum). Generation retries transient failures up to 3x, parity with the flat/axes path.
+  const gen = {}; slots.forEach(s => { gen[s.slot] = [] })
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const need = []
+    slots.forEach(s => { for (let k = 0; k < s.count; k++) if (!gen[s.slot].some(v => v.id === k)) need.push({ s, k }) })
+    if (!need.length) break
+    const got = (await parallel(need.map(({ s, k }) => () =>
+      agent(slotGenPrompt(s, k, BASE, SPEC), { label: `slot:${s.slot}:v${k + 1}`, phase: 'Generate', schema: GEN_SCHEMA })
+        .then(x => x && { id: k, slot: s.slot, label: `${s.slot}${k + 1}`, markdown: x.markdown, rating: 1500 })))).filter(Boolean)
+    got.forEach(v => gen[v.slot].push(v))
+  }
+  for (const s of slots) if (gen[s.slot].length < 2) throw new Error(`Slot "${s.slot}" produced only ${gen[s.slot].length} variant(s) after 3 attempts (need >=2 to hold a contest); rerun, or check the generator.`)
+  // Run the cheap DETERMINISTIC gate on slot variants BEFORE judging/keeping. screenAll only
+  // runs after assembly, so a hard-preflight violation (e.g. the em-dash ban) that wins its slot
+  // gets stapled into every lineup that uses it and auto-DQs the assembled field — the whole
+  // field when keepPerSlot=1. Restrict each slot to its CLEAN variants and NEVER retain a hard-DQ
+  // one as a survivor: >=2 clean hold the contest; exactly 1 clean auto-advances (the slot judge
+  // is blind to preflight, so a lone clean candidate must not be made to "lose" to a hard-DQ one,
+  // which under keepPerSlot=1 would staple the bad section into the whole field); 0 clean fails
+  // the slot. (The full LLM fatal-flaw gate is intentionally NOT run per slot variant — that would
+  // multiply Stage 1 cost; the deterministic preflight catches the cited auto-DQ case here.)
+  for (const s of slots) {
+    const clean = gen[s.slot].filter(v => !preflight(v.markdown).hardDQ)
+    if (clean.length === 0) throw new Error(`Slot "${s.slot}": all ${gen[s.slot].length} variant(s) fail the deterministic gate (e.g. em dash); no eligible section to field. Rerun, or fix the generator/bans.`)
+    if (clean.length < gen[s.slot].length) {
+      log(`Slot "${s.slot}": ${gen[s.slot].length - clean.length} hard-DQ variant(s) dropped${clean.length === 1 ? '; the single clean candidate auto-advances (no contest)' : ' before judging'}.`)
+      gen[s.slot] = clean
+    }
+  }
+  // Judge each slot IN ISOLATION (fit to the rest of the piece, not the slot in a vacuum),
+  // flattened across slots; per-slot results feed a per-slot Elo. Retry failed/incomplete judge
+  // calls (parity with generation): a silently-dropped decision would leave variants tied at the
+  // base rating, and with keepPerSlot<count the first-generated variant could be kept without ever
+  // winning a contest. Re-run only undecided pairs each attempt; fail the slot if still incomplete.
+  const sd = {}; slots.forEach(s => { sd[s.slot] = [] })
+  const pairKey = (a, b) => a < b ? `${a}:${b}` : `${b}:${a}`
+  const slotPairs = {}; slots.forEach(s => { slotPairs[s.slot] = roundRobin(gen[s.slot]) })
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const decided = {}; slots.forEach(s => { decided[s.slot] = new Set(sd[s.slot].map(d => pairKey(d.winnerId, d.loserId))) })
+    const todo = []
+    slots.forEach(s => slotPairs[s.slot].forEach(([X, Y], idx) => { if (!decided[s.slot].has(pairKey(X.id, Y.id))) todo.push({ s, X, Y, idx }) }))
+    if (!todo.length) break
+    // RETURN each decision (don't push from inside the thunk): parallel() resolves in input order,
+    // so appending its results is deterministic, whereas pushing as agents resolve would order sd
+    // by agent latency — and eloRatings applies matches sequentially, so latency-ordering would
+    // make the SAME judge winners yield different slot ratings/survivors run to run.
+    const results = await parallel(todo.map(({ s, X, Y, idx }) => () => {
+      const flip = idx % 2 === 1, [A, B] = flip ? [Y, X] : [X, Y]
+      return agent(slotJudgePrompt(s, A, B, BASE, SPEC), { label: `slotjudge:${s.slot}:${A.label}>${B.label}`, phase: 'Generate', schema: SEED_SCHEMA })
+        .then(v => v && ({ slot: s.slot, winnerId: v.winner === 'X' ? A.id : B.id, loserId: v.winner === 'X' ? B.id : A.id }))
+    }))
+    results.forEach(r => { if (r) sd[r.slot].push({ winnerId: r.winnerId, loserId: r.loserId }) })
+  }
+  // Canonical pair-id order so eloRatings is independent of completion AND retry ordering.
+  for (const s of slots) sd[s.slot].sort((a, b) => Math.min(a.winnerId, a.loserId) - Math.min(b.winnerId, b.loserId) || Math.max(a.winnerId, a.loserId) - Math.max(b.winnerId, b.loserId))
+  for (const s of slots) if (sd[s.slot].length < slotPairs[s.slot].length)
+    throw new Error(`Slot "${s.slot}" round-robin incomplete: ${sd[s.slot].length}/${slotPairs[s.slot].length} judge decisions after 3 attempts; survivors would be picked from unjudged ties. Rerun, or check the judge.`)
+  const survivors = {}
+  for (const s of slots) {
+    const variants = gen[s.slot]
+    const r = new Map(eloRatings(variants, sd[s.slot]))
+    variants.forEach(v => { v.rating = r.get(v.id) })
+    survivors[s.slot] = [...variants].sort((a, b) => b.rating - a.rating).slice(0, Math.min(keepPerSlot, variants.length))
+    log(`Slot "${s.slot}": ${variants.length} tried -> kept ${survivors[s.slot].length} (${survivors[s.slot].map(t => t.label).join(', ')}).`)
+  }
+  // STAGE 2 — survivors are categorical axes; reconcile the assembly cross-product to FIELD.
+  const sectionAxes = slots.map(s => ({ name: s.slot, values: survivors[s.slot].map(v => v.label) }))
+  const md = {}; slots.forEach(s => { md[s.slot] = Object.fromEntries(survivors[s.slot].map(v => [v.label, v.markdown])) })
+  const { cells, strategy, estimable, meta } = reconcile(sectionAxes, FIELD)
+  // A slot that collapsed to a single clean survivor (deterministic-gate auto-advance) is a
+  // CONSTANT, not a factor: it never varies across lineups, so no effect for it can be estimated.
+  // Exclude collapsed slots from the effects/estimability axes so the report does not claim
+  // 'all-2way' evidence for a dimension that never moved (M can still == FIELD via the varying
+  // slots). They stay in the assembled markdown — every lineup carries them — just not as factors.
+  const effectAxes = sectionAxes.filter(a => a.values.length >= 2)
+  const collapsed = sectionAxes.filter(a => a.values.length < 2).map(a => a.name)
+  if (collapsed.length) log(`Sections: slot(s) ${collapsed.join(', ')} collapsed to a single survivor — constant, excluded from effects/estimability (carried in every lineup, but they estimate no effect).`)
+  design.resolved = { axes: effectAxes, frag: null, strategy, estimable, meta: { ...meta, collapsed: collapsed.length } }
+  // Distinctness floor: if the survivor product M is far below FIELD the field is mostly
+  // replicated clones, the bracket is clone-vs-clone (forced coin flips), and the trust verdict
+  // would certify a coin-flip champion as "robust". Fail fast (parity with deriveAxes) rather
+  // than burn the agent budget on a meaningless tournament. M in [floor, FIELD) is allowed but
+  // warned. Raise keepPerSlot or add slots so the field is genuinely diverse.
+  const floor = Math.max(2, Math.floor(FIELD / 4))
+  if (meta.M < floor) throw new Error(`Sections produced only ${meta.M} distinct lineup(s) (< floor ${floor} for FIELD=${FIELD}); the field would be mostly duplicates and the trust verdict meaningless. Add slots or raise keepPerSlot so ∏ survivors >= ${floor} (ideally >= ${FIELD}).`)
+  if (meta.M < FIELD) log(`Sections: ${meta.M} distinct lineups for FIELD=${FIELD} — ${FIELD - meta.M} bracket slots are replicated duplicates; raise keepPerSlot or slot counts to fill the field with distinct lineups.`)
+  log(`Sections: ${slots.length} slots (${sectionAxes.map(a => a.values.length).join('x')}=${meta.M}) -> ${strategy} -> ${FIELD} lineups; effects estimable: ${estimable}.`)
+  const used = new Set()
+  return cells.map((coord, i) => {
+    const clean = {}; for (const k of Object.keys(coord)) if (k !== '__rep') clean[k] = coord[k]
+    let baseLabel = slots.map(s => clean[s.slot]).join('+'), label = baseLabel, n = 1
+    while (used.has(label)) label = `${baseLabel}#${++n}`
+    used.add(label)
+    // The artifact IS the declared slots joined in order. BASE is reference context for
+    // generation/judging and is deliberately NOT spliced in here, so anything you want in the
+    // output must be a contested slot (see the count>=2 guard). A fixed section left in BASE
+    // would be silently dropped — the count guard's message states this contract.
+    const markdown = slots.map(s => md[s.slot][clean[s.slot]]).join('\n\n')
+    return { id: i, label, coords: clean, markdown }
+  })
+}
+
 // ─────────────────────────────────────────────────────── (4) CONTESTANTS (FILL)
 // Candidates come from DESIGN (see references/design-pass.md). kind:'flat' is the
 // degenerate single-axis design (the old FLAVORS list); kind:'axes' is a factorial grid.
@@ -407,7 +693,10 @@ async function deriveCandidates(design) {
   if (design.kind === 'axes') {
     return await deriveAxes(design, BASE, SPEC)   // U3
   }
-  throw new Error(`DESIGN.kind '${design.kind}' unsupported (sections -> PLAN_2)`)
+  if (design.kind === 'sections') {
+    return await deriveSections(design, BASE, SPEC)   // U4/U5 — specs carry assembled markdown
+  }
+  throw new Error(`DESIGN.kind '${design.kind}' unsupported`)
 }
 
 let pool
@@ -415,17 +704,24 @@ if (SOURCE === 'generate') {
   const specs = await deriveCandidates(DESIGN)
   if (specs.length !== FIELD) return { error: `design produced ${specs.length} candidates, need FIELD=${FIELD}` }
   phase('Generate')
-  log(`Generating ${specs.length} variants (DESIGN.kind=${DESIGN.kind})..`)
-  let got = []
-  for (let attempt = 0; got.length < specs.length && attempt < 3; attempt++) {
-    const todo = specs.filter(s => !got.some(g => g.id === s.id))
-    const r = (await parallel(todo.map(s => () =>
-      agent(s.prompt, { label: `gen:${s.label}`, phase: 'Generate', schema: GEN_SCHEMA })
-        .then(x => x && ({ id: s.id, label: s.label, coords: s.coords, ...x }))))).filter(Boolean)
-    got = got.concat(r)
+  if (specs.every(s => s.markdown != null)) {
+    // sections: candidates are deterministically ASSEMBLED from slot survivors (no per-candidate
+    // generation agent) — Stage 1 already spent its agent calls generating + judging the slots.
+    log(`Assembled ${specs.length} lineups from slot survivors (DESIGN.kind=sections)..`)
+    pool = specs.map(s => ({ id: s.id, label: s.label, coords: s.coords, markdown: s.markdown, title: '', oneLineAngle: '' }))
+  } else {
+    log(`Generating ${specs.length} variants (DESIGN.kind=${DESIGN.kind})..`)
+    let got = []
+    for (let attempt = 0; got.length < specs.length && attempt < 3; attempt++) {
+      const todo = specs.filter(s => !got.some(g => g.id === s.id))
+      const r = (await parallel(todo.map(s => () =>
+        agent(s.prompt, { label: `gen:${s.label}`, phase: 'Generate', schema: GEN_SCHEMA })
+          .then(x => x && ({ id: s.id, label: s.label, coords: s.coords, ...x }))))).filter(Boolean)
+      got = got.concat(r)
+    }
+    if (got.length < FIELD) return { error: `generated ${got.length}/${FIELD}; rerun` }
+    pool = got.sort((a, b) => a.id - b.id)
   }
-  if (got.length < FIELD) return { error: `generated ${got.length}/${FIELD}; rerun` }
-  pool = got.sort((a, b) => a.id - b.id)
 } else {
   // GIVEN: args is the array of items. Normalize to { id, label, coords, markdown }.
   pool = (args || []).slice(0, FIELD).map((it, i) => ({
@@ -437,6 +733,9 @@ if (SOURCE === 'generate') {
 phase('Seed')
 log('Fatal-flaw screening every entry (cached for the whole tournament)..')
 await screenAll(pool, 'Seed')
+const dqd = pool.filter(t => t.flaw && t.flaw.disqualified)
+if (dqd.length) log(`Fatal-flaw gate: ${dqd.length} disqualified (${dqd.map(t => `${t.label}:${t.flaw.category || ''}`).join(', ')}).`)
+emit({ ev: 'gate', field: FIELD, disqualified: dqd.map(t => ({ label: t.label, category: t.flaw.category || '' })) })
 log('Calibrated pairwise seeding pre-pass..')
 // Swiss-like two rounds of pairwise comparisons, then Elo for a rating with real spread.
 const seedDecided = []
@@ -457,6 +756,10 @@ phase('Groups')
 const groups = snakeGroups(seeded, GROUPS)
 groups.forEach((g, gi) => g.forEach(t => { t.group = LETTERS[gi] }))
 log(`${GROUPS} groups drawn. Group stage: ${GROUPS * 6} matches..`)
+// The bracket SKELETON is fully determined the moment the snake draw is done (snakeGroups is
+// pure) — emit it so a live watcher can paint the empty bracket up front and just fill slots
+// as results stream in. Carries each team's seed so the watcher can render pots/upsets.
+emit({ ev: 'draw', field: FIELD, groups: groups.map((g, gi) => ({ group: LETTERS[gi], teams: g.map(t => ({ label: t.label, seed: seeded.findIndex(x => x.id === t.id) + 1 })) })) })
 const groupSpecs = []
 groups.forEach((g, gi) => roundRobin(g).forEach(([x, y]) => groupSpecs.push({ gi, x, y })))
 const groupResults = await parallel(groupSpecs.map((m, idx) => () =>
@@ -466,6 +769,10 @@ const groupResults = await parallel(groupSpecs.map((m, idx) => () =>
 // or tight budgets, switch group matches to a single 'taste' juror.
 
 const adv = groups.map((g, gi) => { const s = standings(g, gi, groupResults); return { ...s, gi } })
+// Realtime group standings + who advanced (the user-requested "live group standings"). The
+// log() line is the free Tier-0 view; the WCEVENT carries the structured table for Tier-1.
+log('Group standings:\n' + standingsBlock(groups, adv))
+emit({ ev: 'groups', standings: adv.map((a, gi) => ({ group: LETTERS[gi], table: a.ranked.map(t => ({ label: t.label, pts: a.pts.get(t.id) })), advanced: a.ranked.slice(0, 2).map(t => t.label) })) })
 let qualifiers
 if (FIELD === 32) {
   qualifiers = null // 32 uses fixed crossings below, not a seeded R32
@@ -506,11 +813,16 @@ while (pairs.length >= 1) {
   const res = await playRound(pairs, stakes)
   history[stakes] = res
   lastRound = res
+  // Realtime eliminations (the user-requested "live eliminations"): one event per knockout round
+  // carrying every result + who just went out. The log() line is the free Tier-0 view.
+  log(`${stakes} out: ${res.map(r => `${r.loser.label} (${r.margin})`).join(', ')}`)
+  emit({ ev: 'round', stakes, matches: res.map(r => ({ winner: r.winner.label, loser: r.loser.label, margin: r.margin })), eliminated: res.map(r => r.loser.label) })
   if (pairs.length === 1) break
   pairs = nextRoundPairs(res.map(r => r.winner))
   stakes = order[order.indexOf(stakes) + 1]
 }
 const champion = lastRound[0].winner
+emit({ ev: 'champion', label: champion.label, stakes })
 
 // ─────────────────────────────────────────────────────── REFERENCE CHALLENGE
 // The champion must beat the author's true original head-to-head, or the output is
@@ -588,8 +900,8 @@ if (PLAYOFF && effects && !effects.predictedOptimum.inField && DESIGN.resolved &
     const optEntry = { id: -2, label: 'PREDICTED-OPTIMUM', coords: opt, markdown: og.markdown, rating: 1500, group: '-' }
     await screenAll([optEntry], 'Knockout')  // same fabrication gate as the field; a fabricated optimum forfeits
     if (optEntry.flaw && optEntry.flaw.disqualified) {
-      playoff = { disqualified: true, flaw: optEntry.flaw.flaw, markdown: og.markdown }
-      log(`Playoff: predicted optimum disqualified at the gate (${optEntry.flaw.flaw}); skipped.`)
+      playoff = { disqualified: true, category: optEntry.flaw.category || '', flaw: optEntry.flaw.flaw, markdown: og.markdown }
+      log(`Playoff: predicted optimum disqualified at the gate (${optEntry.flaw.category || ''} ${optEntry.flaw.flaw}); skipped.`)
     } else {
       const incumbentEntry = { id: -1, label: 'ORIGINAL', markdown: INCUMBENT, rating: 1500, group: '-', flaw: { disqualified: false } }
       const m1 = await playMatch(optEntry, champion, 0, 'FINAL', 'Knockout', [])
@@ -628,7 +940,7 @@ function renderReport() {
   const pathRows = pathOf(champion).map(s => `<li><b>${esc(s.round)}</b> beat ${esc(s.beat)} <span class="mrg">(${esc(s.margin || '')})</span><div class="why">${esc(s.reason || '')}</div></li>`).join('')
   const ratingRows = globalRating.slice(0, 16).map(([id, r], i) => { const t = pool.find(x => x.id === id); return `<tr><td>${i + 1}</td><td>${esc(t ? t.label : id)}</td><td>${Math.round(r)}</td></tr>` }).join('')
   const dq = pool.filter(t => t.flaw && t.flaw.disqualified)
-  const dqHtml = dq.length ? `<div class="card"><h3>Disqualified (${dq.length})</h3><ul>${dq.map(t => `<li>${esc(t.label)}: ${esc(t.flaw.flaw)}</li>`).join('')}</ul></div>` : ''
+  const dqHtml = dq.length ? `<div class="card"><h3>Disqualified (${dq.length})</h3><ul>${dq.map(t => `<li>${esc(t.label)}: <b>${esc(t.flaw.category || '')}</b> ${esc(t.flaw.flaw)}</li>`).join('')}</ul></div>` : ''
   const refTxt = referenceChallenge ? (referenceChallenge.championBeatOriginal ? `champion beat the original (${esc(referenceChallenge.margin)})` : 'champion did NOT beat the original') : 'no incumbent'
   return `<!doctype html><html><head><meta charset="utf-8"><title>World Cup: ${champLabel}</title><style>
 :root{--pitch:#0b6e3b;--pitch2:#0a5e33;--gold:#f4c430;--ink:#10241a;--paper:#f7f4ec}
@@ -678,7 +990,7 @@ function renderReportV2() {
   for (const k of order) (history[k] || []).forEach(m => addLog(k, m.winner.label, m.loser.label, m.margin, m.reason))
   if (referenceChallenge) addLog('Reference', referenceChallenge.championBeatOriginal ? champion.label : 'ORIGINAL', referenceChallenge.championBeatOriginal ? 'ORIGINAL' : champion.label, referenceChallenge.margin, referenceChallenge.reason)
   const DATA = {}
-  pool.forEach(t => { DATA[t.label] = { title: t.title || '', angle: t.oneLineAngle || '', coords: t.coords || {}, seed: seeded.findIndex(x => x.id === t.id) + 1, rating: Math.round(ratingById.get(t.id) || 0), dq: !!(t.flaw && t.flaw.disqualified), flaw: t.flaw ? (t.flaw.flaw || '') : '', matches: mlog[t.label] || [], text: t.markdown || '' } })
+  pool.forEach(t => { DATA[t.label] = { title: t.title || '', angle: t.oneLineAngle || '', coords: t.coords || {}, seed: seeded.findIndex(x => x.id === t.id) + 1, rating: Math.round(ratingById.get(t.id) || 0), dq: !!(t.flaw && t.flaw.disqualified), flaw: t.flaw ? (t.flaw.flaw || '') : '', category: t.flaw ? (t.flaw.category || '') : '', matches: mlog[t.label] || [], text: t.markdown || '' } })
   const dataJson = JSON.stringify(DATA).replace(/</g, '\\u003c').replace(/|/g, '')
   const entry = label => `<span class="entry" data-k="${esc(label)}">${esc(label)}</span>`
   const card = m => m ? `<div class="match"><div class="slot win">${entry(m.winner.label)}<span class="mg">${esc(m.margin || '')}</span></div><div class="slot lose">${entry(m.loser.label)}</div></div>` : `<div class="match empty"></div>`
@@ -693,10 +1005,18 @@ function renderReportV2() {
   const groupCards = groups.map((g, gi) => { const a = adv[gi]; const rows = a.ranked.map((t, i) => `<tr class="${i < 2 ? 'adv' : ''}"><td>${entry(t.label)}</td><td class="pts">${a.pts.get(t.id)}</td></tr>`).join(''); return `<div class="grp"><h4>Group ${LETTERS[gi]}</h4><table>${rows}</table></div>` }).join('')
   const ratingRows = globalRating.map(([id, r], i) => { const t = pool.find(x => x.id === id); return `<tr><td>${i + 1}</td><td>${entry(t ? t.label : String(id))}</td><td>${Math.round(r)}</td></tr>` }).join('')
   const dq = pool.filter(t => t.flaw && t.flaw.disqualified)
-  const dqHtml = dq.length ? `<div class="panel"><h3>Disqualified at the gate (${dq.length})</h3><ul>${dq.map(t => `<li>${entry(t.label)}: ${esc(t.flaw.flaw)}</li>`).join('')}</ul></div>` : `<div class="panel"><h3>Fabrication gate</h3><div class="muted">0 disqualified.</div></div>`
+  const dqHtml = dq.length ? `<div class="panel"><h3>Disqualified at the gate (${dq.length})</h3><ul>${dq.map(t => `<li>${entry(t.label)}: <b>${esc(t.flaw.category || '')}</b> ${esc(t.flaw.flaw)}</li>`).join('')}</ul></div>` : `<div class="panel"><h3>Fabrication gate</h3><div class="muted">0 disqualified.</div></div>`
   const refTxt = referenceChallenge ? (referenceChallenge.championBeatOriginal ? `champion beat the original (${esc(referenceChallenge.margin)})` : 'champion did NOT beat the original') : 'no incumbent'
-  // ─── coordinate view (axes only): parallel coordinates + axis effects + a 2-axis explorer
-  const cv_axes = (DESIGN.kind === 'axes' && DESIGN.resolved && DESIGN.resolved.axes && effects) ? DESIGN.resolved.axes : null
+  // ─── coordinate view (axes + sections): parallel coordinates + effects + a 2-axis explorer.
+  // For sections it reads as a LINEUP: each axis is a position (slot), each value a player
+  // (slot survivor), each polyline a candidate lineup, the champion drawn gold; effects bars
+  // are per-player form (marginal Elo), the explorer compares any two positions.
+  const cv_axes = ((DESIGN.kind === 'axes' || DESIGN.kind === 'sections') && DESIGN.resolved && DESIGN.resolved.axes && effects) ? DESIGN.resolved.axes : null
+  const isSec = !!cv_axes && DESIGN.kind === 'sections'
+  const cvTitle = isSec ? 'Lineup space &middot; positions &times; players' : 'Coordinate space'
+  const cvChampKey = isSec ? 'winning lineup' : 'champion'
+  const cvOptLbl = isSec ? 'best XI (top player per position)' : 'predicted optimum'
+  const cvExplore = isSec ? 'compare two positions' : 'explore two axes'
   let coordPanel = '', coordScript = ''
   if (cv_axes) {
     const W = 760, H = 240, padX = 64, padY = 34
@@ -721,10 +1041,10 @@ function renderReportV2() {
     const estLabel = effects.estimable === 'none' ? '<span class="warn">empirical, not fitted</span>' : `fitted (${esc(effects.estimable)})`
     const opt = effects.predictedOptimum, optTxt = `${esc(opt.label)} ${opt.inField ? '(in field)' : '(synthesized)'}`
     const axSel = id => `<select id="${id}" onchange="grid()">${cv_axes.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`).join('')}</select>`
-    coordPanel = `<div class="panel coord"><h3>Coordinate space &middot; ${esc(effects.strategy)} &middot; effects ${estLabel}</h3>
-<div class="pc-wrap">${pcSvg}</div><div class="pc-key"><span class="champ">champion</span>${optLine ? '<span class="opt">predicted optimum</span>' : ''}</div>
-<div class="eff">${effRows}<div class="erow"><div class="eax">predicted optimum</div><div class="muted">${optTxt} &middot; top interactions: ${interTxt}</div></div></div>
-<div class="explorer"><div class="exsel">explore two axes &mdash; X ${axSel('gx')} Y ${axSel('gy')}</div><div id="grid"></div></div></div>`
+    coordPanel = `<div class="panel coord"><h3>${cvTitle} &middot; ${esc(effects.strategy)} &middot; effects ${estLabel}</h3>
+<div class="pc-wrap">${pcSvg}</div><div class="pc-key"><span class="champ">${cvChampKey}</span>${optLine ? `<span class="opt">${cvOptLbl}</span>` : ''}</div>
+<div class="eff">${effRows}<div class="erow"><div class="eax">${cvOptLbl}</div><div class="muted">${optTxt} &middot; top interactions: ${interTxt}</div></div></div>
+<div class="explorer"><div class="exsel">${cvExplore} &mdash; X ${axSel('gx')} Y ${axSel('gy')}</div><div id="grid"></div></div></div>`
     const J = o => JSON.stringify(o).replace(/</g, '\\u003c')
     coordScript = `
 var AXES=${J(cv_axes.map(a => ({ name: a.name, values: a.values })))};
@@ -813,7 +1133,7 @@ function he(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return 
 function show(k){var d=DATA[k];if(!d)return;var h='<h2>'+he(k)+(d.dq?' <span class="dqtag">DISQUALIFIED</span>':'')+'</h2>';
 h+='<div class="meta">seed #'+d.seed+' &middot; rating '+d.rating+(d.angle?(' &middot; '+he(d.angle)):'')+'</div>';
 if(d.coords&&Object.keys(d.coords).filter(function(k){return k!=='__rep';}).length)h+='<div class="meta">at '+Object.keys(d.coords).filter(function(k){return k!=='__rep';}).map(function(k){return he(k)+'='+he(d.coords[k]);}).join(', ')+'</div>';
-if(d.dq)h+='<div class="meta" style="color:#f3a">gate: '+he(d.flaw)+'</div>';
+if(d.dq)h+='<div class="meta" style="color:#f3a">gate: '+(d.category?'<b>'+he(d.category)+'</b> ':'')+he(d.flaw)+'</div>';
 if(d.matches&&d.matches.length){h+='<h3>matches</h3><ul class="mlog">';d.matches.forEach(function(x){h+='<li><span class="'+(x.won?'w':'l')+'">'+(x.won?'beat':'lost to')+' '+he(x.opp)+'</span> <span class="why">&middot; '+he(x.round)+' &middot; '+he(x.margin||'')+'</span><div class="why">'+he(x.reason||'')+'</div></li>';});h+='</ul>';}
 h+='<h3>full text</h3><div class="essay">'+String(d.text||'').split(/\\n\\n+/).map(function(p){return '<p>'+he(p)+'</p>';}).join('')+'</div>';
 document.getElementById('mbody').innerHTML=h;document.getElementById('modal').classList.add('show');}
@@ -841,7 +1161,7 @@ return {
   recommendation,
   effects,
   playoff,
-  disqualified: pool.filter(t => t.flaw?.disqualified).map(t => ({ label: t.label, flaw: t.flaw.flaw })),
+  disqualified: pool.filter(t => t.flaw?.disqualified).map(t => ({ label: t.label, category: t.flaw.category || '', flaw: t.flaw.flaw })),
   graph: {
     groups: groups.map((g, gi) => ({ group: LETTERS[gi], standings: adv[gi].ranked.map(t => ({ label: t.label, pts: adv[gi].pts.get(t.id) })), advanced: [adv[gi].ranked[0].label, adv[gi].ranked[1].label] })),
     knockout: order.filter(k => history[k] && history[k].length).map(k => ({ round: k, matches: history[k].map(m => ({ winner: m.winner.label, loser: m.loser.label, margin: m.margin })) })),
