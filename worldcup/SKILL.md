@@ -81,9 +81,11 @@ context; pick sane defaults for the rest and state them.
    When the field critiques, responds to, or makes factual claims about a named external
    work, add a third element: (c) a TARGET built from that work's ACTUAL fetched source
    (WebFetch the original; WebSearch/exa/grep/context7 to locate and corroborate by domain),
-   not the draft's summary of it. The draft's characterization of the target is a claim to
-   verify. This is target-truth, the companion to the author-truth ledger; without it a
-   critique can pass the fabrication gate and still misrepresent the work it answers.
+   not the draft's summary of it. Put it in the template's dedicated `TARGET` field (which is
+   what drives the MISREPRESENTS_TARGET gate), never inline in the criteria text. The draft's
+   characterization of the target is a claim to verify. This is target-truth, the companion to
+   the author-truth ledger; without it a critique can pass the fabrication gate and still
+   misrepresent the work it answers.
 5. **Hard disqualifiers**: things that auto-kill an entry regardless of appeal. For
    Provi prose: em dashes, banned LLM vocab, announced thesis, and the big one,
    fabricated specifics presented as lived fact. The cheap ones (em dashes, banned
@@ -104,8 +106,11 @@ context; pick sane defaults for the rest and state them.
 2. **Assemble the criteria block.** Write the taste spec, the disqualifiers, and the
    incumbent into a single text block you will embed in every judge prompt. For
    Provi prose, invoke "/provi-voice" and distill its hard rules into this block. For a
-   critique/response run, fetch the target first and include its TARGET block here, so
-   target-truth rides the same channel into generation and every judge.
+   critique/response run, fetch the target first and put it in the template's dedicated
+   `TARGET` field — NOT in the criteria text. The template threads TARGET into the criteria
+   channel for you AND derives the MISREPRESENTS_TARGET gate enforcement from that field;
+   pasting target material into the criteria block instead reaches the prompts but leaves the
+   gate unable to return MISREPRESENTS_TARGET, silently disabling the enforcement.
 3. **Author the Workflow.** Read "references/workflow-template.js", copy it, and fill
    in: the DESIGN (flat flavors, or axes for a factorial field, see design-pass.md), the
    criteria block + fact ledger, the field size, the domain profile (lenses + gate), and

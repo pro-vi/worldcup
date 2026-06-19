@@ -321,6 +321,25 @@ function eloRatings(entries, decided, K = 24, base = 1500) {
   return [...R.entries()].sort((a, b) => b[1] - a[1])
 }
 
+// ─────────────────────────────────────────────── LIVE EVENT STREAM (realtime view hook)
+// The workflow is sandboxed (no fs, no sockets); its ONLY egress mid-run is log(). `emit`
+// piggybacks that stream with a greppable `WCEVENT ` prefix so an EXTERNAL watcher can tail
+// the run's persisted jsonl, parse the events, and re-render a self-refreshing static HTML of
+// the live bracket — no server, no deps (Tier 1, see references/live-view.js). With no watcher
+// attached the same lines are just structured progress you can read in /workflows (Tier 0).
+// emit is pure logging: it never feeds back in and never affects determinism. The workflow
+// PRODUCES events; it never consumes its own.
+const emit = ev => { try { log('WCEVENT ' + JSON.stringify(ev)) } catch (e) { /* logging must never break a run */ } }
+// Compact monospace standings for the free Tier-0 watch-in-/workflows view (no artifact needed).
+// 'Q' marks a qualifier (top 2), '.' an eliminated team. ASCII only so it survives any log sink.
+function standingsBlock(groups, adv) {
+  return groups.map((g, gi) => {
+    const rows = adv[gi].ranked.map((t, i) =>
+      `  ${i < 2 ? 'Q' : '.'} ${String(adv[gi].pts.get(t.id)).padStart(2)}pt  ${t.label}`).join('\n')
+    return `Group ${LETTERS[gi]}\n${rows}`
+  }).join('\n')
+}
+
 // ─────────────────────────────────────────────────────── DESIGN COMBINATORICS
 // Deterministic (no RNG). Axes here are { name, values: [label, ...] } (value labels only;
 // the DESIGN value->fragment map is applied separately when assembling prompts in U3).
@@ -591,7 +610,15 @@ async function deriveSections(design, BASE, SPEC) {
   const sectionAxes = slots.map(s => ({ name: s.slot, values: survivors[s.slot].map(v => v.label) }))
   const md = {}; slots.forEach(s => { md[s.slot] = Object.fromEntries(survivors[s.slot].map(v => [v.label, v.markdown])) })
   const { cells, strategy, estimable, meta } = reconcile(sectionAxes, FIELD)
-  design.resolved = { axes: sectionAxes, frag: null, strategy, estimable, meta }
+  // A slot that collapsed to a single clean survivor (deterministic-gate auto-advance) is a
+  // CONSTANT, not a factor: it never varies across lineups, so no effect for it can be estimated.
+  // Exclude collapsed slots from the effects/estimability axes so the report does not claim
+  // 'all-2way' evidence for a dimension that never moved (M can still == FIELD via the varying
+  // slots). They stay in the assembled markdown — every lineup carries them — just not as factors.
+  const effectAxes = sectionAxes.filter(a => a.values.length >= 2)
+  const collapsed = sectionAxes.filter(a => a.values.length < 2).map(a => a.name)
+  if (collapsed.length) log(`Sections: slot(s) ${collapsed.join(', ')} collapsed to a single survivor — constant, excluded from effects/estimability (carried in every lineup, but they estimate no effect).`)
+  design.resolved = { axes: effectAxes, frag: null, strategy, estimable, meta: { ...meta, collapsed: collapsed.length } }
   // Distinctness floor: if the survivor product M is far below FIELD the field is mostly
   // replicated clones, the bracket is clone-vs-clone (forced coin flips), and the trust verdict
   // would certify a coin-flip champion as "robust". Fail fast (parity with deriveAxes) rather
@@ -681,6 +708,9 @@ if (SOURCE === 'generate') {
 phase('Seed')
 log('Fatal-flaw screening every entry (cached for the whole tournament)..')
 await screenAll(pool, 'Seed')
+const dqd = pool.filter(t => t.flaw && t.flaw.disqualified)
+if (dqd.length) log(`Fatal-flaw gate: ${dqd.length} disqualified (${dqd.map(t => `${t.label}:${t.flaw.category || ''}`).join(', ')}).`)
+emit({ ev: 'gate', field: FIELD, disqualified: dqd.map(t => ({ label: t.label, category: t.flaw.category || '' })) })
 log('Calibrated pairwise seeding pre-pass..')
 // Swiss-like two rounds of pairwise comparisons, then Elo for a rating with real spread.
 const seedDecided = []
@@ -701,6 +731,10 @@ phase('Groups')
 const groups = snakeGroups(seeded, GROUPS)
 groups.forEach((g, gi) => g.forEach(t => { t.group = LETTERS[gi] }))
 log(`${GROUPS} groups drawn. Group stage: ${GROUPS * 6} matches..`)
+// The bracket SKELETON is fully determined the moment the snake draw is done (snakeGroups is
+// pure) — emit it so a live watcher can paint the empty bracket up front and just fill slots
+// as results stream in. Carries each team's seed so the watcher can render pots/upsets.
+emit({ ev: 'draw', field: FIELD, groups: groups.map((g, gi) => ({ group: LETTERS[gi], teams: g.map(t => ({ label: t.label, seed: seeded.findIndex(x => x.id === t.id) + 1 })) })) })
 const groupSpecs = []
 groups.forEach((g, gi) => roundRobin(g).forEach(([x, y]) => groupSpecs.push({ gi, x, y })))
 const groupResults = await parallel(groupSpecs.map((m, idx) => () =>
@@ -710,6 +744,10 @@ const groupResults = await parallel(groupSpecs.map((m, idx) => () =>
 // or tight budgets, switch group matches to a single 'taste' juror.
 
 const adv = groups.map((g, gi) => { const s = standings(g, gi, groupResults); return { ...s, gi } })
+// Realtime group standings + who advanced (the user-requested "live group standings"). The
+// log() line is the free Tier-0 view; the WCEVENT carries the structured table for Tier-1.
+log('Group standings:\n' + standingsBlock(groups, adv))
+emit({ ev: 'groups', standings: adv.map((a, gi) => ({ group: LETTERS[gi], table: a.ranked.map(t => ({ label: t.label, pts: a.pts.get(t.id) })), advanced: a.ranked.slice(0, 2).map(t => t.label) })) })
 let qualifiers
 if (FIELD === 32) {
   qualifiers = null // 32 uses fixed crossings below, not a seeded R32
@@ -750,11 +788,16 @@ while (pairs.length >= 1) {
   const res = await playRound(pairs, stakes)
   history[stakes] = res
   lastRound = res
+  // Realtime eliminations (the user-requested "live eliminations"): one event per knockout round
+  // carrying every result + who just went out. The log() line is the free Tier-0 view.
+  log(`${stakes} out: ${res.map(r => `${r.loser.label} (${r.margin})`).join(', ')}`)
+  emit({ ev: 'round', stakes, matches: res.map(r => ({ winner: r.winner.label, loser: r.loser.label, margin: r.margin })), eliminated: res.map(r => r.loser.label) })
   if (pairs.length === 1) break
   pairs = nextRoundPairs(res.map(r => r.winner))
   stakes = order[order.indexOf(stakes) + 1]
 }
 const champion = lastRound[0].winner
+emit({ ev: 'champion', label: champion.label, stakes })
 
 // ─────────────────────────────────────────────────────── REFERENCE CHALLENGE
 // The champion must beat the author's true original head-to-head, or the output is
