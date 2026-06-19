@@ -48,7 +48,10 @@ miss. Off by default because it adds agent calls.
   optimum is the dashed "best XI" (top player per position). The effects bars are per-player
   marginal form (mean Elo), the explorer compares any two positions, and the cells shade by
   mean rating. It reuses the `axes` machinery because slot survivors *are* categorical axes
-  (see design-pass.md) — so `coords`, effects, and estimability all carry over unchanged.
+  (see design-pass.md) — so `coords`, effects, and estimability carry over, with one refinement:
+  a slot that collapses to a single surviving player is a constant (it never varies across
+  lineups), so it is excluded from the effects/estimability axes though it still rides in every
+  assembled lineup.
 
 Every entry in the coordinate view is clickable and opens the same info sheet as the
 bracket (seed, rating, angle, match log, full text).

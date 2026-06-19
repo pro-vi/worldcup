@@ -43,9 +43,10 @@ const DESIGN = {
   mode: 'forced',               // 'forced' (axes given) | 'dynamic' (axis-finder proposes them)
   axes: [ /* { name, values: { valueLabel: 'prompt fragment', ... } }, ...; product reconciled to FIELD */ ],
   // --- kind:'sections' (FILL the slots; ∏ survivors is reconciled to FIELD like axes) ---
-  // Each slot is a CONTEST: count>=2 (a fixed section belongs in BASE, not here). Size it so
-  // ∏(min(keepPerSlot,count)) is >= FIELD/4 (hard floor) and ideally >= FIELD, else the field
-  // is mostly replicated clones — e.g. keepPerSlot:2 needs >=5 slots to reach 32 distinct.
+  // Each slot is a CONTEST: count>=2. The output is exactly the declared slots joined in order
+  // (BASE is reference context, not output), so every output section must be a contested slot.
+  // Size it so ∏(min(keepPerSlot,count)) is >= FIELD/4 (hard floor) and ideally >= FIELD, else the
+  // field is mostly replicated clones — e.g. keepPerSlot:2 needs >=5 slots to reach 32 distinct.
   sections: {
     keepPerSlot: 2,             // top-k variants kept per slot — the squad depth at each position
     slots: [ /* { slot: 'hook', count: 4, brief: 'how to open the piece' }, ...; >=2 slots, count>=2 */ ],
@@ -521,8 +522,10 @@ async function deriveSections(design, BASE, SPEC) {
   if (declared.length < 2) throw new Error(`DESIGN.kind=sections needs >=2 slots, each { slot, count>=2, brief }. Got ${declared.length}.`)
   // Validate EVERY declared slot and fail fast — never silently drop a malformed slot, because
   // each slot is a load-bearing section of the final artifact (dropping one assembles an
-  // incomplete piece). A slot is a CONTEST, so count>=2; a fixed section belongs in BASE, not
-  // declared here. Mirrors deriveAxes's fail-fast on unusable forced axes.
+  // incomplete piece). A slot is a CONTEST, so count>=2; the assembled artifact is exactly the
+  // declared slots joined in order (BASE is reference context, not output), so every output
+  // section must be a contested slot — a fixed section cannot be carried via BASE. Mirrors
+  // deriveAxes's fail-fast on unusable forced axes.
   declared.forEach((s, i) => {
     if (!s || typeof s.slot !== 'string' || !s.slot) throw new Error(`DESIGN.sections.slots[${i}] has no 'slot' name.`)
     if (!Number.isInteger(s.count) || s.count < 2) throw new Error(`DESIGN.sections slot "${s.slot || i}" needs an integer count>=2 (a slot is a contest). The section route assembles ONLY the declared slots, joined in order; BASE is reference context for generation/judging and is NOT part of the output, so a fixed section cannot be "baked into BASE" and still appear — every output section must be a contested slot. Got count=${s.count}.`)
