@@ -546,12 +546,19 @@ async function deriveSections(design, BASE, SPEC) {
     const todo = []
     slots.forEach(s => slotPairs[s.slot].forEach(([X, Y], idx) => { if (!decided[s.slot].has(pairKey(X.id, Y.id))) todo.push({ s, X, Y, idx }) }))
     if (!todo.length) break
-    await parallel(todo.map(({ s, X, Y, idx }) => () => {
+    // RETURN each decision (don't push from inside the thunk): parallel() resolves in input order,
+    // so appending its results is deterministic, whereas pushing as agents resolve would order sd
+    // by agent latency — and eloRatings applies matches sequentially, so latency-ordering would
+    // make the SAME judge winners yield different slot ratings/survivors run to run.
+    const results = await parallel(todo.map(({ s, X, Y, idx }) => () => {
       const flip = idx % 2 === 1, [A, B] = flip ? [Y, X] : [X, Y]
       return agent(slotJudgePrompt(s, A, B, BASE, SPEC), { label: `slotjudge:${s.slot}:${A.label}>${B.label}`, phase: 'Generate', schema: SEED_SCHEMA })
-        .then(v => { if (v) sd[s.slot].push({ winnerId: v.winner === 'X' ? A.id : B.id, loserId: v.winner === 'X' ? B.id : A.id }) })
+        .then(v => v && ({ slot: s.slot, winnerId: v.winner === 'X' ? A.id : B.id, loserId: v.winner === 'X' ? B.id : A.id }))
     }))
+    results.forEach(r => { if (r) sd[r.slot].push({ winnerId: r.winnerId, loserId: r.loserId }) })
   }
+  // Canonical pair-id order so eloRatings is independent of completion AND retry ordering.
+  for (const s of slots) sd[s.slot].sort((a, b) => Math.min(a.winnerId, a.loserId) - Math.min(b.winnerId, b.loserId) || Math.max(a.winnerId, a.loserId) - Math.max(b.winnerId, b.loserId))
   for (const s of slots) if (sd[s.slot].length < slotPairs[s.slot].length)
     throw new Error(`Slot "${s.slot}" round-robin incomplete: ${sd[s.slot].length}/${slotPairs[s.slot].length} judge decisions after 3 attempts; survivors would be picked from unjudged ties. Rerun, or check the judge.`)
   const survivors = {}
