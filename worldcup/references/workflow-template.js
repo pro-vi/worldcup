@@ -1,6 +1,6 @@
 // WORLD CUP — ultracode Workflow template.
 // Copy this into a Workflow({ script }) call and fill the four FILL blocks:
-//   (1) meta, (2) CONFIG, (3) CRITERIA_BLOCK + INCUMBENT, (4) the contestant source.
+//   (1) meta, (2) CONFIG, (3) CRITERIA + INCUMBENT + TARGET, (4) the contestant source.
 // Everything else (seeding, groups, knockout crossings, the judge pipeline, Elo,
 // trust report) is done. See references/judging.md and references/brackets.md for
 // the why. Workflow scripts are plain JS: no Date.now / Math.random / new Date.
@@ -22,7 +22,7 @@ const FIELD = 32                // 32 or 48
 const GROUPS = FIELD === 48 ? 12 : 8
 const SOURCE = 'generate'      // 'generate' | 'given'
 const USE_INCUMBENT = true     // is there a reference original to beat? (enables the reference challenge)
-const SCREENERS = 3            // fabrication-gate judges per entry: 1 = MVP, 3 = maximal (DQ needs majority)
+const SCREENERS = 3            // fabrication-gate judges per entry: 1 = MVP, 3 = maximal (DQ needs same-category majority)
 const BANS = {                 // FILL: deterministic preflight bans (cheap, run before any agent)
   emDash: true,                // em dash is an auto-DQ for Provi prose
   vocab: ['delve', 'harness', 'unlock', 'realm', 'seamless', 'ultimately', 'furthermore', 'profound', 'tapestry', 'testament'],
@@ -52,10 +52,21 @@ const DESIGN = {
   },
 }
 
-// ──────────────────────────────────────────── (3) CRITERIA + INCUMBENT (FILL)
+// ──────────────────────────────────────────── (3) CRITERIA + INCUMBENT + TARGET (FILL)
 // The taste spec + hard disqualifiers, pasted into every juror prompt. For Provi
 // prose, distill the /provi-voice hard rules here. Be specific; vagueness = no taste.
-const CRITERIA_BLOCK = `FILL: the source packet — rubric, fact ledger, disqualifiers.
+//
+// CRITIQUE / RESPONSE RUNS: if the field critiques, responds to, or makes factual claims
+// about a NAMED EXTERNAL WORK, do not trust the draft's summary of that work. FETCH it
+// first (WebFetch the original as the spine; WebSearch/exa/grep/context7 to locate +
+// corroborate by domain; second-source it) and paste its real claims/scope/quotes — with
+// SOURCES + FETCHED date — into TARGET below. The draft's characterization of the target is
+// a claim to verify, not ground truth. Put target material ONLY in TARGET, never inline in
+// the rubric. Leave TARGET='' for runs with no external target (the default). For headless /
+// no-operator runs, a phase-0 fetch agent using built-in WebFetch/WebSearch is the fallback.
+const TARGET = ''  // FILL for critique/response runs only; '' otherwise (see note above)
+
+const CRITERIA_BASE = `FILL: the source packet — rubric, fact ledger, disqualifiers.
 Example for Provi prose:
 - Voice: follow-the-thought, affirmative not question-led, cross-domain without
   signposting, deflating close, varied sentence length, non-native texture is fine.
@@ -69,6 +80,28 @@ Example for Provi prose:
   as lived fact. For a personal essay that is a lie and an automatic disqualification.
 - TASTE IS EARNEDNESS: concrete detail counts only if source-supported and necessary;
   rhythm only if it clarifies thought; an ending only if it lands without inflating.`
+
+// TARGET feeds the criteria/packet channel (reaches generation, seed, gate, and lenses via
+// CRITERIA_BLOCK), and the gate clause is CO-DERIVED from the same TARGET const, so the
+// packet material and its enforcement cannot desync. All separators live inside the truthy
+// branch: TARGET='' contributes literally zero bytes (construction invariant asserted below).
+const TARGET_BLOCK = TARGET ? `\n\nTARGET (the external work this field critiques/responds to — verify every candidate claim ABOUT it against this; do not inherit the draft's characterization):\n${TARGET}` : ''
+const CRITERIA_BLOCK = CRITERIA_BASE + TARGET_BLOCK
+const targetGateClause = TARGET ? `\n\nTARGET FIDELITY: if the entry attributes to the TARGET any claim, concession, or scope its source above does not support (including broadening the target's claim into a strawman), disqualify with category MISREPRESENTS_TARGET.` : ''
+// Construction invariant (not a full byte-identity proof): with no target, the target layer
+// adds nothing on top of the base. It cannot police target material pasted into CRITERIA_BASE
+// — that is doctrine's job (keep target material in TARGET only).
+if (!TARGET && (TARGET_BLOCK !== '' || targetGateClause !== '' || CRITERIA_BLOCK !== CRITERIA_BASE))
+  throw new Error('TARGET empty but the target layer leaked text — construction invariant violated')
+
+// Hard-DQ category vocabulary — the SINGLE source of truth for the schema enum, the gate
+// prompt, and the tally. MISREPRESENTS_TARGET is present ONLY when a TARGET exists, so a
+// non-target run cannot offer it, cannot return it (schema forbids), and the tally ignores it
+// even if a screener invents it — inert by construction, not just by doctrine.
+const HARD_DQ_CATEGORIES = ['FABRICATED_CONCRETE_DETAIL', 'FAKE_AUTHORITY_SIGNAL',
+  'FALSE_AUTHORIAL_EXPERIENCE', 'CONTRADICTS_SOURCE',
+  ...(TARGET ? ['MISREPRESENTS_TARGET'] : []),
+  'GENRE_BREACH', 'HOUSE_STYLE_HARD_BAN', 'PLAGIARISTIC_OR_NON_RESPONSIVE']
 
 const INCUMBENT = USE_INCUMBENT ? `FILL: the author's true original essay/artifact.` : ''
 const INCUMBENT_CLAUSE = USE_INCUMBENT ? `
@@ -84,8 +117,12 @@ const GEN_SCHEMA = { type: 'object', additionalProperties: false,
   required: ['markdown'],
   properties: { title: { type: 'string' }, oneLineAngle: { type: 'string' }, markdown: { type: 'string' } } }
 const FLAW_SCHEMA = { type: 'object', additionalProperties: false,
-  required: ['disqualified'],
+  required: ['disqualified', 'category'],
   properties: { disqualified: { type: 'boolean' }, flaw: { type: 'string' },
+    // The named hard-DQ category. Same-category majority across screeners is what disqualifies
+    // (see screenAll), so this must be one canonical value, not free text. NONE when not DQ'ing.
+    // Enum is derived from HARD_DQ_CATEGORIES, so MISREPRESENTS_TARGET is absent for non-target runs.
+    category: { type: 'string', enum: ['NONE', ...HARD_DQ_CATEGORIES] },
     confidence: { type: 'string', enum: ['low', 'medium', 'high'] }, note: { type: 'string' } } }
 const LENS_SCHEMA = { type: 'object', additionalProperties: false,
   required: ['winner', 'reason'],
@@ -124,13 +161,15 @@ const flawPrompt = e => `You are screening ONE entry for FATAL FLAWS before it c
 CRITERIA AND HARD DISQUALIFIERS:
 ${CRITERIA_BLOCK}
 
-Disqualify (name the rule) only if the entry: presents invented specifics as lived fact (suspiciously perfect, load-bearing, almost certainly fabricated to manufacture authenticity — treat manufactured specificity as a flaw, not a strength), OR breaks a hard disqualifier above. Do not disqualify for being merely weak.
+Disqualify (name the rule) only if the entry: presents invented specifics as lived fact (suspiciously perfect, load-bearing, almost certainly fabricated to manufacture authenticity — treat manufactured specificity as a flaw, not a strength), OR breaks a hard disqualifier above. Do not disqualify for being merely weak.${targetGateClause}
+
+When you disqualify, name the single best-fitting hard-DQ category: ${HARD_DQ_CATEGORIES.join(', ')}. Use NONE when not disqualifying.
 
 ENTRY:
 ---
 ${e.markdown}
 ---
-Return JSON { disqualified, flaw, confidence, note }. Default disqualified=false unless you can name the specific rule broken.`
+Return JSON { disqualified, category, flaw, confidence, note }. Default disqualified=false and category="NONE" unless you can name the specific rule broken.`
 
 const lensPrompt = (lens, X, Y) => `Two entries compete head to head. Pick the better. No ties — choose and give a margin. You wear ONE lens and judge on it ruthlessly; ignore other axes.
 
@@ -182,11 +221,19 @@ function preflight(text) {
 async function screenAll(entries, phase) {
   return parallel(entries.map(e => async () => {
     const pf = preflight(e.markdown)
-    if (pf.hardDQ) { e.flaw = { disqualified: true, flaw: pf.hard.join(', '), soft: pf.soft, votes: SCREENERS }; return e }
+    if (pf.hardDQ) { e.flaw = { disqualified: true, category: 'HOUSE_STYLE_HARD_BAN', flaw: pf.hard.join(', '), soft: pf.soft, votes: SCREENERS }; return e }
     const screens = (await parallel(Array.from({ length: SCREENERS }, (_, i) => () =>
       agent(flawPrompt(e), { label: `flaw${i + 1}:${e.label}`, phase, schema: FLAW_SCHEMA })))).filter(Boolean)
-    const dq = screens.filter(s => s.disqualified).length
-    e.flaw = { disqualified: dq > SCREENERS / 2, flaw: (screens.find(s => s.disqualified) || {}).flaw || '', soft: pf.soft, votes: dq }
+    // Same-category majority: DQ only when a STRICT majority of screeners (votes > SCREENERS/2,
+    // i.e. floor(SCREENERS/2)+1) cite the SAME hard-DQ category. Two judges flagging DIFFERENT
+    // violations must not kill a clean entry — that protection is the whole point of the gate.
+    const byCat = {}
+    for (const s of screens) if (s.disqualified && s.category && s.category !== 'NONE' && HARD_DQ_CATEGORIES.includes(s.category)) byCat[s.category] = (byCat[s.category] || 0) + 1
+    const [topCat, topVotes] = Object.entries(byCat).sort((a, b) => b[1] - a[1])[0] || [null, 0]
+    const disqualified = topVotes > SCREENERS / 2
+    e.flaw = { disqualified, category: disqualified ? topCat : null,
+      flaw: disqualified ? ((screens.find(s => s.disqualified && s.category === topCat) || {}).flaw || topCat) : '',
+      soft: pf.soft, votes: topVotes }
     return e
   }))
 }
@@ -728,8 +775,8 @@ if (PLAYOFF && effects && !effects.predictedOptimum.inField && DESIGN.resolved &
     const optEntry = { id: -2, label: 'PREDICTED-OPTIMUM', coords: opt, markdown: og.markdown, rating: 1500, group: '-' }
     await screenAll([optEntry], 'Knockout')  // same fabrication gate as the field; a fabricated optimum forfeits
     if (optEntry.flaw && optEntry.flaw.disqualified) {
-      playoff = { disqualified: true, flaw: optEntry.flaw.flaw, markdown: og.markdown }
-      log(`Playoff: predicted optimum disqualified at the gate (${optEntry.flaw.flaw}); skipped.`)
+      playoff = { disqualified: true, category: optEntry.flaw.category || '', flaw: optEntry.flaw.flaw, markdown: og.markdown }
+      log(`Playoff: predicted optimum disqualified at the gate (${optEntry.flaw.category || ''} ${optEntry.flaw.flaw}); skipped.`)
     } else {
       const incumbentEntry = { id: -1, label: 'ORIGINAL', markdown: INCUMBENT, rating: 1500, group: '-', flaw: { disqualified: false } }
       const m1 = await playMatch(optEntry, champion, 0, 'FINAL', 'Knockout', [])
@@ -768,7 +815,7 @@ function renderReport() {
   const pathRows = pathOf(champion).map(s => `<li><b>${esc(s.round)}</b> beat ${esc(s.beat)} <span class="mrg">(${esc(s.margin || '')})</span><div class="why">${esc(s.reason || '')}</div></li>`).join('')
   const ratingRows = globalRating.slice(0, 16).map(([id, r], i) => { const t = pool.find(x => x.id === id); return `<tr><td>${i + 1}</td><td>${esc(t ? t.label : id)}</td><td>${Math.round(r)}</td></tr>` }).join('')
   const dq = pool.filter(t => t.flaw && t.flaw.disqualified)
-  const dqHtml = dq.length ? `<div class="card"><h3>Disqualified (${dq.length})</h3><ul>${dq.map(t => `<li>${esc(t.label)}: ${esc(t.flaw.flaw)}</li>`).join('')}</ul></div>` : ''
+  const dqHtml = dq.length ? `<div class="card"><h3>Disqualified (${dq.length})</h3><ul>${dq.map(t => `<li>${esc(t.label)}: <b>${esc(t.flaw.category || '')}</b> ${esc(t.flaw.flaw)}</li>`).join('')}</ul></div>` : ''
   const refTxt = referenceChallenge ? (referenceChallenge.championBeatOriginal ? `champion beat the original (${esc(referenceChallenge.margin)})` : 'champion did NOT beat the original') : 'no incumbent'
   return `<!doctype html><html><head><meta charset="utf-8"><title>World Cup: ${champLabel}</title><style>
 :root{--pitch:#0b6e3b;--pitch2:#0a5e33;--gold:#f4c430;--ink:#10241a;--paper:#f7f4ec}
@@ -818,7 +865,7 @@ function renderReportV2() {
   for (const k of order) (history[k] || []).forEach(m => addLog(k, m.winner.label, m.loser.label, m.margin, m.reason))
   if (referenceChallenge) addLog('Reference', referenceChallenge.championBeatOriginal ? champion.label : 'ORIGINAL', referenceChallenge.championBeatOriginal ? 'ORIGINAL' : champion.label, referenceChallenge.margin, referenceChallenge.reason)
   const DATA = {}
-  pool.forEach(t => { DATA[t.label] = { title: t.title || '', angle: t.oneLineAngle || '', coords: t.coords || {}, seed: seeded.findIndex(x => x.id === t.id) + 1, rating: Math.round(ratingById.get(t.id) || 0), dq: !!(t.flaw && t.flaw.disqualified), flaw: t.flaw ? (t.flaw.flaw || '') : '', matches: mlog[t.label] || [], text: t.markdown || '' } })
+  pool.forEach(t => { DATA[t.label] = { title: t.title || '', angle: t.oneLineAngle || '', coords: t.coords || {}, seed: seeded.findIndex(x => x.id === t.id) + 1, rating: Math.round(ratingById.get(t.id) || 0), dq: !!(t.flaw && t.flaw.disqualified), flaw: t.flaw ? (t.flaw.flaw || '') : '', category: t.flaw ? (t.flaw.category || '') : '', matches: mlog[t.label] || [], text: t.markdown || '' } })
   const dataJson = JSON.stringify(DATA).replace(/</g, '\\u003c').replace(/|/g, '')
   const entry = label => `<span class="entry" data-k="${esc(label)}">${esc(label)}</span>`
   const card = m => m ? `<div class="match"><div class="slot win">${entry(m.winner.label)}<span class="mg">${esc(m.margin || '')}</span></div><div class="slot lose">${entry(m.loser.label)}</div></div>` : `<div class="match empty"></div>`
@@ -833,7 +880,7 @@ function renderReportV2() {
   const groupCards = groups.map((g, gi) => { const a = adv[gi]; const rows = a.ranked.map((t, i) => `<tr class="${i < 2 ? 'adv' : ''}"><td>${entry(t.label)}</td><td class="pts">${a.pts.get(t.id)}</td></tr>`).join(''); return `<div class="grp"><h4>Group ${LETTERS[gi]}</h4><table>${rows}</table></div>` }).join('')
   const ratingRows = globalRating.map(([id, r], i) => { const t = pool.find(x => x.id === id); return `<tr><td>${i + 1}</td><td>${entry(t ? t.label : String(id))}</td><td>${Math.round(r)}</td></tr>` }).join('')
   const dq = pool.filter(t => t.flaw && t.flaw.disqualified)
-  const dqHtml = dq.length ? `<div class="panel"><h3>Disqualified at the gate (${dq.length})</h3><ul>${dq.map(t => `<li>${entry(t.label)}: ${esc(t.flaw.flaw)}</li>`).join('')}</ul></div>` : `<div class="panel"><h3>Fabrication gate</h3><div class="muted">0 disqualified.</div></div>`
+  const dqHtml = dq.length ? `<div class="panel"><h3>Disqualified at the gate (${dq.length})</h3><ul>${dq.map(t => `<li>${entry(t.label)}: <b>${esc(t.flaw.category || '')}</b> ${esc(t.flaw.flaw)}</li>`).join('')}</ul></div>` : `<div class="panel"><h3>Fabrication gate</h3><div class="muted">0 disqualified.</div></div>`
   const refTxt = referenceChallenge ? (referenceChallenge.championBeatOriginal ? `champion beat the original (${esc(referenceChallenge.margin)})` : 'champion did NOT beat the original') : 'no incumbent'
   // ─── coordinate view (axes + sections): parallel coordinates + effects + a 2-axis explorer.
   // For sections it reads as a LINEUP: each axis is a position (slot), each value a player
@@ -961,7 +1008,7 @@ function he(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return 
 function show(k){var d=DATA[k];if(!d)return;var h='<h2>'+he(k)+(d.dq?' <span class="dqtag">DISQUALIFIED</span>':'')+'</h2>';
 h+='<div class="meta">seed #'+d.seed+' &middot; rating '+d.rating+(d.angle?(' &middot; '+he(d.angle)):'')+'</div>';
 if(d.coords&&Object.keys(d.coords).filter(function(k){return k!=='__rep';}).length)h+='<div class="meta">at '+Object.keys(d.coords).filter(function(k){return k!=='__rep';}).map(function(k){return he(k)+'='+he(d.coords[k]);}).join(', ')+'</div>';
-if(d.dq)h+='<div class="meta" style="color:#f3a">gate: '+he(d.flaw)+'</div>';
+if(d.dq)h+='<div class="meta" style="color:#f3a">gate: '+(d.category?'<b>'+he(d.category)+'</b> ':'')+he(d.flaw)+'</div>';
 if(d.matches&&d.matches.length){h+='<h3>matches</h3><ul class="mlog">';d.matches.forEach(function(x){h+='<li><span class="'+(x.won?'w':'l')+'">'+(x.won?'beat':'lost to')+' '+he(x.opp)+'</span> <span class="why">&middot; '+he(x.round)+' &middot; '+he(x.margin||'')+'</span><div class="why">'+he(x.reason||'')+'</div></li>';});h+='</ul>';}
 h+='<h3>full text</h3><div class="essay">'+String(d.text||'').split(/\\n\\n+/).map(function(p){return '<p>'+he(p)+'</p>';}).join('')+'</div>';
 document.getElementById('mbody').innerHTML=h;document.getElementById('modal').classList.add('show');}
@@ -989,7 +1036,7 @@ return {
   recommendation,
   effects,
   playoff,
-  disqualified: pool.filter(t => t.flaw?.disqualified).map(t => ({ label: t.label, flaw: t.flaw.flaw })),
+  disqualified: pool.filter(t => t.flaw?.disqualified).map(t => ({ label: t.label, category: t.flaw.category || '', flaw: t.flaw.flaw })),
   graph: {
     groups: groups.map((g, gi) => ({ group: LETTERS[gi], standings: adv[gi].ranked.map(t => ({ label: t.label, pts: adv[gi].pts.get(t.id) })), advanced: [adv[gi].ranked[0].label, adv[gi].ranked[1].label] })),
     knockout: order.filter(k => history[k] && history[k].length).map(k => ({ round: k, matches: history[k].map(m => ({ winner: m.winner.label, loser: m.loser.label, margin: m.margin })) })),

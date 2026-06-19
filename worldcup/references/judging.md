@@ -55,6 +55,15 @@ places, quotes, conversations, medical details, childhood scenes, job titles, an
 concrete detail presented as lived fact without support, any vulnerability/trauma not
 in the source.
 
+TARGET (present ONLY for critique / response runs; omit otherwise) — the external work this
+field critiques or answers, built from its ACTUAL fetched source, not the draft's summary:
+- CLAIMS / SCOPE: {what the target actually argues, and how far — its real scope}
+- QUOTES: {verbatim lines that pin the above}
+- SOURCES: {URLs / refs, >=2 independent}   FETCHED: {YYYY-MM-DD}
+The draft's characterization of the target is a CLAIM TO VERIFY against this, never ground
+truth. Attributing to the target claims / concessions / scope its source does not support is
+a forfeit (gate category MISREPRESENTS_TARGET).
+
 PERMITTED CREATIVE MOVES: reorder the argument, sharpen sentences, cut filler, rephrase
 metaphors, clarify implicit logic, add clearly-marked hypotheticals, compress/expand
 within length.
@@ -75,6 +84,16 @@ For Provi prose, the incumbent is the real essay and the fact ledger is "only wh
 author actually lived." When the field is generated, the generator must be told the same
 NOT-ALLOWED list so it does not fabricate in the first place — but the gate still runs,
 because generators cheat.
+
+When the field critiques, responds to, or makes factual claims about a named external work,
+build the TARGET section from that work's fetched source BEFORE generating: WebFetch the
+original as the spine, WebSearch / exa / grep / context7 to locate and corroborate by domain,
+second-source it. Do this once at setup and pin it into the packet — it then reaches
+generation, seeding, the gate, and the lenses through the one criteria channel; never
+per-candidate. This is the second truth anchor: author-truth (the ledger) guards against
+inventing the author's life; target-truth guards against misrepresenting someone else's work.
+(Headless / no-operator runs: a phase-0 fetch agent using built-in WebFetch/WebSearch is the
+fallback, since interactively-authed MCP servers can be absent there.)
 
 ## 2. Deterministic preflight (cheap, runs before any agent)
 
@@ -99,15 +118,19 @@ the title/opening/closing, escalate toward a style DQ.
 
 The most important LLM layer. It asks "is this entry allowed to compete," not "is it
 good." Run **3 independent screeners** (ideally different model families). Disqualify
-only when **2 of 3 agree on the same hard violation** (or the same fabricated span), so
-one hallucinating judge cannot wrongly kill a clean entry. Each screener classifies
+only when a **strict majority agree on the same hard-DQ category** (2 of 3 at the maximal
+tier), so two judges flagging *different* violations cannot together kill a clean entry.
+Each screener returns one canonical `category` (NONE when it does not disqualify); the gate
+tallies categories and disqualifies only the one that reaches a majority. Each screener classifies
 every concrete detail not inherited from the source as
 SUPPORTED / REASONABLE_INFERENCE / UNSUPPORTED_MINOR / FABRICATED.
 
 Hard-DQ categories: FABRICATED_CONCRETE_DETAIL, FAKE_AUTHORITY_SIGNAL (fake quotes /
 logs / citations), FALSE_AUTHORIAL_EXPERIENCE (invented lived events/feelings),
-CONTRADICTS_SOURCE, GENRE_BREACH (essay turned into sermon / LinkedIn post / marketing),
-HOUSE_STYLE_HARD_BAN, PLAGIARISTIC_OR_NON_RESPONSIVE.
+CONTRADICTS_SOURCE, MISREPRESENTS_TARGET (attributes to a critiqued external work claims /
+concessions / scope its real source does not support, or strawmans its scope — enforceable
+only when a TARGET section is in the packet), GENRE_BREACH (essay turned into sermon /
+LinkedIn post / marketing), HOUSE_STYLE_HARD_BAN, PLAGIARISTIC_OR_NON_RESPONSIVE.
 Soft-fail categories (penalize, do not kill): PERFORMED_VULNERABILITY, SURFACE_CONCRETENESS,
 SOUNDS_DEEP_FILLER, RHYTHMIC_TIC, OVERPOLISHED_LLM_VOICE, ANNOUNCED_THESIS,
 SWELLING_UPLIFT_CLOSER.
@@ -121,13 +144,25 @@ a serious violation, not a literary virtue. Be most suspicious of detail that fe
 
 USER: SOURCE PACKET: <<< {PACKET} >>>  CANDIDATE: <<< {ENTRY} >>>  PREFLIGHT: {flags}
 For every concrete detail not inherited from the source, classify it
-SUPPORTED | REASONABLE_INFERENCE | UNSUPPORTED_MINOR | FABRICATED. Then rule.
-Return JSON { verdict: "PASS"|"SOFT_FAIL"|"HARD_DQ", hard_dq_categories:[],
-soft_fail_categories:[], fabricated_spans:[{span, why}], one_sentence_ruling }.
-Default to PASS unless you can name the specific rule broken. Do not DQ for being weak.
+SUPPORTED | REASONABLE_INFERENCE | UNSUPPORTED_MINOR | FABRICATED. If the packet has a
+TARGET section, also check every claim the entry makes ABOUT that target against it;
+attributing claims / concessions / scope the target's real source does not support is
+MISREPRESENTS_TARGET. Then rule, naming the single best-fitting hard-DQ category.
+Return JSON { verdict: "PASS"|"SOFT_FAIL"|"HARD_DQ", category, fabricated_spans:[{span, why}],
+soft_fail_categories:[], one_sentence_ruling }. category is one canonical hard-DQ name or
+"NONE". Default to PASS / "NONE" unless you can name the specific rule broken. Do not DQ for being weak.
 ```
 
-Disqualified entries are removed from the field before the bracket; record them and why.
+This JSON is the *conceptual* screener contract. The shipped `references/workflow-template.js`
+implements a leaner executable `FLAW_SCHEMA` — `{ disqualified, category, flaw, confidence, note }`
+with `additionalProperties:false` — which collapses `verdict` into `disqualified` and omits the
+`soft_fail_categories` / `fabricated_spans` arrays. The `category` enum there is derived from the
+active `HARD_DQ_CATEGORIES`, so `MISREPRESENTS_TARGET` is offered only when a TARGET is in the packet.
+
+Aggregate by category: disqualify an entry only when a strict majority of screeners name the
+SAME category (so split votes on different violations cannot kill a clean entry); record the
+winning category and a representative ruling. Disqualified entries are removed from the field
+before the bracket; record them and why.
 
 ## 4. Pairwise, never scalar (for the contest)
 
@@ -173,6 +208,11 @@ one profile, not the shape of the tool.
 
 - **Prose / voice** (essays, copy, posts): gate = the fabrication gate above (preflight +
   3-judge fact-ledger check). Lenses = fidelity, taste, anti-gaming, argument, cold-reader.
+  - *Critique / response sub-mode* (the field critiques or responds to a named external
+    work): the packet adds a TARGET section built from that work's fetched source, and the
+    gate adds MISREPRESENTS_TARGET. A dedicated target-fidelity lens (distinct from
+    `fidelity`, which protects the author) is available but deferred — the gate disqualifier
+    is the load-bearing enforcement.
 - **Code / solutions**: gate = deterministic — does it compile, lint, and pass the test
   suite (run it; non-compiling or failing entries are disqualified, no LLM needed). Lenses
   = correctness, simplicity/readability, efficiency, API-fit. The reference challenge is
