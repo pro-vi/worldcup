@@ -130,14 +130,18 @@ what makes it honest. Flashier-but-fabricated, or flashier-but-less-honest, lose
 const GEN_SCHEMA = { type: 'object', additionalProperties: false,
   required: ['markdown'],
   properties: { title: { type: 'string' }, oneLineAngle: { type: 'string' }, markdown: { type: 'string' } } }
-const FLAW_SCHEMA = { type: 'object', additionalProperties: false,
+// The flaw schema's category enum MUST track the hard-DQ vocabulary, or the gate prompts/tallies for
+// one category set while the schema permits another. Derive it from a category list (not a captured
+// constant) so a certified EVALUATOR with a custom hardDqCategories gets a matching schema via
+// makeFlawSchema(ev.hardDqCategories) — validateEvaluatorConfig enforces they agree.
+const makeFlawSchema = categories => ({ type: 'object', additionalProperties: false,
   required: ['disqualified', 'category'],
   properties: { disqualified: { type: 'boolean' }, flaw: { type: 'string' },
-    // The named hard-DQ category. Same-category majority across screeners is what disqualifies
+    // The named hard-DQ category. Same-FAMILY majority across screeners is what disqualifies
     // (see screenAll), so this must be one canonical value, not free text. NONE when not DQ'ing.
-    // Enum is derived from HARD_DQ_CATEGORIES, so MISREPRESENTS_TARGET is absent for non-target runs.
-    category: { type: 'string', enum: ['NONE', ...HARD_DQ_CATEGORIES] },
-    confidence: { type: 'string', enum: ['low', 'medium', 'high'] }, note: { type: 'string' } } }
+    category: { type: 'string', enum: ['NONE', ...categories] },
+    confidence: { type: 'string', enum: ['low', 'medium', 'high'] }, note: { type: 'string' } } })
+const FLAW_SCHEMA = makeFlawSchema(HARD_DQ_CATEGORIES)
 const LENS_SCHEMA = { type: 'object', additionalProperties: false,
   required: ['winner', 'reason'],
   properties: { winner: { type: 'string', enum: ['X', 'Y'] },
@@ -169,15 +173,56 @@ const panelFor = stakes => {
   return COHERENCE_ON ? [...base, 'coherence'] : base
 }
 
+// ─────────────────────────────────────── EVALUATOR_CONFIG (PLAN_3 U19/P1: the judge as one object)
+// Every judge surface — the fabrication gate, the seed pre-pass, the lens panel, the panel policy,
+// the schemas, the agent model/options, the family-DQ vocabulary, and the vote aggregation — reads
+// from THIS object instead of scattered constants. The DEFAULT below references today's exact
+// constants, so a run with the default EVALUATOR is byte-identical to before this extraction (the
+// qualifier is opt-in; nothing changes until a certified config is assigned). PLAN_3 U12 produces a
+// CERTIFIED EvaluatorConfig and reassigns EVALUATOR here, so the config that was certified is
+// provably the one the tournament runs (probe: probes/p1-eval-config.mjs). Consumers default to the
+// module EVALUATOR but accept an explicit `ev` for testing and per-call overrides.
+let EVALUATOR = {
+  criteriaBlock:    CRITERIA_BLOCK,      // taste spec + fact ledger + disqualifiers the judges read
+  incumbentClause:  INCUMBENT_CLAUSE,    // the "must beat the incumbent" clause seated in lens prompts
+  targetGateClause: targetGateClause,    // the MISREPRESENTS_TARGET gate clause ('' when no TARGET)
+  hardDqCategories: HARD_DQ_CATEGORIES,  // canonical hard-DQ vocabulary (gate prompt + enum + tally)
+  dqFamily:         DQ_FAMILY,           // category -> violation family, for the same-family gate tally
+  lenses:           LENSES,              // lens name -> its one-axis mandate (the panel's seats)
+  panelFor,                              // stakes -> [lens, ...]  (the per-stakes panel policy)
+  tiebreakLens:     'integrity',         // the extra juror seated on an even split (was hardcoded)
+  screeners:        SCREENERS,           // independent fabrication-gate judges per entry
+  bans:             BANS,                // deterministic preflight policy (em dash, banned vocab) — part of the gate, so certified too
+  schemas:          { flaw: FLAW_SCHEMA, lens: LENS_SCHEMA, seed: SEED_SCHEMA },
+  agentOptions:     {},                  // merged into every judge agent() call (e.g. { model }); {} = inherit. NEVER overrides label/phase/schema (spread FIRST at call sites)
+  lensWeight:       () => 1,             // (lens) -> weight in the tally; ()=>1 is today's 1:1 (PLAN_3 U13 fills this in)
+}
+// Guarded weight read: a config's lensWeight is untrusted (could return undefined/NaN/negative,
+// which would silently flip or corrupt the tally). Coerce anything non-finite-or-negative back to 1.
+const lensW = (ev, lens) => { const w = ev.lensWeight(lens); return (Number.isFinite(w) && w >= 0) ? w : 1 }
+// Integrity check for a (default or certified) config: the flaw schema's enum must cover every
+// hard-DQ category, and every category must have a violation-family mapping (else same-family gate
+// votes split). Run on the default below; PLAN_3 U12 MUST run it on every certified config it emits.
+function validateEvaluatorConfig(ev) {
+  const cats = ev.hardDqCategories || []
+  const enumv = (ev.schemas && ev.schemas.flaw && ev.schemas.flaw.properties && ev.schemas.flaw.properties.category && ev.schemas.flaw.properties.category.enum) || []
+  for (const c of cats) {
+    if (!enumv.includes(c)) throw new Error(`EVALUATOR.schemas.flaw enum is missing hard-DQ category "${c}" — schema and hardDqCategories drifted. Build the schema with makeFlawSchema(ev.hardDqCategories).`)
+    if (!ev.dqFamily || !ev.dqFamily[c]) throw new Error(`EVALUATOR.dqFamily has no family for hard-DQ category "${c}" — same-family gate tally would split its votes. Add a family mapping.`)
+  }
+  return ev
+}
+validateEvaluatorConfig(EVALUATOR)  // the default config must be self-consistent (catches drift at load)
+
 // ─────────────────────────────────────────────────────── PROMPTS
-const flawPrompt = e => `You are screening ONE entry for FATAL FLAWS before it competes. Not judging quality; checking for disqualification.
+const flawPrompt = (e, ev = EVALUATOR) => `You are screening ONE entry for FATAL FLAWS before it competes. Not judging quality; checking for disqualification.
 
 CRITERIA AND HARD DISQUALIFIERS:
-${CRITERIA_BLOCK}
+${ev.criteriaBlock}
 
-Disqualify (name the rule) only if the entry: presents invented specifics as lived fact (suspiciously perfect, load-bearing, almost certainly fabricated to manufacture authenticity — treat manufactured specificity as a flaw, not a strength), OR breaks a hard disqualifier above. Do not disqualify for being merely weak.${targetGateClause}
+Disqualify (name the rule) only if the entry: presents invented specifics as lived fact (suspiciously perfect, load-bearing, almost certainly fabricated to manufacture authenticity — treat manufactured specificity as a flaw, not a strength), OR breaks a hard disqualifier above. Do not disqualify for being merely weak.${ev.targetGateClause}
 
-When you disqualify, name the single best-fitting hard-DQ category: ${HARD_DQ_CATEGORIES.join(', ')}. Use NONE when not disqualifying.
+When you disqualify, name the single best-fitting hard-DQ category: ${ev.hardDqCategories.join(', ')}. Use NONE when not disqualifying.
 
 ENTRY:
 ---
@@ -185,13 +230,13 @@ ${e.markdown}
 ---
 Return JSON { disqualified, category, flaw, confidence, note }. Default disqualified=false and category="NONE" unless you can name the specific rule broken.`
 
-const lensPrompt = (lens, X, Y) => `Two entries compete head to head. Pick the better. No ties — choose and give a margin. You wear ONE lens and judge on it ruthlessly; ignore other axes.
+const lensPrompt = (lens, X, Y, ev = EVALUATOR) => `Two entries compete head to head. Pick the better. No ties — choose and give a margin. You wear ONE lens and judge on it ruthlessly; ignore other axes.
 
-YOUR LENS: ${lens} — ${LENSES[lens]}
+YOUR LENS: ${lens} — ${ev.lenses[lens]}
 
 CRITERIA (context; judge through your lens):
-${CRITERIA_BLOCK}
-${INCUMBENT_CLAUSE}
+${ev.criteriaBlock}
+${ev.incumbentClause}
 
 Do NOT reward length, density, or more concrete detail for its own sake. A short honest entry beats a long performed one. Suspiciously perfect specificity is a warning sign.
 
@@ -205,10 +250,10 @@ ${Y.markdown}
 ---
 Return JSON { winner:"X"|"Y", margin, reason (two sentences, the deciding factor through your lens) }.`
 
-const seedPrompt = (X, Y) => `Quick calibrated comparison for seeding. Which entry is stronger overall against the criteria. Choose; no ties.
+const seedPrompt = (X, Y, ev = EVALUATOR) => `Quick calibrated comparison for seeding. Which entry is stronger overall against the criteria. Choose; no ties.
 
 CRITERIA:
-${CRITERIA_BLOCK}
+${ev.criteriaBlock}
 
 ENTRY X:
 ---
@@ -221,18 +266,21 @@ ${Y.markdown}
 Return JSON { winner:"X"|"Y", confidence }.`
 
 // ─────────────────────────────────────────────────────── JUDGE PIPELINE
-// Deterministic preflight: cheap regex gate, runs before any agent.
-function preflight(text) {
+// Deterministic preflight: cheap regex gate, runs before any agent. Reads the ban policy from the
+// config (ev.bans), so the deterministic half of the gate is certified alongside the LLM half — not
+// an uncertified global side-channel. Default ev = EVALUATOR (whose bans default to the module BANS).
+function preflight(text, ev = EVALUATOR) {
+  const bans = ev.bans || {}
   const hard = [], soft = []
-  if (BANS.emDash && text.includes('—')) hard.push('em dash')
-  for (const w of (BANS.vocab || [])) if (new RegExp(`\\b${w}\\b`, 'i').test(text)) soft.push(`banned:${w}`)
+  if (bans.emDash && text.includes('—')) hard.push('em dash')
+  for (const w of (bans.vocab || [])) if (new RegExp(`\\b${w}\\b`, 'i').test(text)) soft.push(`banned:${w}`)
   if (/\b(this essay|in this piece|what i want to explore)\b/i.test(text)) soft.push('announced thesis')
   if (/\b(ultimately|in the end|at the end of the day|what it means to be)\b/i.test(text.slice(-600))) soft.push('uplift closer')
   return { hardDQ: hard.length > 0, hard, soft }
 }
 // Fabrication gate: preflight, then SCREENERS independent judges; DQ needs majority.
 // Computed ONCE per entry and cached. The most important call in the system.
-async function screenAll(entries, phase) {
+async function screenAll(entries, phase, ev = EVALUATOR) {
   // De-dup by markdown BEFORE screening. When sections has meta.M < FIELD, reconcile replicates
   // lineups, so the pool holds multiple entries with IDENTICAL markdown under #n labels. Screening
   // each clone independently would let the SAME text be disqualified for one copy and allowed for
@@ -243,10 +291,10 @@ async function screenAll(entries, phase) {
   const reps = [...byText.keys()]
   const verdicts = await parallel(reps.map(text => async () => {
     const e0 = byText.get(text)[0]
-    const pf = preflight(text)
-    if (pf.hardDQ) return { disqualified: true, category: 'HOUSE_STYLE_HARD_BAN', flaw: pf.hard.join(', '), soft: pf.soft, votes: SCREENERS }
-    const screens = (await parallel(Array.from({ length: SCREENERS }, (_, i) => () =>
-      agent(flawPrompt(e0), { label: `flaw${i + 1}:${e0.label}`, phase, schema: FLAW_SCHEMA })))).filter(Boolean)
+    const pf = preflight(text, ev)
+    if (pf.hardDQ) return { disqualified: true, category: 'HOUSE_STYLE_HARD_BAN', flaw: pf.hard.join(', '), soft: pf.soft, votes: ev.screeners }
+    const screens = (await parallel(Array.from({ length: ev.screeners }, (_, i) => () =>
+      agent(flawPrompt(e0, ev), { ...ev.agentOptions, label: `flaw${i + 1}:${e0.label}`, phase, schema: ev.schemas.flaw })))).filter(Boolean)
     // Same-FAMILY majority: DQ when a STRICT majority of screeners (votes > SCREENERS/2) flag the
     // same violation FAMILY (see DQ_FAMILY). This still stops ONE hallucinating judge from killing a
     // clean entry (1 vote is never a majority) AND stops a fabricator from slipping through when three
@@ -254,13 +302,13 @@ async function screenAll(entries, phase) {
     // PASS that. Label the DQ with the most-cited subtype inside the winning family.
     const byFam = {}
     for (const s of screens) {
-      if (!(s.disqualified && s.category && s.category !== 'NONE' && HARD_DQ_CATEGORIES.includes(s.category))) continue
-      const fam = DQ_FAMILY[s.category] || s.category
+      if (!(s.disqualified && s.category && s.category !== 'NONE' && ev.hardDqCategories.includes(s.category))) continue
+      const fam = ev.dqFamily[s.category] || s.category
       const f = byFam[fam] || (byFam[fam] = { votes: 0, cats: {} })
       f.votes++; f.cats[s.category] = (f.cats[s.category] || 0) + 1
     }
     const top = Object.entries(byFam).sort((a, b) => b[1].votes - a[1].votes)[0]
-    const disqualified = !!top && top[1].votes > SCREENERS / 2
+    const disqualified = !!top && top[1].votes > ev.screeners / 2
     const topCat = disqualified ? Object.entries(top[1].cats).sort((a, b) => b[1] - a[1])[0][0] : null
     const topVotes = top ? top[1].votes : 0
     return { disqualified, category: topCat,
@@ -275,42 +323,49 @@ async function screenAll(entries, phase) {
 }
 
 // One head-to-head. orderIdx parity flips X/Y to cancel position bias.
-async function playMatch(a, b, orderIdx, stakes, phase, decided) {
+async function playMatch(a, b, orderIdx, stakes, phase, decided, ev = EVALUATOR) {
   // Stage 0 — fatal-flaw veto (uses cached screens)
   const da = a.flaw?.disqualified, db = b.flaw?.disqualified
   if (da && !db) return record(b, a, 'decisive', `opponent DQ'd: ${a.flaw.flaw}`, decided)
   if (db && !da) return record(a, b, 'decisive', `opponent DQ'd: ${b.flaw.flaw}`, decided)
 
   // Stage 1 — lens panel (order flipped per lens index to debias)
-  const lenses = panelFor(stakes)
+  const lenses = ev.panelFor(stakes)
   const votes = (await parallel(lenses.map((lens, i) => () => {
     const flip = (orderIdx + i) % 2 === 1
     const [X, Y] = flip ? [b, a] : [a, b]
-    return agent(lensPrompt(lens, X, Y), { label: `${stakes}:${lens}:${a.label}>${b.label}`, phase, schema: LENS_SCHEMA })
+    return agent(lensPrompt(lens, X, Y, ev), { ...ev.agentOptions, label: `${stakes}:${lens}:${a.label}>${b.label}`, phase, schema: ev.schemas.lens })
       .then(v => v && ({ lens, winner: v.winner === 'X' ? (flip ? b : a) : (flip ? a : b), margin: v.margin, reason: v.reason }))
   }))).filter(Boolean)
 
   // Stage 2 — majority. Stage 3 — break/escalate ties.
-  let winner = tally(votes, a, b)
-  if (!winner) { // even split: seat one more juror (integrity, then taste)
-    const extra = await agent(lensPrompt('integrity', a, b), { label: `${stakes}:tiebreak:${a.label}`, phase, schema: LENS_SCHEMA })
-    if (extra) votes.push({ lens: 'integrity', winner: extra.winner === 'X' ? a : b, margin: extra.margin, reason: extra.reason })
-    winner = tally(votes, a, b) || (a.rating >= b.rating ? a : b)
+  let winner = tally(votes, a, b, ev)
+  if (!winner) { // even split: seat one more juror (the configured tiebreak lens)
+    const extra = await agent(lensPrompt(ev.tiebreakLens, a, b, ev), { ...ev.agentOptions, label: `${stakes}:tiebreak:${a.label}`, phase, schema: ev.schemas.lens })
+    if (extra) votes.push({ lens: ev.tiebreakLens, winner: extra.winner === 'X' ? a : b, margin: extra.margin, reason: extra.reason })
+    winner = tally(votes, a, b, ev) || (a.rating >= b.rating ? a : b)
   }
   const loser = winner.id === a.id ? b : a
   const reason = (votes.find(v => v.winner.id === winner.id) || {}).reason || 'panel majority'
-  const margin = marginOf(votes, winner)
+  const margin = marginOf(votes, winner, ev)
   return record(winner, loser, margin, reason, decided)
 }
-function tally(votes, a, b) {
+function tally(votes, a, b, ev = EVALUATOR) {
   let av = 0, bv = 0
-  votes.forEach(v => { if (v.winner.id === a.id) av++; else bv++ })
+  // Per-lens weight from the config (lensW guards against undefined/NaN/negative). The default
+  // lensWeight is ()=>1, so av/bv are integer vote counts identical to the unweighted tally
+  // (PLAN_3 U13 supplies real per-lens reliability weights).
+  votes.forEach(v => { const w = lensW(ev, v.lens); if (v.winner.id === a.id) av += w; else bv += w })
   if (av === bv) return null
   return av > bv ? a : b
 }
-function marginOf(votes, w) {
-  const for_ = votes.filter(v => v.winner.id === w.id).length
-  return for_ === votes.length ? 'decisive' : for_ - (votes.length - for_) >= 2 ? 'clear' : 'narrow'
+// Margin is computed on the SAME weighted totals tally uses, so a weighted winner can't be reported
+// with a misleading raw-count margin. With the default ()=>1 weights this is byte-identical to the
+// old raw-count margin.
+function marginOf(votes, w, ev = EVALUATOR) {
+  const total = votes.reduce((s, v) => s + lensW(ev, v.lens), 0)
+  const for_ = votes.filter(v => v.winner.id === w.id).reduce((s, v) => s + lensW(ev, v.lens), 0)
+  return for_ === total ? 'decisive' : (for_ - (total - for_) >= 2 ? 'clear' : 'narrow')
 }
 function record(winner, loser, margin, reason, decided) {
   decided.push({ winnerId: winner.id, loserId: loser.id })
@@ -614,6 +669,9 @@ async function deriveSections(design, BASE, SPEC) {
     // make the SAME judge winners yield different slot ratings/survivors run to run.
     const results = await parallel(todo.map(({ s, X, Y, idx }) => () => {
       const flip = idx % 2 === 1, [A, B] = flip ? [Y, X] : [X, Y]
+      // ⚠️ U12 boundary: this section-route slot judge is NOT threaded through EVALUATOR (it uses the
+      // bare SEED_SCHEMA + the generation model). Byte-identical at default; revisit when a certified
+      // config sets agentOptions.model (decide whether slot judging adopts the judge model).
       return agent(slotJudgePrompt(s, A, B, BASE, SPEC), { label: `slotjudge:${s.slot}:${A.label}>${B.label}`, phase: 'Generate', schema: SEED_SCHEMA })
         .then(v => v && ({ slot: s.slot, winnerId: v.winner === 'X' ? A.id : B.id, loserId: v.winner === 'X' ? B.id : A.id }))
     }))
@@ -675,6 +733,12 @@ async function deriveSections(design, BASE, SPEC) {
 const decided = []  // every decided head-to-head, for Elo
 
 const BASE = `FILL: the base artifact being varied (essay, brief, spec, design, prompt...).`
+// GENERATION criteria. Bound to CRITERIA_BLOCK (the operator's brief), NOT EVALUATOR.criteriaBlock.
+// At default these are identical. ⚠️ U12 DECISION (deferred): once the qualifier reassigns
+// EVALUATOR.criteriaBlock to a CERTIFIED judging rubric, decide whether generation should track it
+// (so candidates are generated for the same target they're judged by) or keep the operator brief
+// (candidates = faithful distillations of the user's stated criteria, judged by the certified rubric).
+// This is a real design fork, not a bug — left to U12 because the answer depends on the certification model.
 const SPEC = CRITERIA_BLOCK
 const flatGenPrompt = (name, brief) => `Produce a distinct VARIANT of the artifact below. ANGLE: ${name}: ${brief}.
 Realize the angle fully; keep what the brief says must stay true. Constraints / criteria:
@@ -744,7 +808,7 @@ for (let i = 0; i < pool.length; i += 2) if (pool[i + 1]) seedPairs.push([pool[i
 for (let i = 0; i < pool.length; i++) seedPairs.push([pool[i], pool[(i + Math.floor(pool.length / 2)) % pool.length]]) // round 2: spread
 await parallel(seedPairs.map(([X, Y], idx) => () => {
   const flip = idx % 2 === 1, [A, B] = flip ? [Y, X] : [X, Y]
-  return agent(seedPrompt(A, B), { label: `seed:${X.label}>${Y.label}`, phase: 'Seed', schema: SEED_SCHEMA })
+  return agent(seedPrompt(A, B), { ...EVALUATOR.agentOptions, label: `seed:${X.label}>${Y.label}`, phase: 'Seed', schema: EVALUATOR.schemas.seed })
     .then(v => { if (v) seedDecided.push({ winnerId: v.winner === 'X' ? A.id : B.id, loserId: v.winner === 'X' ? B.id : A.id }) })
 }))
 const seedRating = new Map(eloRatings(pool, seedDecided))
