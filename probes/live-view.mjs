@@ -6,7 +6,8 @@ import { dirname, join } from 'node:path'
 import lv from '../worldcup/references/live-view.js'  // CJS default = { parseLines, fold, render, statusLine }
 
 const here = dirname(fileURLToPath(import.meta.url))
-const fixture = readFileSync(join(here, 'live-view-fixture.jsonl'), 'utf8')
+const fixture = readFileSync(join(here, 'live-view-fixture.jsonl'), 'utf8')                 // legacy raw WCEVENT framing
+const journalFixture = readFileSync(join(here, 'live-view-journal.jsonl'), 'utf8')          // spine journal.jsonl (primary)
 
 let pass = 0, fail = 0
 const ok = (n, c) => { if (c) { pass++; console.log('  ok  ' + n) } else { fail++; console.log('  XX  ' + n) } }
@@ -44,6 +45,15 @@ ok('parses a NESTED beacon (draw) faithfully (int + array preserved)', dp.length
 const journal = [JSON.stringify({ type: 'started', agentId: 'a3' }), judgeLine, drawLine, beaconLine].join('\n')
 const stJ = lv.fold(lv.parseEvents(journal))
 ok('folds a mixed journal (started+judge ignored; draw+champion kept)', stJ.field === 2 && !!stJ.champion && stJ.champion.label === 'cold-hook')
+
+// from a realistic spine fixture FILE (started events + a non-beacon judge result + the 5 beacons):
+console.log('SPINE journal fixture (from disk — the primary path, end-to-end):')
+const jEvents = lv.parseEvents(journalFixture)
+ok('extracts exactly the 5 beacon events (judge result + started skipped)', jEvents.length === 5 && jEvents.map(e => e.ev).join(',') === 'gate,draw,groups,round,champion')
+const jSt = lv.fold(jEvents)
+const jHtml = lv.render(jSt)
+ok('fixture folds to a complete tournament (2 groups, 1 DQ, SF, champion)', jSt.groupOrder.length === 2 && jSt.dq.length === 1 && jSt.rounds.length === 1 && jSt.champion.label === 'cold-hook')
+ok('fixture renders every section', jHtml.includes('Group A') && jHtml.includes('plain-hook') && /slot win">cold-hook/.test(jHtml) && /slot lose">dota-mid/.test(jHtml) && jHtml.includes('127942') && !/https?:\/\//.test(jHtml))
 
 // ── fold ──────────────────────────────────────────────────────────────────────────────────
 console.log('fold:')

@@ -199,7 +199,7 @@ function parseArgs(argv) {
 function readState(path) {
   let text = ''
   try { text = fs.readFileSync(path, 'utf8') } catch (e) { /* sink not created yet — render the waiting state */ }
-  return fold(parseLines(text))
+  return fold(parseEvents(text))
 }
 function writeAtomic(out, html) {
   const tmp = out + '.tmp'
@@ -209,10 +209,11 @@ function writeAtomic(out, html) {
 function sizeOf(p) { try { return fs.statSync(p).size } catch (e) { return -1 } }
 function main() {
   const a = parseArgs(process.argv)
-  if (!a.events) { console.error('usage: live-view.js --events <path-to-run-jsonl> [--out worldcup-live.html] [--once]'); process.exit(2) }
-  // The sink is the run's persisted jsonl — potentially MBs (the whole transcript), not just events.
-  // It only GROWS, and only on new events (tens of times over a run), so gate each re-read on a cheap
-  // statSync(size): the steady-state poll is a stat, and we re-read + re-render only when bytes appear.
+  if (!a.events) { console.error('usage: live-view.js --events <path-to-journal.jsonl> [--out worldcup-live.html] [--once]'); process.exit(2) }
+  // The sink is the run's spine journal (subagents/workflows/<runId>/journal.jsonl): one JSON record per
+  // workflow agent, appended the moment it completes — so it only GROWS, a handful of times over a run.
+  // Gate each re-read on a cheap statSync(size): the steady-state poll is a stat, and we re-read +
+  // re-render only when new bytes appear.
   let lastSize = -1
   const tick = () => { lastSize = sizeOf(a.events); const st = readState(a.events); writeAtomic(a.out, render(st)); return st }
   let st = tick()
