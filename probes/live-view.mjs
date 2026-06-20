@@ -12,10 +12,24 @@ let pass = 0, fail = 0
 const ok = (n, c) => { if (c) { pass++; console.log('  ok  ' + n) } else { fail++; console.log('  XX  ' + n) } }
 
 // ── tolerant parse: 6 valid events; 2 noise lines + 1 malformed trailing WCEVENT all skipped ──
-console.log('tolerant parse:')
+console.log('tolerant parse (raw fixture):')
 const events = lv.parseLines(fixture)
 ok('parses exactly 6 valid WCEVENT lines', events.length === 6)
 ok('skips noise + malformed/partial trailing line', events.every(e => e && e.ev))
+
+console.log('JSONL-WRAPPED records (the REAL sink format — escaped payload inside a log record):')
+// (a) a real-shaped log record: WCEVENT payload is a JSON-escaped string in a "message" field
+const wrapped = JSON.stringify({ type: 'log', ts: 't', message: 'WCEVENT ' + JSON.stringify({ ev: 'draw', field: 2, groups: [{ group: 'A', teams: [{ label: 'x', seed: 1 }] }] }) })
+const pw = lv.parseLines(wrapped)
+ok('parses a wrapped/escaped WCEVENT record', pw.length === 1 && pw[0].ev === 'draw' && pw[0].field === 2)
+// (b) trailing record chars AFTER the event object must not break the brace-match
+const wrapped2 = '{"message":"WCEVENT ' + JSON.stringify({ ev: 'champion', label: 'z', stakes: 'FINAL' }).replace(/"/g, '\\"') + '","ts":123,"x":{"y":1}}'
+const pw2 = lv.parseLines(wrapped2)
+ok('handles trailing record chars after the object', pw2.length === 1 && pw2[0].label === 'z')
+// (c) raw format still parses (Tier-0 / direct framing)
+ok('raw format still parses', lv.parseLines('WCEVENT {"ev":"champion","label":"r","stakes":"FINAL"}')[0].label === 'r')
+// (d) a } inside a string value does not end the object early
+ok('brace inside a string value is respected', lv.parseLines('WCEVENT {"ev":"champion","label":"a}b","stakes":"FINAL"}')[0].label === 'a}b')
 
 // ── fold ──────────────────────────────────────────────────────────────────────────────────
 console.log('fold:')

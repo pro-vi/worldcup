@@ -18,16 +18,57 @@ const fs = require('fs')
 const STAKES_ORDER = ['R32', 'R16', 'QF', 'SF', 'FINAL']
 const he = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 
-// ── tolerant parse: pull WCEVENT {…} out of any line; a malformed or partial trailing line is
-// skipped, never fatal. Re-run from the top each read (events are < ~100, so no offset bookkeeping).
+// ── tolerant parse. A WCEVENT line arrives in one of TWO shapes:
+//   (a) RAW:    `… WCEVENT {"ev":"draw",…}`                         (the /workflows / Tier-0 framing)
+//   (b) WRAPPED: a JSONL log record where the message is a JSON STRING — the WCEVENT payload is
+//       backslash-ESCAPED and followed by the record's own `"…}`: `{"message":"WCEVENT {\"ev\":…}"}`
+// So we can't end-anchor a regex (it would swallow the enclosing record and choke on `\"`). Instead:
+// for each line, scan the raw text AND — if the line is itself JSON — every (un-escaped) nested string
+// value, brace-matching a balanced object after the `WCEVENT ` marker. Malformed/partial lines skip,
+// never fatal. Re-run from the top each read (events are < ~100, so no offset bookkeeping).
 function parseLines(text) {
   const events = []
-  for (const line of String(text == null ? '' : text).split('\n')) {
-    const m = line.match(/WCEVENT\s+(\{.*\})\s*$/)
-    if (!m) continue
-    try { events.push(JSON.parse(m[1])) } catch (e) { /* malformed / partial line — skip */ }
+  for (const raw of String(text == null ? '' : text).split('\n')) {
+    if (raw.indexOf('WCEVENT') === -1) continue
+    const candidates = [raw]            // (a) the raw line
+    try { collectStrings(JSON.parse(raw), candidates) } catch (e) { /* not a JSON record — raw scan covers it */ }
+    for (const s of candidates) {       // first candidate that yields a valid event wins (one event/line)
+      const ev = extractEvent(s)
+      if (ev) { events.push(ev); break }
+    }
   }
   return events
+}
+// Pull a balanced JSON object that follows the `WCEVENT ` marker (robust to trailing record chars).
+function extractEvent(s) {
+  const i = s.indexOf('WCEVENT ')
+  if (i === -1) return null
+  const start = s.indexOf('{', i)
+  if (start === -1) return null
+  const obj = sliceBalanced(s, start)
+  if (!obj) return null
+  try { return JSON.parse(obj) } catch (e) { return null }
+}
+// Slice s from `start` to its matching close brace, respecting strings + escapes (so a `}` inside a
+// string value doesn't end it early, and trailing content after the object is ignored).
+function sliceBalanced(s, start) {
+  let depth = 0, inStr = false, esc = false
+  for (let j = start; j < s.length; j++) {
+    const c = s[j]
+    if (esc) { esc = false; continue }
+    if (c === '\\') { esc = true; continue }
+    if (inStr) { if (c === '"') inStr = false; continue }
+    if (c === '"') inStr = true
+    else if (c === '{') depth++
+    else if (c === '}') { if (--depth === 0) return s.slice(start, j + 1) }
+  }
+  return null
+}
+// Recursively collect every string value (JSON.parse already un-escaped them) that mentions WCEVENT.
+function collectStrings(o, out) {
+  if (typeof o === 'string') { if (o.indexOf('WCEVENT') !== -1) out.push(o) }
+  else if (Array.isArray(o)) { for (const x of o) collectStrings(x, out) }
+  else if (o && typeof o === 'object') { for (const x of Object.values(o)) collectStrings(x, out) }
 }
 
 // ── fold the monotonic event stream into tournament state. Idempotent: folding the same prefix
