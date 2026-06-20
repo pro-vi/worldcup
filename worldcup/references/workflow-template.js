@@ -721,11 +721,12 @@ async function deriveSections(design, BASE, SPEC) {
     const results = await parallel(todo.map(({ s, X, Y, idx }) => () => {
       const flip = idx % 2 === 1, [A, B] = flip ? [Y, X] : [X, Y]
       // The slot judge IS a judge surface (it narrows the field before the bracket), so it reads the
-      // certified EVALUATOR's model/options + seed schema — same contract as the seed pre-pass. (The
-      // qualifier runs before generation, so EVALUATOR is already certified here.) ⚠️ U12 criteria
-      // decision still deferred: the PROMPT uses SPEC (the operator brief), not ev.criteriaBlock — the
-      // same generation-vs-certified-criteria fork as `const SPEC`.
-      return agent(slotJudgePrompt(s, A, B, BASE, SPEC), { ...EVALUATOR.agentOptions, label: `slotjudge:${s.slot}:${A.label}>${B.label}`, phase: 'Generate', schema: EVALUATOR.schemas.seed })
+      // certified EVALUATOR end-to-end: criteriaBlock, model/options, AND seed schema — same contract
+      // as lensPrompt/seedPrompt. (The qualifier runs before generation, so EVALUATOR is already
+      // certified here.) Byte-identical at default (ev.criteriaBlock === SPEC === CRITERIA_BLOCK). Slot
+      // GENERATION (slotGenPrompt) keeps SPEC — that is the real generation-vs-certified-criteria fork
+      // left to U12, since generation is not a judge surface.
+      return agent(slotJudgePrompt(s, A, B, BASE, EVALUATOR.criteriaBlock), { ...EVALUATOR.agentOptions, label: `slotjudge:${s.slot}:${A.label}>${B.label}`, phase: 'Generate', schema: EVALUATOR.schemas.seed })
         .then(v => v && ({ slot: s.slot, winnerId: v.winner === 'X' ? A.id : B.id, loserId: v.winner === 'X' ? B.id : A.id }))
     }))
     results.forEach(r => { if (r) sd[r.slot].push({ winnerId: r.winnerId, loserId: r.loserId }) })
