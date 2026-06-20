@@ -82,7 +82,7 @@ function sliceBalanced(s, start) {
 // ── fold the monotonic event stream into tournament state. Idempotent: folding the same prefix
 // twice yields the same state (round de-dupes by stakes), so re-reading the growing file is safe.
 function fold(events) {
-  const st = { field: null, groups: {}, groupOrder: [], dq: [], rounds: [], champion: null, gated: false, last: null }
+  const st = { field: null, groups: {}, groupOrder: [], dq: [], bracket: null, rounds: [], champion: null, gated: false, last: null }
   for (const e of events || []) {
     if (!e || !e.ev) continue
     st.last = e.ev
@@ -102,6 +102,10 @@ function fold(events) {
         st.groups[s.group].table = s.table || []
         st.groups[s.group].advanced = s.advanced || []
       }
+    } else if (e.ev === 'bracket') {
+      // the full knockout tree, emitted once after seeding: every round + slot, round-1 matchups known,
+      // the rest TBD (a/b null). Winners are advanced into later slots at render time (bracketTree).
+      st.bracket = (e.rounds || []).map(r => ({ stakes: r.stakes, matches: (r.matches || []).map(m => ({ a: m.a == null ? null : m.a, b: m.b == null ? null : m.b })) }))
     } else if (e.ev === 'round') {
       st.rounds = st.rounds.filter(r => r.stakes !== e.stakes)
       st.rounds.push({ stakes: e.stakes, matches: e.matches || [], eliminated: e.eliminated || [] })
@@ -113,8 +117,34 @@ function fold(events) {
   return st
 }
 
+// Build the full knockout tree for rendering: every round + every slot, with each winner ADVANCED into
+// its next-round slot (so you watch a team move on), and a per-match status — pending (slot TBD),
+// playing (both names known, no result yet), or done (a result landed). Standard bracket feed: match i
+// of a round flows into match ⌊i/2⌋ of the next (slot a if i even, b if odd).
+function bracketTree(st) {
+  if (!st.bracket || !st.bracket.length) return null
+  const rounds = st.bracket.map(r => ({ stakes: r.stakes, matches: (r.matches || []).map(m => ({ a: m.a, b: m.b, winner: null, margin: null })) }))
+  for (let ri = 0; ri < rounds.length; ri++) {
+    const res = st.rounds.find(x => x.stakes === rounds[ri].stakes)
+    if (!res) continue
+    ;(res.matches || []).forEach((rm, mi) => {
+      const M = rounds[ri].matches[mi]
+      if (!M) return
+      M.winner = rm.winner; M.margin = rm.margin
+      if (M.a == null) M.a = rm.winner       // backfill if the structure slot was still TBD
+      if (M.b == null) M.b = rm.loser
+      const nxt = rounds[ri + 1]
+      if (nxt) { const nm = nxt.matches[mi >> 1]; if (nm) { if (mi % 2 === 0) nm.a = rm.winner; else nm.b = rm.winner } }
+    })
+  }
+  for (const r of rounds) for (const m of r.matches) m.status = m.winner ? 'done' : (m.a != null && m.b != null ? 'playing' : 'pending')
+  return rounds
+}
+
 function statusLine(st) {
   if (st.champion) return `final · champion ${st.champion.label}`
+  const tree = bracketTree(st)
+  if (tree) { const playing = tree.find(r => r.matches.some(m => m.status === 'playing')); if (playing) return `${playing.stakes} in progress` }
   if (st.rounds.length) return `${st.rounds[st.rounds.length - 1].stakes} in progress`
   if (Object.keys(st.groups).some(g => st.groups[g].table)) return 'group stage'
   if (st.groupOrder.length) return 'draw done · group stage pending'
@@ -133,12 +163,23 @@ function render(st) {
       : (g.teams || []).map(t => `<tr class="pend"><td>${he(t.label)}</td><td class="pts">·</td></tr>`).join('')
     return `<div class="grp"><h4>Group ${he(G)}</h4><table>${rows}</table></div>`
   }).join('')
-  const koCols = st.rounds.map(r => {
-    const ms = r.matches.map(m => `<div class="match"><div class="slot win">${he(m.winner)}<span class="mg">${he(m.margin || '')}</span></div><div class="slot lose">${he(m.loser)}</div></div>`).join('')
-    return `<div class="kocol"><div class="rnd">${he(r.stakes)}</div>${ms || '<div class="match empty"></div>'}</div>`
-  }).join('')
+  // Full knockout TREE: every round + slot, winners advanced into the next round, per-match state.
+  const tree = bracketTree(st)
+  const slot = (name, cls, mg) => `<div class="slot ${cls}">${name == null ? '&mdash;' : he(name)}${mg ? `<span class="mg">${he(mg)}</span>` : ''}</div>`
+  const matchHtml = m => {
+    if (m.status === 'pending') return `<div class="match pending">${slot(null, 'tbd')}${slot(null, 'tbd')}</div>`
+    if (m.status === 'playing') return `<div class="match playing">${slot(m.a, 'play')}<div class="vs">&#9679; playing</div>${slot(m.b, 'play')}</div>`
+    const aw = m.winner != null && m.winner === m.a
+    return `<div class="match done">${slot(m.a, aw ? 'win' : 'lose', aw ? m.margin : '')}${slot(m.b, aw ? 'lose' : 'win', aw ? '' : m.margin)}</div>`
+  }
+  const koCols = tree
+    ? tree.map(r => `<div class="kocol"><div class="rnd">${he(r.stakes)}</div>${r.matches.map(matchHtml).join('')}</div>`).join('')
+    : st.rounds.map(r => {  // legacy fallback: no `bracket` structure event — show completed rounds only
+        const ms = r.matches.map(m => `<div class="match done">${slot(m.winner, 'win', m.margin)}${slot(m.loser, 'lose')}</div>`).join('')
+        return `<div class="kocol"><div class="rnd">${he(r.stakes)}</div>${ms || `<div class="match pending">${slot(null, 'tbd')}</div>`}</div>`
+      }).join('')
   const champCol = st.champion
-    ? `<div class="kocol"><div class="rnd">Champion</div><div class="match"><div class="slot win champ">${he(st.champion.label)} &#127942;</div></div></div>` : ''
+    ? `<div class="kocol"><div class="rnd">Champion</div><div class="match done"><div class="slot win champ">${he(st.champion.label)} &#127942;</div></div></div>` : ''
   const dqHtml = st.dq.length
     ? `<div class="panel"><h3>Disqualified at the gate (${st.dq.length})</h3>${st.dq.map(d => `<div class="dq">${he(d.label)} <span>${he(d.category || '')}</span></div>`).join('')}</div>` : ''
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${live ? '<meta http-equiv="refresh" content="2">' : ''}<title>World Cup &mdash; ${live ? 'LIVE' : 'FINAL'}</title><style>
@@ -151,15 +192,22 @@ header h1{margin:0;font-size:19px;letter-spacing:1px;font-weight:800}
 .pill.done{background:var(--gold);color:#2b0a26}
 .wrap{max-width:1200px;margin:0 auto;padding:10px 18px 40px}
 .sec{color:var(--gold);font-size:13px;text-transform:uppercase;letter-spacing:1px;margin:22px 0 8px}
-.bracket{display:flex;gap:12px;overflow-x:auto;padding:14px 0;align-items:flex-start;justify-content:center;min-height:60px}
-.kocol{min-width:150px;display:flex;flex-direction:column;gap:10px}
-.kocol.muted,.muted{color:#c9b6c4;font-size:12px}
-.rnd{font-weight:700;color:var(--gold);text-align:center;text-transform:uppercase;font-size:11px;letter-spacing:1px}
+.bracket{display:flex;gap:14px;overflow-x:auto;padding:14px 6px;align-items:stretch;justify-content:center;min-height:80px}
+.kocol{min-width:138px;display:flex;flex-direction:column;justify-content:space-around;gap:8px}
+.kocol.muted,.muted{color:#c9b6c4;font-size:12px;justify-content:center}
+.rnd{font-weight:700;color:var(--gold);text-align:center;text-transform:uppercase;font-size:11px;letter-spacing:1px;margin-bottom:2px}
 .match{background:var(--card);border:1px solid var(--cardbd);border-radius:8px;overflow:hidden}
-.match.empty{border-style:dashed;min-height:42px;background:transparent}
-.slot{padding:5px 9px;font-size:12.5px;display:flex;justify-content:space-between;gap:6px}
-.slot.win{font-weight:800;color:var(--gold)}.slot.lose{color:#c9b6c4;text-decoration:line-through;border-top:1px solid rgba(255,255,255,.08)}
-.slot.win.champ{font-size:15px}
+.match.pending{border-style:dashed;opacity:.4}
+.match.playing{border-color:var(--gold);animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 1px rgba(245,197,66,.35)}50%{box-shadow:0 0 0 3px rgba(245,197,66,.85)}}
+.slot{padding:5px 9px;font-size:12.5px;display:flex;justify-content:space-between;gap:6px;align-items:center;min-height:27px}
+.slot+.slot{border-top:1px solid rgba(255,255,255,.08)}
+.slot.win{font-weight:800;color:var(--gold)}
+.slot.lose{color:#c9b6c4;text-decoration:line-through}
+.slot.play{color:var(--txt)}
+.slot.tbd{color:#8f7a8d}
+.slot.win.champ{font-size:15px;justify-content:center}
+.vs{font-size:8px;font-weight:700;text-align:center;color:var(--gold);letter-spacing:1px;padding:1px 0;background:rgba(245,197,66,.12);text-transform:uppercase}
 .mg{font-size:9px;color:#b9a7b4;font-weight:600;text-transform:uppercase}
 .groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .grp{background:rgba(0,0,0,.18);border:1px solid var(--cardbd);border-radius:8px;padding:7px 9px}

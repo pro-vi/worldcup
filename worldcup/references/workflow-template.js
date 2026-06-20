@@ -469,13 +469,14 @@ function eloRatings(entries, decided, K = 24, base = 1500) {
 const LIVE_BEACONS = true
 const beacons = []
 const BEACON_PROMPT = 'Output this exact JSON object as your structured result, preserving nested arrays/objects and numbers EXACTLY — do not stringify, reorder, or alter any field:\n'
-const bkStr = { type: 'string' }, bkNum = { type: 'number' }, bkEither = { type: ['string', 'number'] }
+const bkStr = { type: 'string' }, bkNum = { type: 'number' }, bkEither = { type: ['string', 'number'] }, bkNullStr = { type: ['string', 'null'] }
 const bkObj = props => ({ type: 'object', additionalProperties: false, required: Object.keys(props), properties: props })
 const bkArr = items => ({ type: 'array', items })
 // Tight per-event schemas — a LOOSE schema makes the model stringify nested arrays; a tight one forces
 // faithful nesting (verified). Shapes MUST match live-view.js fold().
 const EVENT_SCHEMAS = {
   draw: bkObj({ __wc: bkStr, ev: bkStr, field: bkNum, groups: bkArr(bkObj({ group: bkStr, teams: bkArr(bkObj({ label: bkStr, seed: bkNum })) })) }),
+  bracket: bkObj({ __wc: bkStr, ev: bkStr, rounds: bkArr(bkObj({ stakes: bkStr, matches: bkArr(bkObj({ slot: bkNum, a: bkNullStr, b: bkNullStr })) })) }),
   gate: bkObj({ __wc: bkStr, ev: bkStr, field: bkNum, disqualified: bkArr(bkObj({ label: bkStr, category: bkStr })) }),
   groups: bkObj({ __wc: bkStr, ev: bkStr, standings: bkArr(bkObj({ group: bkStr, table: bkArr(bkObj({ label: bkStr, pts: bkNum })), advanced: bkArr(bkStr) })) }),
   round: bkObj({ __wc: bkStr, ev: bkStr, stakes: bkStr, matches: bkArr(bkObj({ winner: bkStr, loser: bkStr, margin: bkEither })), eliminated: bkArr(bkStr) }),
@@ -955,6 +956,19 @@ if (FIELD === 32) {
 }
 
 const order = ['R32', 'R16', 'QF', 'SF', 'FINAL']
+// Live: emit the full knockout TREE up front — every round + slot, round-1 matchups known, the rest TBD —
+// so the live view paints the whole bracket immediately and advances winners into later slots as rounds
+// resolve (you watch a team move on, and the in-flight round shows as "playing").
+{
+  const si = order.indexOf(firstStakes), tree = []
+  for (let k = si, n = roundPairs.length; k < order.length && n >= 1; n >>= 1, k++) {
+    tree.push({ stakes: order[k], matches: Array.from({ length: n }, (_, m) => (k === si
+      ? { slot: m, a: roundPairs[m][0].label, b: roundPairs[m][1].label }
+      : { slot: m, a: null, b: null })) })
+    if (order[k] === 'FINAL') break
+  }
+  emit({ ev: 'bracket', rounds: tree })
+}
 let stakes = firstStakes, pairs = roundPairs, lastRound, history = {}
 while (pairs.length >= 1) {
   log(`${stakes}: ${pairs.length} match(es)..`)

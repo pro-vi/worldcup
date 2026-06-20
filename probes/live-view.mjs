@@ -91,6 +91,22 @@ ok('gate marker set + status reflects the gate (not "waiting")', gateOnly.gated 
 const zeroDqGate = lv.fold([{ ev: 'gate', field: 6, disqualified: [] }])
 ok('zero-DQ gate-only is NOT indistinguishable from empty', zeroDqGate.gated === true && !lv.statusLine(zeroDqGate).includes('waiting'))
 
+// ── bracket tree: full tree up front + games "playing" + winners advancing ─────────────────
+console.log('bracket tree (all rounds shown, in-progress matches, winners advancing):')
+const BR = { ev: 'bracket', rounds: [
+  { stakes: 'SF', matches: [{ slot: 0, a: 'cold-hook', b: 'dota-mid' }, { slot: 1, a: 'micro-meta', b: 'macro-play' }] },
+  { stakes: 'FINAL', matches: [{ slot: 0, a: null, b: null }] },
+] }
+const t1 = lv.render(lv.fold([BR]))
+ok('whole tree shown up front (SF + FINAL columns)', t1.includes('>SF<') && t1.includes('>FINAL<'))
+ok('round-1 matches render as PLAYING (both names, no winner)', (t1.match(/class="match playing"/g) || []).length === 2)
+ok('un-played later round renders as pending TBD', /class="match pending"/.test(t1) && t1.includes('&mdash;'))
+const sfRes = { ev: 'round', stakes: 'SF', matches: [{ winner: 'cold-hook', loser: 'dota-mid', margin: '2-1' }, { winner: 'macro-play', loser: 'micro-meta', margin: '2-0' }], eliminated: ['dota-mid', 'micro-meta'] }
+const t2 = lv.render(lv.fold([BR, sfRes]))
+ok('SF rounds resolve, the FINAL advances to playing (2 done + exactly 1 playing)', (t2.match(/class="match done"/g) || []).length === 2 && (t2.match(/class="match playing"/g) || []).length === 1)
+ok('the advanced finalists are the two SF winners', t2.includes('cold-hook') && t2.includes('macro-play'))
+ok('statusLine reports the round being played (FINAL in progress)', lv.statusLine(lv.fold([BR, sfRes])) === 'FINAL in progress')
+
 // ── empty input (sink not ready) ─────────────────────────────────────────────────────────
 console.log('empty input:')
 const empty = lv.render(lv.fold(lv.parseLines('')))

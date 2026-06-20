@@ -35,11 +35,17 @@ then `fold()` reduces them. This is the **only** thing the two halves must agree
 
 ```
 { ev:'gate',     field, disqualified:[{ label, category }] }                         // after the fabrication gate
-{ ev:'draw',     field, groups:[{ group, teams:[{ label, seed }] }] }                // bracket skeleton (deterministic)
+{ ev:'draw',     field, groups:[{ group, teams:[{ label, seed }] }] }                // group draw + seeds
 { ev:'groups',   standings:[{ group, table:[{ label, pts }], advanced:[label,…] }] } // group stage done
-{ ev:'round',    stakes, matches:[{ winner, loser, margin }], eliminated:[label,…] } // one KO round
+{ ev:'bracket',  rounds:[{ stakes, matches:[{ slot, a, b }] }] }                     // full KO tree (a/b null = TBD)
+{ ev:'round',    stakes, matches:[{ winner, loser, margin }], eliminated:[label,…] } // one KO round result
 { ev:'champion', label, stakes }                                                     // final
 ```
+
+The knockout view is a **full bracket tree**, not just completed columns: `bracket` paints every round +
+slot up front (round-1 matchups known, the rest TBD); each `round` result fills its winners and
+`bracketTree()` **advances** each winner into match ⌊i/2⌋ of the next round — so you watch a team move on,
+and the round being judged shows as **"● playing"** (both names, no result yet).
 
 Fold is monotonic: `draw` paints the skeleton + seeds → `gate` marks DQs → `groups` fills the group
 tables + advancers → each `round` appends a knockout column and crosses out losers → `champion`
