@@ -219,6 +219,13 @@ function validateEvaluatorConfig(ev) {
   if (!ev.schemas || typeof ev.schemas !== 'object') throw new Error('EVALUATOR.schemas must be an object.')
   for (const k of ['flaw', 'lens', 'seed']) if (!ev.schemas[k] || typeof ev.schemas[k] !== 'object')
     throw new Error(`EVALUATOR.schemas.${k} must be present (a JSON schema) — the ${k} judge path needs it (e.g. playMatch reads schemas.lens, seeding reads schemas.seed).`)
+  // lens + seed schemas must REQUIRE winner ∈ ['X','Y'], or the match/seed paths (which key on
+  // v.winner==='X') silently miscount an out-of-enum or missing winner from a custom schema.
+  for (const k of ['lens', 'seed']) {
+    const s = ev.schemas[k], we = s.properties && s.properties.winner && s.properties.winner.enum
+    if (!Array.isArray(s.required) || !s.required.includes('winner') || !Array.isArray(we) || we.length !== 2 || !we.includes('X') || !we.includes('Y'))
+      throw new Error(`EVALUATOR.schemas.${k} must require winner ∈ ['X','Y'] — the ${k} judge path keys on v.winner==='X', so an unconstrained winner silently miscounts.`)
+  }
   const cats = ev.hardDqCategories
   // (a) screeners must be a positive integer, or the gate schedules no judges and fabrication passes.
   if (!Number.isInteger(ev.screeners) || ev.screeners < 1)
@@ -241,7 +248,8 @@ function validateEvaluatorConfig(ev) {
   if (!ev.lenses || !ev.lenses[ev.tiebreakLens])
     throw new Error(`EVALUATOR.tiebreakLens "${ev.tiebreakLens}" is not a defined lens.`)
   for (const st of EVAL_STAKES) {
-    const panel = ev.panelFor(st) || []
+    const panel = ev.panelFor(st)
+    if (!Array.isArray(panel)) throw new Error(`EVALUATOR.panelFor("${st}") must return an ARRAY (got ${typeof panel}); a bare string is iterable-by-char and playMatch calls .map on it.`)
     if (!panel.length) throw new Error(`EVALUATOR.panelFor("${st}") returned an empty panel.`)
     for (const ln of panel) if (!ev.lenses[ln]) throw new Error(`EVALUATOR.panelFor("${st}") seats undefined lens "${ln}".`)
   }

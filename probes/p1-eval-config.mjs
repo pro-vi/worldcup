@@ -135,7 +135,7 @@ const vbase = { criteriaBlock: 'c', incumbentClause: '', targetGateClause: '',
   hardDqCategories: ['X'], dqFamily: { X: 'fam' }, preflightHardDqCategory: 'X',
   lenses: { a: 'lens A' }, panelFor: () => ['a'], tiebreakLens: 'a', screeners: 3,
   bans: { emDash: true, vocab: [] }, agentOptions: {}, lensWeight: () => 1,
-  schemas: { flaw: M.makeFlawSchema(['X']), lens: { t: 'l' }, seed: { t: 's' } } }
+  schemas: { flaw: M.makeFlawSchema(['X']), lens: M.LENS_SCHEMA, seed: M.SEED_SCHEMA } }
 ok('default config validates',             M.validateEvaluatorConfig(M.EVALUATOR) === M.EVALUATOR)
 ok('valid custom config validates',        !throws(() => M.validateEvaluatorConfig({ ...vbase })))
 // presence/shape (the new finding): incomplete configs must be rejected, not run
@@ -153,6 +153,9 @@ ok('screeners=0 throws',                   throws(() => M.validateEvaluatorConfi
 ok('screeners=NaN throws',                 throws(() => M.validateEvaluatorConfig({ ...vbase, screeners: NaN })))
 ok('ghost lens in panel throws',           throws(() => M.validateEvaluatorConfig({ ...vbase, panelFor: () => ['ghost'] })))
 ok('empty panel throws',                   throws(() => M.validateEvaluatorConfig({ ...vbase, panelFor: () => [] })))
+ok('panelFor returning a STRING throws',   throws(() => M.validateEvaluatorConfig({ ...vbase, panelFor: () => 'voice' })))
+ok('lens schema w/o winner enum throws',   throws(() => M.validateEvaluatorConfig({ ...vbase, schemas: { ...vbase.schemas, lens: { type: 'object' } } })))
+ok('seed schema w/o winner enum throws',   throws(() => M.validateEvaluatorConfig({ ...vbase, schemas: { ...vbase.schemas, seed: { type: 'object' } } })))
 ok('ghost tiebreakLens throws',            throws(() => M.validateEvaluatorConfig({ ...vbase, tiebreakLens: 'ghost' })))
 ok('preflight category not in cats throws', throws(() => M.validateEvaluatorConfig({ ...vbase, preflightHardDqCategory: 'NOPE' })))
 
