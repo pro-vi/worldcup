@@ -20,32 +20,34 @@ const fs = require('fs')
 const STAKES_ORDER = ['R32', 'R16', 'QF', 'SF', 'FINAL']
 const he = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 
-// ── parse the event stream. TWO framings are accepted so the live view and post-run replay share one
-// reducer:
-//   (1) SPINE (live): subagents/workflows/<runId>/journal.jsonl — one JSON record per line; a worldcup
-//       "beacon" is a workflow agent `result` whose payload IS the event:
+// ── parse the event stream. Two framings, both reading only TRUSTED structure — never a marker found
+// inside judged text. (The tool JUDGES prose, so an essay or a judge's verdict can contain a literal
+// `WCEVENT {…}`; we must not let that forge a live event.)
+//   (1) SPINE (live, primary): subagents/workflows/<runId>/journal.jsonl — one JSON record per line; a
+//       worldcup "beacon" is a workflow agent `result` whose payload IS the event. We accept ONLY the
+//       structured top-level `result.__wc==='EVENT'` — a judge's result text cannot reach this field.
 //       {"type":"result","key":"v2:…","agentId":"…","result":{"__wc":"EVENT","ev":"draw",…}}
-//   (2) LEGACY: raw/wrapped `WCEVENT {…}` — the end run-file's logs[] + Tier-0 /workflows framing,
-//       greped + brace-matched out of any line, envelope-agnostic.
-// Non-beacon agent results (real judge verdicts) and malformed lines skip, never fatal. We re-read from
-// the top each tick (events are few), so there's no byte-offset bookkeeping.
+//   (2) LEGACY raw `WCEVENT {…}` line (Tier-0 framing). Scanned on the RAW line ONLY — we do NOT
+//       JSON-parse + recurse into nested string VALUES. An orchestrator-emitted raw line parses; a
+//       marker buried (escaped) inside a record's string value does not. This is the injection guard.
+// Non-beacon results, narrator lines, and malformed/partial lines skip — never fatal. We re-read from the
+// top each tick (events are few), so there's no byte-offset bookkeeping.
 function parseEvents(text) {
   const events = []
   for (const raw of String(text == null ? '' : text).split('\n')) {
     if (!raw) continue
-    // (1) spine journal: a clean JSON record carrying a beacon result {…,"result":{"__wc":"EVENT",…}}
+    // (1) spine journal — trust only the structured top-level result.__wc
     if (raw.indexOf('"__wc"') !== -1) {
       try {
         const rec = JSON.parse(raw)
         const r = rec && (rec.result && typeof rec.result === 'object' ? rec.result : rec)
         if (r && r.__wc === 'EVENT' && r.ev) { events.push(r); continue }
-      } catch (e) { /* not a clean json line — fall through to the legacy WCEVENT scan */ }
+      } catch (e) { /* not a clean json line — fall through */ }
     }
-    // (2) legacy raw/wrapped WCEVENT framing
-    if (raw.indexOf('WCEVENT') !== -1) {
-      const candidates = [raw]
-      try { collectStrings(JSON.parse(raw), candidates) } catch (e) { /* not JSON — raw scan covers it */ }
-      for (const s of candidates) { const ev = extractEvent(s); if (ev) { events.push(ev); break } }
+    // (2) legacy RAW WCEVENT line only — no nested-string scavenging (the injection guard, see header)
+    if (raw.indexOf('WCEVENT ') !== -1) {
+      const ev = extractEvent(raw)
+      if (ev) events.push(ev)
     }
   }
   return events
@@ -75,12 +77,6 @@ function sliceBalanced(s, start) {
     else if (c === '}') { if (--depth === 0) return s.slice(start, j + 1) }
   }
   return null
-}
-// Recursively collect every string value (JSON.parse already un-escaped them) that mentions WCEVENT.
-function collectStrings(o, out) {
-  if (typeof o === 'string') { if (o.indexOf('WCEVENT') !== -1) out.push(o) }
-  else if (Array.isArray(o)) { for (const x of o) collectStrings(x, out) }
-  else if (o && typeof o === 'object') { for (const x of Object.values(o)) collectStrings(x, out) }
 }
 
 // ── fold the monotonic event stream into tournament state. Idempotent: folding the same prefix

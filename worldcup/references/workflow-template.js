@@ -468,6 +468,7 @@ function eloRatings(entries, decided, K = 24, base = 1500) {
 // beacon must NEVER break or alter a run. Set LIVE_BEACONS=false for Tier-0 only.
 const LIVE_BEACONS = true
 const beacons = []
+const BEACON_PROMPT = 'Output this exact JSON object as your structured result, preserving nested arrays/objects and numbers EXACTLY — do not stringify, reorder, or alter any field:\n'
 const bkStr = { type: 'string' }, bkNum = { type: 'number' }, bkEither = { type: ['string', 'number'] }
 const bkObj = props => ({ type: 'object', additionalProperties: false, required: Object.keys(props), properties: props })
 const bkArr = items => ({ type: 'array', items })
@@ -485,7 +486,7 @@ const emit = ev => {
   try { log('WCEVENT ' + JSON.stringify(ev)) } catch (e) { /* logging must never break a run */ }
   try {
     const schema = LIVE_BEACONS ? EVENT_SCHEMAS[ev.ev] : null
-    if (schema) beacons.push(agent('Output this exact JSON object as your structured result, preserving nested arrays/objects and numbers EXACTLY — do not stringify, reorder, or alter any field:\n' + JSON.stringify({ __wc: 'EVENT', ...ev }), { label: 'wc-live:' + ev.ev, schema, effort: 'low' }).catch(() => {}))
+    if (schema) beacons.push(agent(BEACON_PROMPT + JSON.stringify({ __wc: 'EVENT', ...ev }), { label: 'wc-live:' + ev.ev, schema, effort: 'low' }).catch(() => {}))
   } catch (e) { /* a beacon must NEVER break a run */ }
 }
 // Compact monospace standings for the free Tier-0 watch-in-/workflows view (no artifact needed).

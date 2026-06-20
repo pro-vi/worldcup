@@ -46,8 +46,8 @@ tables + advancers → each `round` appends a knockout column and crosses out lo
 crowns. `stakes ∈ {R32,R16,QF,SF,FINAL}` orders the KO columns (32-field starts at R16, 48 at R32).
 The fold is **idempotent** — re-reading the growing journal from the top yields the same state
 (`round` de-dupes by stakes), so the watcher just re-reads on change; no tail-offset bookkeeping.
-`parseEvents()` *also* accepts the legacy raw/wrapped `WCEVENT {…}` framing, so the same
-reducer/renderer can replay the end run-file's `logs[]` post-run.
+`parseEvents()` *also* reads a raw `WCEVENT {…}` line (the Tier-0 framing) — but only off the raw
+line, never by un-escaping and scavenging nested JSON string values (the injection guard, below).
 
 ## Launching it on a real run (the sink is now resolved)
 
@@ -65,8 +65,12 @@ open worldcup-live.html   # browser auto-refreshes every 2s; the watcher self-ex
 node references/live-view.js --events <journal.jsonl> --out worldcup-live.html --once
 ```
 
-- **Tolerant by design:** `parseEvents` skips non-beacon results, narrator lines, and partial trailing
-  writes. A harness format change degrades to a *stale* view, never a crash.
+- **Tolerant + injection-safe:** `parseEvents` trusts only the structured `result.__wc` (plus a raw
+  Tier-0 `WCEVENT ` line) — it never un-escapes and scavenges nested string values, so a judged essay or
+  a judge's verdict containing a literal `WCEVENT {…}` cannot forge a live event. Non-beacon results,
+  narrator lines, and partial trailing writes skip; a harness format change degrades to a *stale* view,
+  never a crash. (Stronger provenance — a per-run nonce so even a structured `__wc` can't be spoofed — is
+  the documented next step; today `__wc:'EVENT'` is a structural marker that judge schemas never emit.)
 - **Atomic writes:** temp-file + rename, so a watching browser never reads a half-written file.
 - **Self-contained:** inline CSS mirroring `renderReportV2`'s palette; zero external requests; live
   snapshots carry `<meta http-equiv="refresh" content="2">`, the final render does not.
