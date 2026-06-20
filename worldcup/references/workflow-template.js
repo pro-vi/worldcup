@@ -720,10 +720,12 @@ async function deriveSections(design, BASE, SPEC) {
     // make the SAME judge winners yield different slot ratings/survivors run to run.
     const results = await parallel(todo.map(({ s, X, Y, idx }) => () => {
       const flip = idx % 2 === 1, [A, B] = flip ? [Y, X] : [X, Y]
-      // ⚠️ U12 boundary: this section-route slot judge is NOT threaded through EVALUATOR (it uses the
-      // bare SEED_SCHEMA + the generation model). Byte-identical at default; revisit when a certified
-      // config sets agentOptions.model (decide whether slot judging adopts the judge model).
-      return agent(slotJudgePrompt(s, A, B, BASE, SPEC), { label: `slotjudge:${s.slot}:${A.label}>${B.label}`, phase: 'Generate', schema: SEED_SCHEMA })
+      // The slot judge IS a judge surface (it narrows the field before the bracket), so it reads the
+      // certified EVALUATOR's model/options + seed schema — same contract as the seed pre-pass. (The
+      // qualifier runs before generation, so EVALUATOR is already certified here.) ⚠️ U12 criteria
+      // decision still deferred: the PROMPT uses SPEC (the operator brief), not ev.criteriaBlock — the
+      // same generation-vs-certified-criteria fork as `const SPEC`.
+      return agent(slotJudgePrompt(s, A, B, BASE, SPEC), { ...EVALUATOR.agentOptions, label: `slotjudge:${s.slot}:${A.label}>${B.label}`, phase: 'Generate', schema: EVALUATOR.schemas.seed })
         .then(v => v && ({ slot: s.slot, winnerId: v.winner === 'X' ? A.id : B.id, loserId: v.winner === 'X' ? B.id : A.id }))
     }))
     results.forEach(r => { if (r) sd[r.slot].push({ winnerId: r.winnerId, loserId: r.loserId }) })
