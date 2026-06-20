@@ -150,14 +150,23 @@ function writeAtomic(out, html) {
   fs.writeFileSync(tmp, html)        // temp + rename so a watching browser never reads a half-written file
   fs.renameSync(tmp, out)
 }
+function sizeOf(p) { try { return fs.statSync(p).size } catch (e) { return -1 } }
 function main() {
   const a = parseArgs(process.argv)
   if (!a.events) { console.error('usage: live-view.js --events <path-to-run-jsonl> [--out worldcup-live.html] [--once]'); process.exit(2) }
-  const tick = () => { const st = readState(a.events); writeAtomic(a.out, render(st)); return st }
+  // The sink is the run's persisted jsonl — potentially MBs (the whole transcript), not just events.
+  // It only GROWS, and only on new events (tens of times over a run), so gate each re-read on a cheap
+  // statSync(size): the steady-state poll is a stat, and we re-read + re-render only when bytes appear.
+  let lastSize = -1
+  const tick = () => { lastSize = sizeOf(a.events); const st = readState(a.events); writeAtomic(a.out, render(st)); return st }
   let st = tick()
   if (a.once || st.champion) { console.log(`live view -> ${a.out} (${st.champion ? 'final' : statusLine(st)})`); return }
   console.log(`live view watching ${a.events} -> ${a.out} (browser auto-refreshes every 2s)`)
-  const iv = setInterval(() => { st = tick(); if (st.champion) { clearInterval(iv); console.log('champion crowned; live view final.'); process.exit(0) } }, 1000)
+  const iv = setInterval(() => {
+    if (sizeOf(a.events) === lastSize) return  // no new bytes — skip the full re-read + re-render
+    st = tick()
+    if (st.champion) { clearInterval(iv); console.log('champion crowned; live view final.'); process.exit(0) }
+  }, 1000)
   process.on('SIGINT', () => { clearInterval(iv); process.exit(0) })
 }
 
