@@ -74,7 +74,7 @@ function collectStrings(o, out) {
 // ── fold the monotonic event stream into tournament state. Idempotent: folding the same prefix
 // twice yields the same state (round de-dupes by stakes), so re-reading the growing file is safe.
 function fold(events) {
-  const st = { field: null, groups: {}, groupOrder: [], dq: [], rounds: [], champion: null, last: null }
+  const st = { field: null, groups: {}, groupOrder: [], dq: [], rounds: [], champion: null, gated: false, last: null }
   for (const e of events || []) {
     if (!e || !e.ev) continue
     st.last = e.ev
@@ -86,6 +86,8 @@ function fold(events) {
       }
     } else if (e.ev === 'gate') {
       st.dq = e.disqualified || []
+      st.gated = true   // the gate is emitted FIRST (before the draw), so remember it ran — otherwise a
+                        // zero-DQ gate-only state is indistinguishable from an empty sink ("waiting").
     } else if (e.ev === 'groups') {
       for (const s of e.standings || []) {
         if (!st.groups[s.group]) { st.groupOrder.push(s.group); st.groups[s.group] = { teams: [] } }
@@ -108,6 +110,7 @@ function statusLine(st) {
   if (st.rounds.length) return `${st.rounds[st.rounds.length - 1].stakes} in progress`
   if (Object.keys(st.groups).some(g => st.groups[g].table)) return 'group stage'
   if (st.groupOrder.length) return 'draw done · group stage pending'
+  if (st.gated) return `fatal-flaw gate done${st.dq.length ? ` · ${st.dq.length} DQ` : ''} · seeding…`
   return 'waiting for the first event…'
 }
 

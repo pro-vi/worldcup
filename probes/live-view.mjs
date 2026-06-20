@@ -62,6 +62,13 @@ ok('group cards show teams (pending dots)', skel.includes('Group A') && skel.inc
 ok('knockout shown as pending', skel.includes('knockout pending'))
 ok('LIVE: HAS meta-refresh', skel.includes('http-equiv="refresh"'))
 
+// ── gate-only state (the gate WCEVENT fires BEFORE the draw, with seeding in between) ──────
+console.log('gate-only state (gate fires before draw):')
+const gateOnly = lv.fold([{ ev: 'gate', field: 6, disqualified: [{ label: 'plain-hook', category: 'HOUSE_STYLE_HARD_BAN' }] }])
+ok('gate marker set + status reflects the gate (not "waiting")', gateOnly.gated === true && lv.statusLine(gateOnly).includes('gate done') && !lv.statusLine(gateOnly).includes('waiting'))
+const zeroDqGate = lv.fold([{ ev: 'gate', field: 6, disqualified: [] }])
+ok('zero-DQ gate-only is NOT indistinguishable from empty', zeroDqGate.gated === true && !lv.statusLine(zeroDqGate).includes('waiting'))
+
 // ── empty input (sink not ready) ─────────────────────────────────────────────────────────
 console.log('empty input:')
 const empty = lv.render(lv.fold(lv.parseLines('')))
