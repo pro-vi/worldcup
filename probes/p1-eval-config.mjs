@@ -31,7 +31,7 @@ const parallel = async (thunks) => Promise.all(thunks.map(f => f()));
 `
 const footer = `
 ;return { EVALUATOR, flawPrompt, lensPrompt, seedPrompt, tally, marginOf, playMatch, screenAll,
-  preflight, validateEvaluatorConfig, makeFlawSchema, lensW, BANS,
+  preflight, validateEvaluatorConfig, makeFlawSchema, lensW, judgeOpts, BANS,
   CRITERIA_BLOCK, INCUMBENT_CLAUSE, HARD_DQ_CATEGORIES, DQ_FAMILY, LENSES, FLAW_SCHEMA, LENS_SCHEMA, SEED_SCHEMA, SCREENERS };
 `
 const captured = []
@@ -103,6 +103,13 @@ ok('lens prompt carried marked lens+crit',  captured[0].prompt.includes('SENTINE
 ok('agentOptions CANNOT override schema',   captured[0].opts.schema === marked.schemas.lens) // not { __evil }
 ok('agentOptions CANNOT override label',    captured[0].opts.label.startsWith('R16:') && captured[0].opts.label !== 'EVIL_LABEL')
 ok('agentOptions CANNOT override phase',     captured[0].opts.phase === 'p')
+
+console.log('judgeOpts centralizes the reserved-key protection (single source of truth):')
+const jo = M.judgeOpts({ agentOptions: { model: 'M', schema: { __evil: 1 }, label: 'EVIL', phase: 'EVIL' }, schemas: { lens: { real: true } } }, 'lens', 'REAL_LABEL', 'REAL_PHASE')
+ok('judgeOpts: agentOptions can set model', jo.model === 'M')
+ok('judgeOpts: schema NOT overridable',     jo.schema && jo.schema.real === true)
+ok('judgeOpts: label NOT overridable',      jo.label === 'REAL_LABEL')
+ok('judgeOpts: phase NOT overridable',      jo.phase === 'REAL_PHASE')
 
 console.log('screenAll run-path uses the marked config:')
 reset()

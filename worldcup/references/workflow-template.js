@@ -202,6 +202,11 @@ let EVALUATOR = {
 // which would silently flip the tally or collapse an all-zero panel to the rating fallback). Coerce
 // anything non-finite or non-positive back to 1 — intentional lens removal is panelFor's job, not weight 0.
 const lensW = (ev, lens) => { const w = ev.lensWeight(lens); return (Number.isFinite(w) && w > 0) ? w : 1 }
+// Reserved-key-safe judge agent options. Spread the config's agentOptions FIRST so it can set model/
+// effort but can NEVER override the protected per-call fields (label, phase, schema). Centralized here
+// so the invariant lives in ONE place — every judge call site (gate, lens panel, tiebreak, seed
+// pre-pass, slot judge) routes through this and can't drift.
+const judgeOpts = (ev, schemaKey, label, phase) => ({ ...ev.agentOptions, label, phase, schema: ev.schemas[schemaKey] })
 // Integrity check for a (default or certified) config — the contract that a certified config has NO
 // hole a fabrication can slip through. PLAN_3 U12 MUST run this on every config it emits.
 const EVAL_STAKES = ['R32', 'R16', 'QF', 'SF', 'FINAL']
@@ -343,7 +348,7 @@ async function screenAll(entries, phase, ev = EVALUATOR) {
     const pf = preflight(text, ev)
     if (pf.hardDQ) return { disqualified: true, category: ev.preflightHardDqCategory, flaw: pf.hard.join(', '), soft: pf.soft, votes: ev.screeners }
     const screens = (await parallel(Array.from({ length: ev.screeners }, (_, i) => () =>
-      agent(flawPrompt(e0, ev), { ...ev.agentOptions, label: `flaw${i + 1}:${e0.label}`, phase, schema: ev.schemas.flaw })))).filter(Boolean)
+      agent(flawPrompt(e0, ev), judgeOpts(ev, 'flaw', `flaw${i + 1}:${e0.label}`, phase))))).filter(Boolean)
     // Same-FAMILY majority: DQ when a STRICT majority of screeners (votes > SCREENERS/2) flag the
     // same violation FAMILY (see DQ_FAMILY). This still stops ONE hallucinating judge from killing a
     // clean entry (1 vote is never a majority) AND stops a fabricator from slipping through when three
@@ -383,14 +388,14 @@ async function playMatch(a, b, orderIdx, stakes, phase, decided, ev = EVALUATOR)
   const votes = (await parallel(lenses.map((lens, i) => () => {
     const flip = (orderIdx + i) % 2 === 1
     const [X, Y] = flip ? [b, a] : [a, b]
-    return agent(lensPrompt(lens, X, Y, ev), { ...ev.agentOptions, label: `${stakes}:${lens}:${a.label}>${b.label}`, phase, schema: ev.schemas.lens })
+    return agent(lensPrompt(lens, X, Y, ev), judgeOpts(ev, 'lens', `${stakes}:${lens}:${a.label}>${b.label}`, phase))
       .then(v => v && ({ lens, winner: v.winner === 'X' ? (flip ? b : a) : (flip ? a : b), margin: v.margin, reason: v.reason }))
   }))).filter(Boolean)
 
   // Stage 2 — majority. Stage 3 — break/escalate ties.
   let winner = tally(votes, a, b, ev)
   if (!winner) { // even split: seat one more juror (the configured tiebreak lens)
-    const extra = await agent(lensPrompt(ev.tiebreakLens, a, b, ev), { ...ev.agentOptions, label: `${stakes}:tiebreak:${a.label}`, phase, schema: ev.schemas.lens })
+    const extra = await agent(lensPrompt(ev.tiebreakLens, a, b, ev), judgeOpts(ev, 'lens', `${stakes}:tiebreak:${a.label}`, phase))
     if (extra) votes.push({ lens: ev.tiebreakLens, winner: extra.winner === 'X' ? a : b, margin: extra.margin, reason: extra.reason })
     winner = tally(votes, a, b, ev) || (a.rating >= b.rating ? a : b)
   }
@@ -726,7 +731,7 @@ async function deriveSections(design, BASE, SPEC) {
       // certified here.) Byte-identical at default (ev.criteriaBlock === SPEC === CRITERIA_BLOCK). Slot
       // GENERATION (slotGenPrompt) keeps SPEC — that is the real generation-vs-certified-criteria fork
       // left to U12, since generation is not a judge surface.
-      return agent(slotJudgePrompt(s, A, B, BASE, EVALUATOR.criteriaBlock), { ...EVALUATOR.agentOptions, label: `slotjudge:${s.slot}:${A.label}>${B.label}`, phase: 'Generate', schema: EVALUATOR.schemas.seed })
+      return agent(slotJudgePrompt(s, A, B, BASE, EVALUATOR.criteriaBlock), judgeOpts(EVALUATOR, 'seed', `slotjudge:${s.slot}:${A.label}>${B.label}`, 'Generate'))
         .then(v => v && ({ slot: s.slot, winnerId: v.winner === 'X' ? A.id : B.id, loserId: v.winner === 'X' ? B.id : A.id }))
     }))
     results.forEach(r => { if (r) sd[r.slot].push({ winnerId: r.winnerId, loserId: r.loserId }) })
@@ -862,7 +867,7 @@ for (let i = 0; i < pool.length; i += 2) if (pool[i + 1]) seedPairs.push([pool[i
 for (let i = 0; i < pool.length; i++) seedPairs.push([pool[i], pool[(i + Math.floor(pool.length / 2)) % pool.length]]) // round 2: spread
 await parallel(seedPairs.map(([X, Y], idx) => () => {
   const flip = idx % 2 === 1, [A, B] = flip ? [Y, X] : [X, Y]
-  return agent(seedPrompt(A, B), { ...EVALUATOR.agentOptions, label: `seed:${X.label}>${Y.label}`, phase: 'Seed', schema: EVALUATOR.schemas.seed })
+  return agent(seedPrompt(A, B), judgeOpts(EVALUATOR, 'seed', `seed:${X.label}>${Y.label}`, 'Seed'))
     .then(v => { if (v) seedDecided.push({ winnerId: v.winner === 'X' ? A.id : B.id, loserId: v.winner === 'X' ? B.id : A.id }) })
 }))
 const seedRating = new Map(eloRatings(pool, seedDecided))
