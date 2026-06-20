@@ -456,14 +456,38 @@ function eloRatings(entries, decided, K = 24, base = 1500) {
 }
 
 // ─────────────────────────────────────────────── LIVE EVENT STREAM (realtime view hook)
-// The workflow is sandboxed (no fs, no sockets); its ONLY egress mid-run is log(). `emit`
-// piggybacks that stream with a greppable `WCEVENT ` prefix so an EXTERNAL watcher can tail
-// the run's persisted jsonl, parse the events, and re-render a self-refreshing static HTML of
-// the live bracket — no server, no deps (Tier 1, see references/live-view.js). With no watcher
-// attached the same lines are just structured progress you can read in /workflows (Tier 0).
-// emit is pure logging: it never feeds back in and never affects determinism. The workflow
-// PRODUCES events; it never consumes its own.
-const emit = ev => { try { log('WCEVENT ' + JSON.stringify(ev)) } catch (e) { /* logging must never break a run */ } }
+// The workflow is sandboxed (no fs, no sockets). Two egress channels carry tournament events:
+//   • Tier-0: log('WCEVENT …') — structured progress readable in /workflows, folded into the run
+//     file's logs[] — but that file is written ONCE at completion, so log() is NOT live (U18 finding).
+//   • Tier-1 (LIVE): the only egress that persists INCREMENTALLY during a run is an AGENT's result —
+//     it streams into subagents/workflows/<runId>/journal.jsonl the moment the agent completes. So each
+//     event is ALSO emitted as a cheap "beacon" agent() whose tight-schema result IS the event
+//     ({__wc:'EVENT',…}); references/live-view.js tails that journal and renders the live bracket.
+// Determinism: the beacon result is DISCARDED (never read back) — the bracket is unaffected. Beacons
+// fire-and-forget (collected in `beacons`, awaited once before return); any failure is swallowed — a
+// beacon must NEVER break or alter a run. Set LIVE_BEACONS=false for Tier-0 only.
+const LIVE_BEACONS = true
+const beacons = []
+const bkStr = { type: 'string' }, bkNum = { type: 'number' }, bkEither = { type: ['string', 'number'] }
+const bkObj = props => ({ type: 'object', additionalProperties: false, required: Object.keys(props), properties: props })
+const bkArr = items => ({ type: 'array', items })
+// Tight per-event schemas — a LOOSE schema makes the model stringify nested arrays; a tight one forces
+// faithful nesting (verified). Shapes MUST match live-view.js fold().
+const EVENT_SCHEMAS = {
+  draw: bkObj({ __wc: bkStr, ev: bkStr, field: bkNum, groups: bkArr(bkObj({ group: bkStr, teams: bkArr(bkObj({ label: bkStr, seed: bkNum })) })) }),
+  gate: bkObj({ __wc: bkStr, ev: bkStr, field: bkNum, disqualified: bkArr(bkObj({ label: bkStr, category: bkStr })) }),
+  groups: bkObj({ __wc: bkStr, ev: bkStr, standings: bkArr(bkObj({ group: bkStr, table: bkArr(bkObj({ label: bkStr, pts: bkNum })), advanced: bkArr(bkStr) })) }),
+  round: bkObj({ __wc: bkStr, ev: bkStr, stakes: bkStr, matches: bkArr(bkObj({ winner: bkStr, loser: bkStr, margin: bkEither })), eliminated: bkArr(bkStr) }),
+  champion: bkObj({ __wc: bkStr, ev: bkStr, label: bkStr, stakes: bkStr }),
+}
+// emit stays SYNC (no call-site churn): logs the Tier-0 line, then fires the live beacon fire-and-forget.
+const emit = ev => {
+  try { log('WCEVENT ' + JSON.stringify(ev)) } catch (e) { /* logging must never break a run */ }
+  try {
+    const schema = LIVE_BEACONS ? EVENT_SCHEMAS[ev.ev] : null
+    if (schema) beacons.push(agent('Output this exact JSON object as your structured result, preserving nested arrays/objects and numbers EXACTLY — do not stringify, reorder, or alter any field:\n' + JSON.stringify({ __wc: 'EVENT', ...ev }), { label: 'wc-live:' + ev.ev, schema, effort: 'low' }).catch(() => {}))
+  } catch (e) { /* a beacon must NEVER break a run */ }
+}
 // Compact monospace standings for the free Tier-0 watch-in-/workflows view (no artifact needed).
 // 'Q' marks a qualifier (top 2), '.' an eliminated team. ASCII only so it survives any log sink.
 function standingsBlock(groups, adv) {
@@ -1266,6 +1290,9 @@ document.addEventListener('click',function(e){var t=e.target;if(t&&t.classList&&
 ${coordScript}
 </script></body></html>`
 }
+
+// Land every live beacon in journal.jsonl before the run ends (they were fired fire-and-forget above).
+if (beacons.length) { try { await Promise.allSettled(beacons) } catch (e) { /* never block the result on beacons */ } }
 
 return {
   champion: { label: champion.label, title: champion.title, angle: champion.oneLineAngle, markdown: champion.markdown,

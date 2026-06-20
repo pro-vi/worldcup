@@ -2,43 +2,55 @@
 'use strict'
 // worldcup — Tier-1 LIVE VIEW consumer (PLAN_4 U17).
 //
-// Tails a running worldcup's WCEVENT log and renders a self-contained, auto-refreshing
-// worldcup-live.html so you can watch group standings form, eliminations land, and the bracket
-// advance WHILE the background Workflow is still running. Dependency-free (Node stdlib only),
-// read-only on the event sink, writes one static HTML file.
+// Renders a self-contained, auto-refreshing worldcup-live.html so you can watch group standings
+// form, eliminations land, and the bracket advance WHILE the background Workflow is still running.
+// Dependency-free (Node stdlib only), read-only on the event sink, writes one static HTML file.
 //
-//   node live-view.js --events <path-to-run-jsonl> --out worldcup-live.html [--once]
+//   node live-view.js --events <path-to-journal.jsonl> --out worldcup-live.html [--once]
 //
-// The PRODUCER half (emit() in workflow-template.js) is already on main; this is the consumer.
-// The event sink path is injected by the launcher (PLAN_4 U18) — never hardcoded here. The parser
-// is tolerant: it greps `WCEVENT {…}` out of any line and ignores the surrounding log/jsonl
-// envelope, so a harness format change degrades to "stale view", never a crash.
+// THE SINK (U18 finding, 2026-06-20): a sandboxed Workflow's ONLY live-persisted egress is its
+// agents' results. The orchestrator's log() lands in workflows/wf_<runId>.json — written ONCE at the
+// end, not live. But subagents/workflows/<runId>/journal.jsonl streams one {type:"result",result:…}
+// per agent AS IT COMPLETES. So the producer emits each tournament event as a cheap `agent()` whose
+// structured result IS the event ({__wc:"EVENT", ev:…}) — a "beacon" — and we tail journal.jsonl.
+// parseEvents() also still reads the legacy raw/wrapped `WCEVENT {…}` framing (the end run-file's
+// logs[] + Tier-0 /workflows), so one reducer/renderer serves both the live view and post-run replay.
 const fs = require('fs')
 
 const STAKES_ORDER = ['R32', 'R16', 'QF', 'SF', 'FINAL']
 const he = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 
-// ── tolerant parse. A WCEVENT line arrives in one of TWO shapes:
-//   (a) RAW:    `… WCEVENT {"ev":"draw",…}`                         (the /workflows / Tier-0 framing)
-//   (b) WRAPPED: a JSONL log record where the message is a JSON STRING — the WCEVENT payload is
-//       backslash-ESCAPED and followed by the record's own `"…}`: `{"message":"WCEVENT {\"ev\":…}"}`
-// So we can't end-anchor a regex (it would swallow the enclosing record and choke on `\"`). Instead:
-// for each line, scan the raw text AND — if the line is itself JSON — every (un-escaped) nested string
-// value, brace-matching a balanced object after the `WCEVENT ` marker. Malformed/partial lines skip,
-// never fatal. Re-run from the top each read (events are < ~100, so no offset bookkeeping).
-function parseLines(text) {
+// ── parse the event stream. TWO framings are accepted so the live view and post-run replay share one
+// reducer:
+//   (1) SPINE (live): subagents/workflows/<runId>/journal.jsonl — one JSON record per line; a worldcup
+//       "beacon" is a workflow agent `result` whose payload IS the event:
+//       {"type":"result","key":"v2:…","agentId":"…","result":{"__wc":"EVENT","ev":"draw",…}}
+//   (2) LEGACY: raw/wrapped `WCEVENT {…}` — the end run-file's logs[] + Tier-0 /workflows framing,
+//       greped + brace-matched out of any line, envelope-agnostic.
+// Non-beacon agent results (real judge verdicts) and malformed lines skip, never fatal. We re-read from
+// the top each tick (events are few), so there's no byte-offset bookkeeping.
+function parseEvents(text) {
   const events = []
   for (const raw of String(text == null ? '' : text).split('\n')) {
-    if (raw.indexOf('WCEVENT') === -1) continue
-    const candidates = [raw]            // (a) the raw line
-    try { collectStrings(JSON.parse(raw), candidates) } catch (e) { /* not a JSON record — raw scan covers it */ }
-    for (const s of candidates) {       // first candidate that yields a valid event wins (one event/line)
-      const ev = extractEvent(s)
-      if (ev) { events.push(ev); break }
+    if (!raw) continue
+    // (1) spine journal: a clean JSON record carrying a beacon result {…,"result":{"__wc":"EVENT",…}}
+    if (raw.indexOf('"__wc"') !== -1) {
+      try {
+        const rec = JSON.parse(raw)
+        const r = rec && (rec.result && typeof rec.result === 'object' ? rec.result : rec)
+        if (r && r.__wc === 'EVENT' && r.ev) { events.push(r); continue }
+      } catch (e) { /* not a clean json line — fall through to the legacy WCEVENT scan */ }
+    }
+    // (2) legacy raw/wrapped WCEVENT framing
+    if (raw.indexOf('WCEVENT') !== -1) {
+      const candidates = [raw]
+      try { collectStrings(JSON.parse(raw), candidates) } catch (e) { /* not JSON — raw scan covers it */ }
+      for (const s of candidates) { const ev = extractEvent(s); if (ev) { events.push(ev); break } }
     }
   }
   return events
 }
+const parseLines = parseEvents   // back-compat alias (legacy call sites + probe)
 // Pull a balanced JSON object that follows the `WCEVENT ` marker (robust to trailing record chars).
 function extractEvent(s) {
   const i = s.indexOf('WCEVENT ')
@@ -214,5 +226,5 @@ function main() {
   process.on('SIGINT', () => { clearInterval(iv); process.exit(0) })
 }
 
-module.exports = { parseLines, fold, render, statusLine }
+module.exports = { parseEvents, parseLines, fold, render, statusLine }
 if (require.main === module) main()

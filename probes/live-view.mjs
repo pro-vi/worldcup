@@ -31,6 +31,20 @@ ok('raw format still parses', lv.parseLines('WCEVENT {"ev":"champion","label":"r
 // (d) a } inside a string value does not end the object early
 ok('brace inside a string value is respected', lv.parseLines('WCEVENT {"ev":"champion","label":"a}b","stakes":"FINAL"}')[0].label === 'a}b')
 
+// ── SPINE journal.jsonl (the LIVE sink) — beacon agent results ─────────────────────────────
+console.log('SPINE journal.jsonl (live sink: a tournament event = a workflow agent result {__wc:EVENT}):')
+const beaconLine = JSON.stringify({ type: 'result', key: 'v2:abc', agentId: 'a1', result: { __wc: 'EVENT', ev: 'champion', label: 'cold-hook', stakes: 'FINAL' } })
+ok('parses a beacon result from a journal line', lv.parseEvents(beaconLine).length === 1 && lv.parseEvents(beaconLine)[0].label === 'cold-hook')
+const judgeLine = JSON.stringify({ type: 'result', key: 'v2:def', agentId: 'a2', result: { verdict: 'X edges it on craft', winner: 'X' } })
+ok('ignores a non-beacon judge verdict (no __wc)', lv.parseEvents(judgeLine).length === 0)
+ok('ignores a started event', lv.parseEvents(JSON.stringify({ type: 'started', key: 'v2:g', agentId: 'a3' })).length === 0)
+const drawLine = JSON.stringify({ type: 'result', key: 'v2:j', agentId: 'a4', result: { __wc: 'EVENT', ev: 'draw', field: 2, groups: [{ group: 'A', teams: [{ label: 'x', seed: 1 }] }] } })
+const dp = lv.parseEvents(drawLine)
+ok('parses a NESTED beacon (draw) faithfully (int + array preserved)', dp.length === 1 && dp[0].field === 2 && Array.isArray(dp[0].groups) && dp[0].groups[0].group === 'A')
+const journal = [JSON.stringify({ type: 'started', agentId: 'a3' }), judgeLine, drawLine, beaconLine].join('\n')
+const stJ = lv.fold(lv.parseEvents(journal))
+ok('folds a mixed journal (started+judge ignored; draw+champion kept)', stJ.field === 2 && !!stJ.champion && stJ.champion.label === 'cold-hook')
+
 // ── fold ──────────────────────────────────────────────────────────────────────────────────
 console.log('fold:')
 const st = lv.fold(events)
