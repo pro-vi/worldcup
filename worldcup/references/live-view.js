@@ -106,6 +106,13 @@ function fold(events) {
       // the full knockout tree, emitted once after seeding: every round + slot, round-1 matchups known,
       // the rest TBD (a/b null). Winners are advanced into later slots at render time (bracketTree).
       st.bracket = (e.rounds || []).map(r => ({ stakes: r.stakes, matches: (r.matches || []).map(m => ({ a: m.a == null ? null : m.a, b: m.b == null ? null : m.b })) }))
+    } else if (e.ev === 'match') {
+      // a single knockout result arriving as its game finishes — fill just that slot (the bracket fills
+      // in piece by piece; siblings stay "playing"). A later `round` event backfills the full set.
+      let r = st.rounds.find(x => x.stakes === e.stakes)
+      if (!r) { r = { stakes: e.stakes, matches: [], eliminated: [] }; st.rounds.push(r) }
+      r.matches[e.slot] = { winner: e.winner, loser: e.loser, margin: e.margin }
+      if (e.loser != null && !r.eliminated.includes(e.loser)) r.eliminated.push(e.loser)
     } else if (e.ev === 'round') {
       st.rounds = st.rounds.filter(r => r.stakes !== e.stakes)
       st.rounds.push({ stakes: e.stakes, matches: e.matches || [], eliminated: e.eliminated || [] })

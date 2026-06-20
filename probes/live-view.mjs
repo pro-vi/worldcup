@@ -106,6 +106,12 @@ const t2 = lv.render(lv.fold([BR, sfRes]))
 ok('SF rounds resolve, the FINAL advances to playing (2 done + exactly 1 playing)', (t2.match(/class="match done"/g) || []).length === 2 && (t2.match(/class="match playing"/g) || []).length === 1)
 ok('the advanced finalists are the two SF winners', t2.includes('cold-hook') && t2.includes('macro-play'))
 ok('statusLine reports the round being played (FINAL in progress)', lv.statusLine(lv.fold([BR, sfRes])) === 'FINAL in progress')
+// per-match knockout: results arrive one game at a time → the bracket fills slot-by-slot
+const tPartial = lv.render(lv.fold([
+  { ev: 'bracket', rounds: [{ stakes: 'QF', matches: [{ slot: 0, a: 'cold-hook', b: 'sc-rush' }, { slot: 1, a: 'warm-hook', b: 'dota-mid' }] }, { stakes: 'SF', matches: [{ slot: 0, a: null, b: null }] }] },
+  { ev: 'match', stakes: 'QF', slot: 0, winner: 'cold-hook', loser: 'sc-rush', margin: '2-0' },
+]))
+ok('a single `match` fills ONE slot, its sibling keeps playing', (tPartial.match(/class="match done"/g) || []).length === 1 && (tPartial.match(/class="match playing"/g) || []).length === 1)
 
 // ── empty input (sink not ready) ─────────────────────────────────────────────────────────
 console.log('empty input:')

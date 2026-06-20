@@ -480,6 +480,7 @@ const EVENT_SCHEMAS = {
   gate: bkObj({ __wc: bkStr, ev: bkStr, field: bkNum, disqualified: bkArr(bkObj({ label: bkStr, category: bkStr })) }),
   groups: bkObj({ __wc: bkStr, ev: bkStr, standings: bkArr(bkObj({ group: bkStr, table: bkArr(bkObj({ label: bkStr, pts: bkNum })), advanced: bkArr(bkStr) })) }),
   round: bkObj({ __wc: bkStr, ev: bkStr, stakes: bkStr, matches: bkArr(bkObj({ winner: bkStr, loser: bkStr, margin: bkEither })), eliminated: bkArr(bkStr) }),
+  match: bkObj({ __wc: bkStr, ev: bkStr, stakes: bkStr, slot: bkNum, winner: bkStr, loser: bkStr, margin: bkEither }),
   champion: bkObj({ __wc: bkStr, ev: bkStr, label: bkStr, stakes: bkStr }),
 }
 // emit stays SYNC (no call-site churn): logs the Tier-0 line, then fires the live beacon fire-and-forget.
@@ -911,8 +912,18 @@ log(`${GROUPS} groups drawn. Group stage: ${GROUPS * 6} matches..`)
 emit({ ev: 'draw', field: FIELD, groups: groups.map((g, gi) => ({ group: LETTERS[gi], teams: g.map(t => ({ label: t.label, seed: seeded.findIndex(x => x.id === t.id) + 1 })) })) })
 const groupSpecs = []
 groups.forEach((g, gi) => roundRobin(g).forEach(([x, y]) => groupSpecs.push({ gi, x, y })))
-const groupResults = await parallel(groupSpecs.map((m, idx) => () =>
-  playMatch(m.x, m.y, idx, 'R32', 'Groups', decided).then(r => ({ ...r, gi: m.gi }))))
+// Live: the group table BUILDS UP as matches resolve (parallel, but they finish in waves under the
+// concurrency cap), so emit a couple of partial-standings snapshots before the final — the group stage
+// fills in rather than jumping from the draw straight to the final table.
+const groupResults = []
+const partialStandings = () => groups.map((g, gi) => { const s = standings(g, gi, groupResults); return { group: LETTERS[gi], table: s.ranked.map(t => ({ label: t.label, pts: s.pts.get(t.id) })), advanced: [] } })
+const gMarks = new Set([Math.round(groupSpecs.length / 3), Math.round(2 * groupSpecs.length / 3)].filter(n => n > 0 && n < groupSpecs.length))
+let gDone = 0
+await parallel(groupSpecs.map((m, idx) => () =>
+  playMatch(m.x, m.y, idx, 'R32', 'Groups', decided).then(r => {
+    groupResults.push({ ...r, gi: m.gi })
+    if (gMarks.has(++gDone)) emit({ ev: 'groups', standings: partialStandings() })
+  })))
 // NOTE: group matches use a single rotated juror for cost; override panelFor('R32') -> single
 // if you want strict 1-vote groups. Default template runs the 3-lens panel; for FIELD=48
 // or tight budgets, switch group matches to a single 'taste' juror.
@@ -938,7 +949,11 @@ log('Group stage done.')
 // ─────────────────────────────────────────────────────── KNOCKOUT
 phase('Knockout')
 async function playRound(pairs, stakes) {
-  return parallel(pairs.map((p, idx) => () => playMatch(p[0], p[1], idx, stakes, 'Knockout', decided)))
+  return parallel(pairs.map((p, idx) => () => playMatch(p[0], p[1], idx, stakes, 'Knockout', decided).then(r => {
+    // Live: emit each knockout match AS IT RESOLVES so the bracket fills slot-by-slot, not whole-round.
+    emit({ ev: 'match', stakes, slot: idx, winner: r.winner.label, loser: r.loser.label, margin: r.margin })
+    return r
+  })))
 }
 let roundPairs, firstStakes
 if (FIELD === 32) {
