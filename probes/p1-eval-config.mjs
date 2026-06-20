@@ -123,18 +123,28 @@ console.log('lensWeight is guarded (undefined/NaN/negative -> 1):')
 ok('lensW coerces NaN to 1',               M.lensW({ lensWeight: () => NaN }, 'voice') === 1)
 ok('lensW coerces undefined to 1',         M.lensW({ lensWeight: () => undefined }, 'voice') === 1)
 ok('lensW coerces negative to 1',          M.lensW({ lensWeight: () => -5 }, 'voice') === 1)
+ok('lensW coerces zero to 1 (no collapse)', M.lensW({ lensWeight: () => 0 }, 'voice') === 1)
 ok('lensW keeps a valid weight',           M.lensW({ lensWeight: () => 2 }, 'voice') === 2)
 const badW = { ...M.EVALUATOR, lensWeight: () => NaN }
 ok('tally with NaN weights does NOT silently pick b', M.tally([{ lens: 'voice', winner: E }], E, F, badW).id === E.id)
 
-console.log('validateEvaluatorConfig catches drift:')
+console.log('validateEvaluatorConfig is a complete safety contract:')
+const throws = fn => { try { fn(); return false } catch { return true } }
+// a minimal VALID custom config; each defect below flips exactly one field.
+const vbase = { hardDqCategories: ['X'], dqFamily: { X: 'fam' }, preflightHardDqCategory: 'X',
+  screeners: 3, lenses: { a: 'lens A' }, tiebreakLens: 'a', panelFor: () => ['a'],
+  schemas: { flaw: M.makeFlawSchema(['X']) } }
 ok('default config validates',             M.validateEvaluatorConfig(M.EVALUATOR) === M.EVALUATOR)
-let threwFam = false
-try { M.validateEvaluatorConfig({ hardDqCategories: ['X'], dqFamily: {}, schemas: { flaw: M.makeFlawSchema(['X']) } }) } catch { threwFam = true }
-ok('missing dqFamily mapping throws',      threwFam)
-let threwEnum = false
-try { M.validateEvaluatorConfig({ hardDqCategories: ['X'], dqFamily: { X: 'f' }, schemas: { flaw: M.makeFlawSchema(['Y']) } }) } catch { threwEnum = true }
-ok('schema/category drift throws',         threwEnum)
+ok('valid custom config validates',        !throws(() => M.validateEvaluatorConfig({ ...vbase })))
+ok('exact-enum: EXTRA category throws',    throws(() => M.validateEvaluatorConfig({ ...vbase, schemas: { flaw: M.makeFlawSchema(['X', 'Y']) } })))
+ok('exact-enum: MISSING category throws',  throws(() => M.validateEvaluatorConfig({ ...vbase, hardDqCategories: ['X', 'Z'], dqFamily: { X: 'f', Z: 'f' }, schemas: { flaw: M.makeFlawSchema(['X']) } })))
+ok('missing dqFamily mapping throws',      throws(() => M.validateEvaluatorConfig({ ...vbase, dqFamily: {} })))
+ok('screeners=0 throws',                   throws(() => M.validateEvaluatorConfig({ ...vbase, screeners: 0 })))
+ok('screeners=NaN throws',                 throws(() => M.validateEvaluatorConfig({ ...vbase, screeners: NaN })))
+ok('ghost lens in panel throws',           throws(() => M.validateEvaluatorConfig({ ...vbase, panelFor: () => ['ghost'] })))
+ok('empty panel throws',                   throws(() => M.validateEvaluatorConfig({ ...vbase, panelFor: () => [] })))
+ok('ghost tiebreakLens throws',            throws(() => M.validateEvaluatorConfig({ ...vbase, tiebreakLens: 'ghost' })))
+ok('preflight category not in cats throws', throws(() => M.validateEvaluatorConfig({ ...vbase, preflightHardDqCategory: 'NOPE' })))
 
 // ── no-arg path reads the MODULE EVALUATOR (so a reassigned/certified config drives the run) ─
 console.log('default (no-ev) run-path reads the module EVALUATOR:')

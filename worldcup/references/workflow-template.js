@@ -188,6 +188,7 @@ let EVALUATOR = {
   targetGateClause: targetGateClause,    // the MISREPRESENTS_TARGET gate clause ('' when no TARGET)
   hardDqCategories: HARD_DQ_CATEGORIES,  // canonical hard-DQ vocabulary (gate prompt + enum + tally)
   dqFamily:         DQ_FAMILY,           // category -> violation family, for the same-family gate tally
+  preflightHardDqCategory: 'HOUSE_STYLE_HARD_BAN', // category a DETERMINISTIC hard-ban DQ emits — must be in hardDqCategories
   lenses:           LENSES,              // lens name -> its one-axis mandate (the panel's seats)
   panelFor,                              // stakes -> [lens, ...]  (the per-stakes panel policy)
   tiebreakLens:     'integrity',         // the extra juror seated on an even split (was hardcoded)
@@ -197,18 +198,39 @@ let EVALUATOR = {
   agentOptions:     {},                  // merged into every judge agent() call (e.g. { model }); {} = inherit. NEVER overrides label/phase/schema (spread FIRST at call sites)
   lensWeight:       () => 1,             // (lens) -> weight in the tally; ()=>1 is today's 1:1 (PLAN_3 U13 fills this in)
 }
-// Guarded weight read: a config's lensWeight is untrusted (could return undefined/NaN/negative,
-// which would silently flip or corrupt the tally). Coerce anything non-finite-or-negative back to 1.
-const lensW = (ev, lens) => { const w = ev.lensWeight(lens); return (Number.isFinite(w) && w >= 0) ? w : 1 }
-// Integrity check for a (default or certified) config: the flaw schema's enum must cover every
-// hard-DQ category, and every category must have a violation-family mapping (else same-family gate
-// votes split). Run on the default below; PLAN_3 U12 MUST run it on every certified config it emits.
+// Guarded weight read: a config's lensWeight is untrusted (could return undefined/NaN/negative/zero,
+// which would silently flip the tally or collapse an all-zero panel to the rating fallback). Coerce
+// anything non-finite or non-positive back to 1 — intentional lens removal is panelFor's job, not weight 0.
+const lensW = (ev, lens) => { const w = ev.lensWeight(lens); return (Number.isFinite(w) && w > 0) ? w : 1 }
+// Integrity check for a (default or certified) config — the contract that a certified config has NO
+// hole a fabrication can slip through. PLAN_3 U12 MUST run this on every config it emits.
+const EVAL_STAKES = ['R32', 'R16', 'QF', 'SF', 'FINAL']
 function validateEvaluatorConfig(ev) {
   const cats = ev.hardDqCategories || []
+  // (a) screeners must be a positive integer, or the gate schedules no judges and fabrication passes.
+  if (!Number.isInteger(ev.screeners) || ev.screeners < 1)
+    throw new Error(`EVALUATOR.screeners must be a positive integer (got ${JSON.stringify(ev.screeners)}); 0/NaN/negative schedules no gate judges and lets fabrication through.`)
+  // (b) flaw schema enum must EXACTLY equal ['NONE', ...hardDqCategories]: no missing categories (the
+  // gate can't return them) AND no EXTRA ones (a screener could return a schema-valid category that
+  // screenAll's hardDqCategories filter then drops, silently voiding that DQ vote).
+  const want = ['NONE', ...cats]
   const enumv = (ev.schemas && ev.schemas.flaw && ev.schemas.flaw.properties && ev.schemas.flaw.properties.category && ev.schemas.flaw.properties.category.enum) || []
-  for (const c of cats) {
-    if (!enumv.includes(c)) throw new Error(`EVALUATOR.schemas.flaw enum is missing hard-DQ category "${c}" — schema and hardDqCategories drifted. Build the schema with makeFlawSchema(ev.hardDqCategories).`)
-    if (!ev.dqFamily || !ev.dqFamily[c]) throw new Error(`EVALUATOR.dqFamily has no family for hard-DQ category "${c}" — same-family gate tally would split its votes. Add a family mapping.`)
+  if (enumv.length !== want.length || want.some(c => !enumv.includes(c)) || enumv.some(c => !want.includes(c)))
+    throw new Error(`EVALUATOR.schemas.flaw enum must equal ['NONE', ...hardDqCategories] exactly (extra or missing categories leak DQ votes). Build it with makeFlawSchema(ev.hardDqCategories).`)
+  // (c) every hard-DQ category needs a violation-family mapping (else same-family votes split).
+  for (const c of cats) if (!ev.dqFamily || !ev.dqFamily[c])
+    throw new Error(`EVALUATOR.dqFamily has no family for hard-DQ category "${c}" — same-family gate tally would split its votes.`)
+  // (d) the deterministic preflight DQ category must itself be a real, mapped hard-DQ category.
+  if (!cats.includes(ev.preflightHardDqCategory))
+    throw new Error(`EVALUATOR.preflightHardDqCategory "${ev.preflightHardDqCategory}" is not in hardDqCategories — preflight would emit a category the rest of the gate doesn't recognize.`)
+  // (e) every seated lens (per-stakes panel + tiebreak) must exist in ev.lenses, or lensPrompt
+  // renders "YOUR LENS: ghost — undefined".
+  if (!ev.lenses || !ev.lenses[ev.tiebreakLens])
+    throw new Error(`EVALUATOR.tiebreakLens "${ev.tiebreakLens}" is not a defined lens.`)
+  for (const st of EVAL_STAKES) {
+    const panel = ev.panelFor(st) || []
+    if (!panel.length) throw new Error(`EVALUATOR.panelFor("${st}") returned an empty panel.`)
+    for (const ln of panel) if (!ev.lenses[ln]) throw new Error(`EVALUATOR.panelFor("${st}") seats undefined lens "${ln}".`)
   }
   return ev
 }
@@ -292,7 +314,7 @@ async function screenAll(entries, phase, ev = EVALUATOR) {
   const verdicts = await parallel(reps.map(text => async () => {
     const e0 = byText.get(text)[0]
     const pf = preflight(text, ev)
-    if (pf.hardDQ) return { disqualified: true, category: 'HOUSE_STYLE_HARD_BAN', flaw: pf.hard.join(', '), soft: pf.soft, votes: ev.screeners }
+    if (pf.hardDQ) return { disqualified: true, category: ev.preflightHardDqCategory, flaw: pf.hard.join(', '), soft: pf.soft, votes: ev.screeners }
     const screens = (await parallel(Array.from({ length: ev.screeners }, (_, i) => () =>
       agent(flawPrompt(e0, ev), { ...ev.agentOptions, label: `flaw${i + 1}:${e0.label}`, phase, schema: ev.schemas.flaw })))).filter(Boolean)
     // Same-FAMILY majority: DQ when a STRICT majority of screeners (votes > SCREENERS/2) flag the
@@ -361,7 +383,9 @@ function tally(votes, a, b, ev = EVALUATOR) {
 }
 // Margin is computed on the SAME weighted totals tally uses, so a weighted winner can't be reported
 // with a misleading raw-count margin. With the default ()=>1 weights this is byte-identical to the
-// old raw-count margin.
+// old raw-count margin. ⚠️ U13: the `>= 2` clear/narrow threshold is in vote-weight units (correct at
+// weight 1); when U13 introduces real weights it should define weighted-margin semantics (normalize
+// by winner share, or make the threshold configurable) so labels don't depend on weight scale.
 function marginOf(votes, w, ev = EVALUATOR) {
   const total = votes.reduce((s, v) => s + lensW(ev, v.lens), 0)
   const for_ = votes.filter(v => v.winner.id === w.id).reduce((s, v) => s + lensW(ev, v.lens), 0)
