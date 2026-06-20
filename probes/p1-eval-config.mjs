@@ -146,6 +146,7 @@ ok('missing criteriaBlock throws',         throws(() => M.validateEvaluatorConfi
 ok('missing bans throws',                  throws(() => M.validateEvaluatorConfig({ ...vbase, bans: undefined })))
 ok('missing panelFor throws',              throws(() => M.validateEvaluatorConfig({ ...vbase, panelFor: undefined })))
 // consistency (round 2), with lens/seed preserved so each test isolates its own defect
+ok('flaw schema w/o required verdict throws', throws(() => M.validateEvaluatorConfig({ ...vbase, schemas: { ...vbase.schemas, flaw: { type: 'object', required: [], properties: { category: { type: 'string', enum: ['NONE', 'X'] }, disqualified: { type: 'boolean' } } } } })))
 ok('exact-enum: EXTRA category throws',    throws(() => M.validateEvaluatorConfig({ ...vbase, schemas: { ...vbase.schemas, flaw: M.makeFlawSchema(['X', 'Y']) } })))
 ok('exact-enum: MISSING category throws',  throws(() => M.validateEvaluatorConfig({ ...vbase, hardDqCategories: ['X', 'Z'], dqFamily: { X: 'f', Z: 'f' }, schemas: { ...vbase.schemas, flaw: M.makeFlawSchema(['X']) } })))
 ok('missing dqFamily mapping throws',      throws(() => M.validateEvaluatorConfig({ ...vbase, dqFamily: { Q: 'fam' } })))

@@ -237,6 +237,12 @@ function validateEvaluatorConfig(ev) {
   const enumv = (ev.schemas && ev.schemas.flaw && ev.schemas.flaw.properties && ev.schemas.flaw.properties.category && ev.schemas.flaw.properties.category.enum) || []
   if (enumv.length !== want.length || want.some(c => !enumv.includes(c)) || enumv.some(c => !want.includes(c)))
     throw new Error(`EVALUATOR.schemas.flaw enum must equal ['NONE', ...hardDqCategories] exactly (extra or missing categories leak DQ votes). Build it with makeFlawSchema(ev.hardDqCategories).`)
+  // flaw schema must REQUIRE disqualified + category, or screenAll (which only counts
+  // s.disqualified && s.category) drops a schema-valid verdict that omits either — letting a fatal
+  // flaw pass under a custom evaluator.
+  const freq = ev.schemas.flaw.required
+  if (!Array.isArray(freq) || !freq.includes('disqualified') || !freq.includes('category'))
+    throw new Error(`EVALUATOR.schemas.flaw must require ['disqualified','category'] — screenAll voids a verdict missing either, letting a fatal flaw pass.`)
   // (c) every hard-DQ category needs a violation-family mapping (else same-family votes split).
   for (const c of cats) if (!ev.dqFamily || !ev.dqFamily[c])
     throw new Error(`EVALUATOR.dqFamily has no family for hard-DQ category "${c}" — same-family gate tally would split its votes.`)
