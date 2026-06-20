@@ -206,7 +206,20 @@ const lensW = (ev, lens) => { const w = ev.lensWeight(lens); return (Number.isFi
 // hole a fabrication can slip through. PLAN_3 U12 MUST run this on every config it emits.
 const EVAL_STAKES = ['R32', 'R16', 'QF', 'SF', 'FINAL']
 function validateEvaluatorConfig(ev) {
-  const cats = ev.hardDqCategories || []
+  // (0) PRESENCE/SHAPE: every runtime-required field must be present and the right type, or a certified
+  // config that OMITS one passes here and explodes later (playMatch -> ev.schemas.lens / ev.lensWeight,
+  // the seed pre-pass -> ev.schemas.seed). Reject incomplete configs up front.
+  for (const k of ['criteriaBlock', 'incumbentClause', 'targetGateClause', 'preflightHardDqCategory', 'tiebreakLens'])
+    if (typeof ev[k] !== 'string') throw new Error(`EVALUATOR.${k} must be a string (incomplete config).`)
+  for (const k of ['dqFamily', 'lenses', 'bans', 'agentOptions'])
+    if (!ev[k] || typeof ev[k] !== 'object') throw new Error(`EVALUATOR.${k} must be an object (incomplete config).`)
+  if (!Array.isArray(ev.hardDqCategories)) throw new Error('EVALUATOR.hardDqCategories must be an array.')
+  if (typeof ev.panelFor !== 'function') throw new Error('EVALUATOR.panelFor must be a function.')
+  if (typeof ev.lensWeight !== 'function') throw new Error('EVALUATOR.lensWeight must be a callable function (tally calls it every vote).')
+  if (!ev.schemas || typeof ev.schemas !== 'object') throw new Error('EVALUATOR.schemas must be an object.')
+  for (const k of ['flaw', 'lens', 'seed']) if (!ev.schemas[k] || typeof ev.schemas[k] !== 'object')
+    throw new Error(`EVALUATOR.schemas.${k} must be present (a JSON schema) — the ${k} judge path needs it (e.g. playMatch reads schemas.lens, seeding reads schemas.seed).`)
+  const cats = ev.hardDqCategories
   // (a) screeners must be a positive integer, or the gate schedules no judges and fabrication passes.
   if (!Number.isInteger(ev.screeners) || ev.screeners < 1)
     throw new Error(`EVALUATOR.screeners must be a positive integer (got ${JSON.stringify(ev.screeners)}); 0/NaN/negative schedules no gate judges and lets fabrication through.`)

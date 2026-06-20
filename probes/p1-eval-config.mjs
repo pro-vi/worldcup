@@ -130,15 +130,25 @@ ok('tally with NaN weights does NOT silently pick b', M.tally([{ lens: 'voice', 
 
 console.log('validateEvaluatorConfig is a complete safety contract:')
 const throws = fn => { try { fn(); return false } catch { return true } }
-// a minimal VALID custom config; each defect below flips exactly one field.
-const vbase = { hardDqCategories: ['X'], dqFamily: { X: 'fam' }, preflightHardDqCategory: 'X',
-  screeners: 3, lenses: { a: 'lens A' }, tiebreakLens: 'a', panelFor: () => ['a'],
-  schemas: { flaw: M.makeFlawSchema(['X']) } }
+// a COMPLETE valid custom config (all runtime-required fields); each defect below flips exactly one.
+const vbase = { criteriaBlock: 'c', incumbentClause: '', targetGateClause: '',
+  hardDqCategories: ['X'], dqFamily: { X: 'fam' }, preflightHardDqCategory: 'X',
+  lenses: { a: 'lens A' }, panelFor: () => ['a'], tiebreakLens: 'a', screeners: 3,
+  bans: { emDash: true, vocab: [] }, agentOptions: {}, lensWeight: () => 1,
+  schemas: { flaw: M.makeFlawSchema(['X']), lens: { t: 'l' }, seed: { t: 's' } } }
 ok('default config validates',             M.validateEvaluatorConfig(M.EVALUATOR) === M.EVALUATOR)
 ok('valid custom config validates',        !throws(() => M.validateEvaluatorConfig({ ...vbase })))
-ok('exact-enum: EXTRA category throws',    throws(() => M.validateEvaluatorConfig({ ...vbase, schemas: { flaw: M.makeFlawSchema(['X', 'Y']) } })))
-ok('exact-enum: MISSING category throws',  throws(() => M.validateEvaluatorConfig({ ...vbase, hardDqCategories: ['X', 'Z'], dqFamily: { X: 'f', Z: 'f' }, schemas: { flaw: M.makeFlawSchema(['X']) } })))
-ok('missing dqFamily mapping throws',      throws(() => M.validateEvaluatorConfig({ ...vbase, dqFamily: {} })))
+// presence/shape (the new finding): incomplete configs must be rejected, not run
+ok('missing schemas.lens throws',          throws(() => M.validateEvaluatorConfig({ ...vbase, schemas: { ...vbase.schemas, lens: undefined } })))
+ok('missing schemas.seed throws',          throws(() => M.validateEvaluatorConfig({ ...vbase, schemas: { ...vbase.schemas, seed: undefined } })))
+ok('lensWeight not callable throws',       throws(() => M.validateEvaluatorConfig({ ...vbase, lensWeight: 5 })))
+ok('missing criteriaBlock throws',         throws(() => M.validateEvaluatorConfig({ ...vbase, criteriaBlock: undefined })))
+ok('missing bans throws',                  throws(() => M.validateEvaluatorConfig({ ...vbase, bans: undefined })))
+ok('missing panelFor throws',              throws(() => M.validateEvaluatorConfig({ ...vbase, panelFor: undefined })))
+// consistency (round 2), with lens/seed preserved so each test isolates its own defect
+ok('exact-enum: EXTRA category throws',    throws(() => M.validateEvaluatorConfig({ ...vbase, schemas: { ...vbase.schemas, flaw: M.makeFlawSchema(['X', 'Y']) } })))
+ok('exact-enum: MISSING category throws',  throws(() => M.validateEvaluatorConfig({ ...vbase, hardDqCategories: ['X', 'Z'], dqFamily: { X: 'f', Z: 'f' }, schemas: { ...vbase.schemas, flaw: M.makeFlawSchema(['X']) } })))
+ok('missing dqFamily mapping throws',      throws(() => M.validateEvaluatorConfig({ ...vbase, dqFamily: { Q: 'fam' } })))
 ok('screeners=0 throws',                   throws(() => M.validateEvaluatorConfig({ ...vbase, screeners: 0 })))
 ok('screeners=NaN throws',                 throws(() => M.validateEvaluatorConfig({ ...vbase, screeners: NaN })))
 ok('ghost lens in panel throws',           throws(() => M.validateEvaluatorConfig({ ...vbase, panelFor: () => ['ghost'] })))
