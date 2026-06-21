@@ -3,7 +3,8 @@ title: Qualifiers — run-scoped assurance for the decision system (supersedes t
 type: feat
 status: active
 date: 2026-06-21
-origin: PLAN_3.md (design lineage) + GPT-Pro extended ontology consult (2026-06-21) — supersedes docs/plans/qualifiers-anchors-certification.md
+origin: PLAN_3.md (design lineage) + GPT-Pro extended ontology consult, archived at .inbox/2026-06-21_gpt-pro-ontology-consult-qualifiers.md (the 0.87–0.98 confidence figures cited below trace there)
+supersedes: docs/plans/qualifiers-anchors-certification.md (deleted in 59e810d; "certification" is the rejected frame — see Architecture Decision)
 branch: feat/qualifiers-anchors-certification
 ---
 
@@ -38,6 +39,12 @@ section is ADR-ready):
    does not fix an undefined sampling frame.* So: **exact pass/fail**, reported as *"passed 26/27
    required conformance cases; failed the implied-causality family,"* **not** *"fabrication recall
    certified ≥ 0.75."*
+   > *Reconciliation with the 2026-06-18 consult (which recommended Wilson bounds — "5/5 does not
+   > demonstrate 100%").* That advice was **correct conditional on claiming a recall rate over a
+   > population.** We no longer make that claim, so a confidence interval would be measuring a sampling
+   > frame that doesn't exist. Exact pass/fail over a fixed obligation set needs no CI. (This is the
+   > plan's highest-blast-radius simplification resting on its lowest-confidence finding — 0.87 — so the
+   > hedge is explicit, and `known_blind_spots` + `UNSTABLE` + ABSTAIN/ESCALATE carry the residual doubt.)
 3. **Authorization, not truth.** `ledgerLookup`'s `SUPPORTED`/`UNSUPPORTED` does **not** mean
    true/false — it means **AUTHORIZED/UNAUTHORIZED relative to the operator's packet.** A detail can be
    true in the author's life yet `UNAUTHORIZED` (not in the packet) → a false fabrication accusation /
@@ -86,11 +93,22 @@ The gate DQs on `UNAUTHORIZED used as load-bearing lived fact`, never on "untrue
 `ledgerLookup`'s *return* enum beyond binary is **deferred** — adopt the language + the item-card field
 now; the merged primitive is unchanged.)
 
+**Which statuses are mechanically backed** (review item 9): `ledgerLookup` does *author-truth*
+set-membership only (`workflow-template.js` — target-truth is "not consumed by U20"). So
+`ASSERTED_TRUE` / `AUTHORIZED` / `FORBIDDEN` carry a `proof:{ledger_lookup}`; `UNKNOWN` and
+`EXTERNALLY_VERIFIED` are **declarative** (human/source-asserted, no mechanical proof). U11a must tag each.
+
 **Taste authority — the author is the principal.** The product promise is *"the best version in the
 author's real voice."* So "blinded multi-editor consensus" is **disaggregated evidence**, never a
 collapsed "known answer," and the **author holds veto** over taste-gold. Taste metrics are reported as
-*"agreement with named adjudicators,"* **not** "accuracy." (`anchorbank` already carries
-`item.human_adjudicated` + `unadjudicated()`.)
+*"agreement with named adjudicators,"* **not** "accuracy." **The concrete workflow (review item 5):**
+`editor_votes[]` are **blinded LLM jurors** (named models, run in the sandbox) — so "agreement with named
+adjudicators" means *agreement with those models*, and the **author veto is the only HUMAN gate**,
+exercised **out-of-band when reviewing/committing the durable bank** (the author flips
+`item.human_adjudicated` / sets `author_veto` on the reviewed taste-gold; `anchorbank` already carries
+`human_adjudicated` + `unadjudicated()`). A real human-editor panel is a maximal-tier option, not the
+default automated path. So the principal promise is procedural, not just schema'd: models propose, the
+author disposes.
 
 ## High-Level Technical Design
 
@@ -114,8 +132,11 @@ PER-RUN (opt-in) ── the run ASSURANCE loop
 RUN STATUS (state machine, the headline output):
   BLOCKED                 — a mandatory truth / positive-control obligation FAILED
   QUALIFIED_FOR_THIS_RUN  — required conformance + fresh probes passed within the named envelope
-  UNSTABLE                — a decisive outcome FLIPS under a permissible perturbation
-                            (mirrored order | alt judge model | prompt paraphrase | bracket reseed)
+  UNSTABLE                — the CHAMPION flips ACROSS A MARGIN BAND under a JUDGE-side perturbation
+                            (mirrored order | prompt paraphrase | alt judge model[if configured]).
+                            NOT bracket-reseed — reseed flips are inherent knockout variance, routed to
+                            top-set evidence, not the headline status. (a claim about the champion the
+                            author acts on, NOT about evaluator validity.)
   HUMAN_REVIEW_REQUIRED   — evidence insufficient OR material author/editor value-disagreement
 ```
 
@@ -123,8 +144,26 @@ RUN STATUS (state machine, the headline output):
 `{ run_status, operating_envelope:{packet_completeness, packet_provenance, field_diversity,
 generator_identity, evaluator_config_id, gate_false_dq_behavior, pair_order_stability,
 paraphrase_stability, preference_cycles, bracket_seed_sensitivity, escalation}, conformance:{passed,
-failed_families:[...]}, fresh_probes:{passed, drift:[...]}, taste:{agreement_with_named_adjudicators,
-author_vetoes:[...]}, known_blind_spots, anchor_bank_version, judge_models, expires_on:{model_or_prompt_change}, top_set?:[...] }`.
+failed_families:[...]}, fresh_probes:{passed, drift:[...]},
+adversarial_audit:'not_run', taste:{agreement_with_named_adjudicators, author_vetoes:[...]},
+known_blind_spots, anchor_bank_version, judge_models, expires_on:{model_or_prompt_change}, top_set?:[...] }`.
+
+> **`adversarial_audit:'not_run'` is a FIRST-CLASS field, not buried in `known_blind_spots`** (review
+> item 2). The consult's most deployment-realistic test — *"which evaluator is hardest for an adaptive
+> generator to hack"* (freeze rubric → red-team generator → 16–32 attempts → independent verifier) — is
+> **U12b, deferred.** `QUALIFIED_FOR_THIS_RUN` must therefore read as *"passed known-defect conformance +
+> fresh ecological drift probes,"* NOT *"robust against gaming."* U23 (below) tests **drift, not adaptive
+> exploitation** — it does not stand in for the audit. `top_set?` is **inert forward-compat** until the
+> deferred robust-top-set unit lands.
+
+**Division of labor — what guards against what (review item 7).** The durable corpus is **committed and
+visible** (U21's deliberate choice: reviewed ground truth). Held-out-by-family protects *within* a build,
+but across many iterations a visible committed partition **gets tuned against** — so the durable corpus is
+a **regression guard (known defects)**, NOT an anti-gaming guard. The **anti-gaming work is done by the
+fresh run-scoped probes (U23)** — regenerated per run, never persisted, so they can't be optimized
+against — and ultimately by the **deferred adversarial audit (U12b)**. The cross-check below marks
+Goodhart **partial** for exactly this reason: no design abolishes adaptive reuse; this one bounds it and
+is honest about the residue.
 
 ## Implementation Units
 
@@ -143,8 +182,10 @@ author_vetoes:[...]}, known_blind_spots, anchor_bank_version, judge_models, expi
   mutation:{span,operator}, expected:{gate, taste_comparison}, proof:{ledger_lookup}, editor_votes:[...],
   author_veto:bool, known_confounds, difficulty, provenance, kind:'truth'|'taste', human_adjudicated,
   family }`. Truth anchors use `ledgerLookup(span)` → `AUTHORIZED|UNAUTHORIZED` (the *authorization*
-  check, recorded in `proof`). Mandatory DIR controls `I≻O,T≻B,I≻L,O≻C,I₂≻I₁`. Counterbalance shortcuts;
-  strip `Original/Fabricated/Bland` labels.
+  check, recorded in `proof`). **Tag which statuses are mechanically backed (review item 9):**
+  `ASSERTED_TRUE/AUTHORIZED/FORBIDDEN` carry a real `proof:{ledger_lookup}`; `UNKNOWN/EXTERNALLY_VERIFIED`
+  are **declarative** (`proof:null`, human/source-asserted — `ledgerLookup` does author-truth only).
+  Mandatory DIR controls `I≻O,T≻B,I≻L,O≻C,I₂≻I₁`. Counterbalance shortcuts; strip `Original/Fabricated/Bland` labels.
 - **Patterns to follow:** `screenAll`/`ledgerLookup` in `workflow-template.js`; opt-in flag mirrors `LIVE_BEACONS`.
 - **Test scenarios:**
   - **Deterministic (probe `p4`, mock `agent`):** every card has a non-empty string `family` + an
@@ -211,7 +252,11 @@ author_vetoes:[...]}, known_blind_spots, anchor_bank_version, judge_models, expi
   / incumbent / generator regime** — the multi-edit interactions the durable single-span corpus
   structurally cannot test: distributed persona-drift, omission/implication, a genuine structural
   improvement, supported vividness, A/B reversal, harmless length/format, 1–2 adversarial judge-bait.
-  Detect local **drift**, not broad validity.
+  Detect local **drift**, not broad validity. **NOT the adversarial audit** (review item 2): U23 is
+  *static* fresh cases in the live regime — it does **not** run an adaptive generator that hunts the
+  rubric's loopholes (that is U12b, deferred, and the card flags `adversarial_audit:'not_run'`). The
+  "judge-bait" probes are a smoke test for obvious gaming, not the freeze-rubric → red-team → 16–32-attempt
+  exploit-rate audit. Do not let U23's drift coverage imply exploitation robustness.
 - **Requirements:** H6 answer (synthetic single-span ⇒ only local conformance); test the actual regime.
 - **Dependencies:** U12 (shares the qualification harness), the live packet/incumbent/generator.
 - **Files:** Modify `worldcup/references/workflow-template.js` (`buildProbes` + judge them through the live
@@ -239,16 +284,30 @@ author_vetoes:[...]}, known_blind_spots, anchor_bank_version, judge_models, expi
 - **Files:** Modify `worldcup/references/workflow-template.js` (`qualifyRun(...)` → status + card payload).
   Create `probes/p8-assurance.mjs`. Modify `worldcup/references/qualifiers.md`.
 - **Approach:** A state machine, not a score. `BLOCKED` dominates (a failed mandatory obligation can't be
-  averaged away); `UNSTABLE` when a decisive outcome flips under any permissible perturbation;
-  `HUMAN_REVIEW_REQUIRED` on insufficient evidence or material author/editor disagreement; else
-  `QUALIFIED_FOR_THIS_RUN`. The envelope records the run's actual conditions so the status is scoped to
-  them. Taste numbers are labeled "agreement with named adjudicators."
+  averaged away). **`UNSTABLE` is defined precisely (review item 1):** the **champion** flips under a
+  **judge-side** perturbation **AND** the flip crosses a **margin band** (the original and flipped
+  winners were not within a near-tie confidence interval) — a flip *inside* the near-tie band is recorded
+  as a close call, not `UNSTABLE`. The judge-side perturbations are **mirrored order, prompt paraphrase,
+  and (if a second model is configured) alt judge model**. **Bracket-reseed is NOT an `UNSTABLE` signal**
+  — reseed flips are partly inherent knockout variance (the consult's own anti-bracket argument), so a
+  reseed-flip is routed to the deferred robust-top-set evidence + recorded in
+  `operating_envelope.bracket_seed_sensitivity`, never the headline status. `UNSTABLE` is a claim about
+  **the champion the author will act on, not about evaluator validity.** `HUMAN_REVIEW_REQUIRED` on
+  insufficient evidence or material author/editor disagreement; else `QUALIFIED_FOR_THIS_RUN`.
+- **Cost envelope + alt-model dependency (review item 6):** perturbations are run on **the champion
+  (final) only**, not every decisive match — bounding added judge calls to O(perturbations), not
+  O(matches). **Alt-judge-model is OPTIONAL**: if no second model is configured, that perturbation is
+  skipped and the envelope records `alt_model: not_run` (do not silently treat its absence as stability).
+  The card states the perturbation count so cost is legible.
 - **Test scenarios:**
   - **Deterministic (probe `p8`, mock perturbation outcomes):** a failed mandatory obligation ⇒ `BLOCKED`
-    (dominates everything); a champion that flips under mirrored-order ⇒ `UNSTABLE`; material
+    (dominates everything); a champion that flips **across the margin band** under mirrored-order ⇒
+    `UNSTABLE`; a champion flip **within the near-tie band** ⇒ NOT `UNSTABLE` (recorded as a close call);
+    a **bracket-reseed flip** ⇒ NOT `UNSTABLE` (lands in `operating_envelope.bracket_seed_sensitivity`);
+    a missing second model ⇒ `alt_model: not_run` in the envelope (not silent stability); material
     author/editor disagreement ⇒ `HUMAN_REVIEW_REQUIRED`; an all-pass stable run ⇒
-    `QUALIFIED_FOR_THIS_RUN`; the card serializes with the envelope + `anchor_bank_version` + `expires_on`;
-    taste field reads "agreement", never "accuracy".
+    `QUALIFIED_FOR_THIS_RUN`; the card serializes with the envelope + `adversarial_audit:'not_run'` +
+    `anchor_bank_version` + `expires_on`; taste field reads "agreement", never "accuracy"/"recall".
   - **Stochastic (documented):** real perturbation flip-rates are observed live.
 - **Verification:** the run status correctly reflects the 4-state machine on controlled inputs; the
   assurance card carries the full envelope; no "certified"/"accuracy"/"recall ≥" language anywhere.
@@ -319,6 +378,15 @@ author_vetoes:[...]}, known_blind_spots, anchor_bank_version, judge_models, expi
 ## Build order
 
 `U11a → U11b → U12 → U23 → U24` — corpus generated → persisted/bridged → conformance-qualified → fresh
-probes → run envelope + assurance card. Each its own `/gate`'d commit on
-`feat/qualifiers-anchors-certification`; ship the connected effort as one PR (the units only make sense
-together — the corpus, the conformance gate, the live probes, and the run status are one assurance loop).
+probes → run envelope + assurance card.
+
+**Merge as one, REVIEW per-unit (review item 3 — the load-bearing process fix).** "The units only make
+sense together" justifies *merging* together, not *reviewing* together. The Risks table's own evidence —
+the last three units each leaked past a green probe, each caught only by **independent per-unit review**
+(U20 punctuation fragments, U21 manifest-forge, U21 prototype-key) — means a 5-unit / 5-probe mega-review
+is the **worst** shape for that failure mode. So: each unit is its own `/gate`'d **and independently
+`/code-review`'d** commit on `feat/qualifiers-anchors-certification` (the cross-model review that caught
+the prior leaks), with adversarial executed counterexamples baked into `p4`–`p8` from the start; the
+stack then ships as **one connected PR**. Keep the connected-loop merge; keep the per-unit review gate.
+A clean alternative if the single PR feels too wide: split into PR-1 `U11a→U11b→U12` (corpus + conformance)
+and PR-2 `U23→U24` (live probes + run status) — same per-unit review either way.
