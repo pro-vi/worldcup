@@ -144,6 +144,12 @@ const fullDone = lv.fold([
   { seq: 3, ev: 'champion', label: 'x', stakes: 'FINAL' },
 ])
 ok('a complete bracket + champion drops the refresh (final, no more polling)', !lv.render(fullDone).includes('http-equiv="refresh"'))
+// the reviewer's case: a beacon champion landing BEFORE the bracket beacon must NOT freeze as final
+const champNoBracket = lv.fold([{ seq: 7, ev: 'champion', label: 'x', stakes: 'FINAL' }])
+ok('beacon champion with NO bracket yet stays LIVE (keeps polling, not frozen)', lv.render(champNoBracket).includes('http-equiv="refresh"') && !lv.statusLine(champNoBracket).startsWith('final'))
+// but a pure LEGACY stream (no seq, no bracket) is genuinely done at champion — finalize immediately
+const legacyChamp = lv.fold([{ ev: 'round', stakes: 'FINAL', matches: [{ winner: 'x', loser: 'y', margin: '1-0' }], eliminated: ['y'] }, { ev: 'champion', label: 'x', stakes: 'FINAL' }])
+ok('legacy champion (no seq, no bracket) finalizes immediately', !lv.render(legacyChamp).includes('http-equiv="refresh"'))
 
 // ── empty input (sink not ready) ─────────────────────────────────────────────────────────
 console.log('empty input:')

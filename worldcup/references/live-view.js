@@ -84,10 +84,11 @@ function sliceBalanced(s, start) {
 // last-write-wins is correct because emit order is restored — a late draw/partial-groups/champion can no
 // longer clobber newer state. Idempotent: re-folding the growing file yields the same state.
 function fold(events) {
-  const st = { field: null, groups: {}, groupOrder: [], dq: [], bracket: null, rounds: [], champion: null, gated: false, last: null }
+  const st = { field: null, groups: {}, groupOrder: [], dq: [], bracket: null, rounds: [], champion: null, gated: false, seenSeq: false, last: null }
   const ordered = (events || []).map((e, i) => ({ e, i, k: (e && typeof e.seq === 'number') ? e.seq : i })).sort((a, b) => a.k - b.k || a.i - b.i).map(x => x.e)
   for (const e of ordered) {
     if (!e || !e.ev) continue
+    if (typeof e.seq === 'number') st.seenSeq = true   // a beacon-fed run (vs a legacy raw stream)
     st.last = e.ev
     if (e.ev === 'draw') {
       st.field = e.field
@@ -160,7 +161,12 @@ function bracketTree(st) {
 function complete(st) {
   if (!st.champion) return false
   const t = bracketTree(st)
-  return !t || t.every(r => r.matches.every(m => m.status === 'done'))
+  if (t) return t.every(r => r.matches.every(m => m.status === 'done'))
+  // No bracket folded. For a BEACON-fed run (some event carried a seq) that means the bracket beacon
+  // hasn't landed yet — or failed — and more events are still possible, so this is NOT done: keep
+  // polling (the idle safety-exit is the backstop). Only a pure legacy stream (no seq, no bracket) is
+  // finished at champion.
+  return !st.seenSeq
 }
 
 function statusLine(st) {
