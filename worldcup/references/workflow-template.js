@@ -456,14 +456,47 @@ function eloRatings(entries, decided, K = 24, base = 1500) {
 }
 
 // ─────────────────────────────────────────────── LIVE EVENT STREAM (realtime view hook)
-// The workflow is sandboxed (no fs, no sockets); its ONLY egress mid-run is log(). `emit`
-// piggybacks that stream with a greppable `WCEVENT ` prefix so an EXTERNAL watcher can tail
-// the run's persisted jsonl, parse the events, and re-render a self-refreshing static HTML of
-// the live bracket — no server, no deps (Tier 1, see references/live-view.js). With no watcher
-// attached the same lines are just structured progress you can read in /workflows (Tier 0).
-// emit is pure logging: it never feeds back in and never affects determinism. The workflow
-// PRODUCES events; it never consumes its own.
-const emit = ev => { try { log('WCEVENT ' + JSON.stringify(ev)) } catch (e) { /* logging must never break a run */ } }
+// The workflow is sandboxed (no fs, no sockets). Two egress channels carry tournament events:
+//   • Tier-0: log('WCEVENT …') — structured progress readable in /workflows, folded into the run
+//     file's logs[] — but that file is written ONCE at completion, so log() is NOT live (U18 finding).
+//   • Tier-1 (LIVE): the only egress that persists INCREMENTALLY during a run is an AGENT's result —
+//     it streams into subagents/workflows/<runId>/journal.jsonl the moment the agent completes. So each
+//     event is ALSO emitted as a cheap "beacon" agent() whose tight-schema result IS the event
+//     ({__wc:'EVENT',…}); references/live-view.js tails that journal and renders the live bracket.
+// Determinism: the beacon result is DISCARDED (never read back) — the bracket is unaffected. Beacons
+// fire-and-forget (collected in `beacons`, awaited once before return); any failure is swallowed — a
+// beacon must NEVER break or alter a run. Set LIVE_BEACONS=false for Tier-0 only.
+const LIVE_BEACONS = true
+const beacons = []
+let beaconSeq = 0
+const BEACON_PROMPT = 'Output this exact JSON object as your structured result, preserving nested arrays/objects and numbers EXACTLY — do not stringify, reorder, or alter any field:\n'
+const bkStr = { type: 'string' }, bkNum = { type: 'number' }, bkEither = { type: ['string', 'number'] }, bkNullStr = { type: ['string', 'null'] }
+const bkObj = props => ({ type: 'object', additionalProperties: false, required: Object.keys(props), properties: props })
+const bkArr = items => ({ type: 'array', items })
+// Tight per-event schemas — a LOOSE schema makes the model stringify nested arrays; a tight one forces
+// faithful nesting (verified). Shapes MUST match live-view.js fold().
+const EVENT_SCHEMAS = {
+  draw: bkObj({ __wc: bkStr, ev: bkStr, field: bkNum, groups: bkArr(bkObj({ group: bkStr, teams: bkArr(bkObj({ label: bkStr, seed: bkNum })) })) }),
+  bracket: bkObj({ __wc: bkStr, ev: bkStr, rounds: bkArr(bkObj({ stakes: bkStr, matches: bkArr(bkObj({ slot: bkNum, a: bkNullStr, b: bkNullStr })) })) }),
+  gate: bkObj({ __wc: bkStr, ev: bkStr, field: bkNum, disqualified: bkArr(bkObj({ label: bkStr, category: bkStr })) }),
+  groups: bkObj({ __wc: bkStr, ev: bkStr, standings: bkArr(bkObj({ group: bkStr, table: bkArr(bkObj({ label: bkStr, pts: bkNum })), advanced: bkArr(bkStr) })) }),
+  round: bkObj({ __wc: bkStr, ev: bkStr, stakes: bkStr, matches: bkArr(bkObj({ winner: bkStr, loser: bkStr, margin: bkEither })), eliminated: bkArr(bkStr) }),
+  match: bkObj({ __wc: bkStr, ev: bkStr, stakes: bkStr, slot: bkNum, winner: bkStr, loser: bkStr, margin: bkEither }),
+  champion: bkObj({ __wc: bkStr, ev: bkStr, label: bkStr, stakes: bkStr }),
+}
+// Every event carries a monotonic emit `seq` — beacons land in COMPLETION order, so the consumer sorts
+// by seq to recover emit order (additionalProperties:false means the schema must allow seq explicitly).
+for (const __s of Object.values(EVENT_SCHEMAS)) { __s.properties.seq = bkNum; __s.required.push('seq') }
+// emit stays SYNC (no call-site churn): logs the Tier-0 line, then fires the live beacon fire-and-forget.
+const emit = ev => {
+  ev.seq = ++beaconSeq   // logical EMIT order; the consumer folds by seq since beacons arrive out of order
+  try { log('WCEVENT ' + JSON.stringify(ev)) } catch (e) { /* logging must never break a run */ }
+  try {
+    const schema = LIVE_BEACONS ? EVENT_SCHEMAS[ev.ev] : null
+    if (schema) beacons.push(agent(BEACON_PROMPT + JSON.stringify({ __wc: 'EVENT', ...ev }), { label: 'wc-live:' + ev.ev, schema, effort: 'low' })
+      .catch(() => { try { log('WCEVENT-BEACON-FAIL ' + ev.ev + ' #' + ev.seq) } catch (e) {} }))  // observable, not a silent hole
+  } catch (e) { /* a beacon must NEVER break a run */ }
+}
 // Compact monospace standings for the free Tier-0 watch-in-/workflows view (no artifact needed).
 // 'Q' marks a qualifier (top 2), '.' an eliminated team. ASCII only so it survives any log sink.
 function standingsBlock(groups, adv) {
@@ -885,8 +918,18 @@ log(`${GROUPS} groups drawn. Group stage: ${GROUPS * 6} matches..`)
 emit({ ev: 'draw', field: FIELD, groups: groups.map((g, gi) => ({ group: LETTERS[gi], teams: g.map(t => ({ label: t.label, seed: seeded.findIndex(x => x.id === t.id) + 1 })) })) })
 const groupSpecs = []
 groups.forEach((g, gi) => roundRobin(g).forEach(([x, y]) => groupSpecs.push({ gi, x, y })))
-const groupResults = await parallel(groupSpecs.map((m, idx) => () =>
-  playMatch(m.x, m.y, idx, 'R32', 'Groups', decided).then(r => ({ ...r, gi: m.gi }))))
+// Live: the group table BUILDS UP as matches resolve (parallel, but they finish in waves under the
+// concurrency cap), so emit a couple of partial-standings snapshots before the final — the group stage
+// fills in rather than jumping from the draw straight to the final table.
+const groupResults = []
+const partialStandings = () => groups.map((g, gi) => { const s = standings(g, gi, groupResults); return { group: LETTERS[gi], table: s.ranked.map(t => ({ label: t.label, pts: s.pts.get(t.id) })), advanced: [] } })
+const gMarks = new Set([Math.round(groupSpecs.length / 3), Math.round(2 * groupSpecs.length / 3)].filter(n => n > 0 && n < groupSpecs.length))
+let gDone = 0
+await parallel(groupSpecs.map((m, idx) => () =>
+  playMatch(m.x, m.y, idx, 'R32', 'Groups', decided).then(r => {
+    groupResults.push({ ...r, gi: m.gi })
+    if (gMarks.has(++gDone)) emit({ ev: 'groups', standings: partialStandings() })
+  })))
 // NOTE: group matches use a single rotated juror for cost; override panelFor('R32') -> single
 // if you want strict 1-vote groups. Default template runs the 3-lens panel; for FIELD=48
 // or tight budgets, switch group matches to a single 'taste' juror.
@@ -912,7 +955,11 @@ log('Group stage done.')
 // ─────────────────────────────────────────────────────── KNOCKOUT
 phase('Knockout')
 async function playRound(pairs, stakes) {
-  return parallel(pairs.map((p, idx) => () => playMatch(p[0], p[1], idx, stakes, 'Knockout', decided)))
+  return parallel(pairs.map((p, idx) => () => playMatch(p[0], p[1], idx, stakes, 'Knockout', decided).then(r => {
+    // Live: emit each knockout match AS IT RESOLVES so the bracket fills slot-by-slot, not whole-round.
+    emit({ ev: 'match', stakes, slot: idx, winner: r.winner.label, loser: r.loser.label, margin: r.margin })
+    return r
+  })))
 }
 let roundPairs, firstStakes
 if (FIELD === 32) {
@@ -930,6 +977,19 @@ if (FIELD === 32) {
 }
 
 const order = ['R32', 'R16', 'QF', 'SF', 'FINAL']
+// Live: emit the full knockout TREE up front — every round + slot, round-1 matchups known, the rest TBD —
+// so the live view paints the whole bracket immediately and advances winners into later slots as rounds
+// resolve (you watch a team move on, and the in-flight round shows as "playing").
+{
+  const si = order.indexOf(firstStakes), tree = []
+  for (let k = si, n = roundPairs.length; k < order.length && n >= 1; n >>= 1, k++) {
+    tree.push({ stakes: order[k], matches: Array.from({ length: n }, (_, m) => (k === si
+      ? { slot: m, a: roundPairs[m][0].label, b: roundPairs[m][1].label }
+      : { slot: m, a: null, b: null })) })
+    if (order[k] === 'FINAL') break
+  }
+  emit({ ev: 'bracket', rounds: tree })
+}
 let stakes = firstStakes, pairs = roundPairs, lastRound, history = {}
 while (pairs.length >= 1) {
   log(`${stakes}: ${pairs.length} match(es)..`)
@@ -1266,6 +1326,9 @@ document.addEventListener('click',function(e){var t=e.target;if(t&&t.classList&&
 ${coordScript}
 </script></body></html>`
 }
+
+// Land every live beacon in journal.jsonl before the run ends (they were fired fire-and-forget above).
+if (beacons.length) { try { await Promise.allSettled(beacons) } catch (e) { /* never block the result on beacons */ } }
 
 return {
   champion: { label: champion.label, title: champion.title, angle: champion.oneLineAngle, markdown: champion.markdown,
