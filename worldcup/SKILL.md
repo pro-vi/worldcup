@@ -119,7 +119,22 @@ context; pick sane defaults for the rest and state them.
    the reference challenge, the effects analysis, the trust report, and the HTML report
    (mirror bracket + coordinate view). You are filling holes, not writing orchestration.
 4. **Run it** with the Workflow tool. It runs in the background and notifies on
-   completion. Watchable via "/workflows".
+   completion. Watchable via "/workflows" (Tier-0 — free, no setup).
+
+   **Optional Tier-1 live view** — a self-refreshing HTML bracket that fills in *as the run
+   happens* (group tables building, knockout games "playing", winners advancing). To enable:
+   a. Make a high-entropy nonce: `openssl rand -hex 8`.
+   b. Fire the Workflow with `args: { liveNonce: "<nonce>" }`. The producer stamps every live
+      event with it; judges never see it, so judged prose can't forge events. (In bring-your-own
+      `given` mode `args` already holds the entrants, so wrap both: `args: { items: [...entrants],
+      liveNonce: "<nonce>" }`.)
+   c. The launch returns a **Transcript dir** — the run's live spine sits right under it. Start the
+      watcher in the background and open the artifact:
+      `node references/live-view.js --events "<transcript-dir>/journal.jsonl" --out worldcup-live.html --nonce "<nonce>" &`
+      then open "worldcup-live.html".
+   d. The watcher self-exits when the bracket completes (or after 3 min idle). If the spine path
+      can't be resolved, just stay on Tier-0 (`/workflows`) — no run depends on the live view.
+   See "references/live-view.md" for the design + event contract.
 5. **Write and open the report.** The Workflow returns "reportHtml": a self-contained
    World Cup-flavored HTML of the final state graph (bracket tree, group tables, champion
    path, global rating, trust verdict, disqualifications). Write it to
