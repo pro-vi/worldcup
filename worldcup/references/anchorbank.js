@@ -1,0 +1,163 @@
+#!/usr/bin/env node
+'use strict'
+// worldcup — DURABLE ANCHOR BANK (PLAN_3 U21/P3).
+//
+// "Hidden held-out / leave-one-family-out" certification is meaningless if the anchor bank is
+// regenerated each run by the same session being certified — that is a same-run smoke test, not
+// held-out validation. This module makes the bank a VERSIONED, ON-DISK artifact: built once (U11
+// fills the item cards), persisted, and reused across runs, so the certifying run (U12) reads a
+// certification partition it did NOT author.
+//
+//   node anchorbank.js verify  <bank.json>     # integrity + version check (exit 1 on mismatch)
+//   node anchorbank.js inspect <bank.json>     # partition counts + ids
+//
+// SANDBOX BOUNDARY: the worldcup Workflow is sandboxed (no fs). So this helper runs ORCHESTRATOR-side
+// (like live-view.js): the orchestrator builds/persists the bank here, then passes the held-out
+// partition INTO the Workflow via `args` (U12 wires that). The bank is content-addressed to the U20
+// SOURCE_PACKET, so a changed packet is a different bank — you cannot accidentally certify against a
+// ledger the judges no longer read. Dependency-free (Node stdlib only).
+const fs = require('fs')
+const path = require('path')
+const { createHash } = require('crypto')
+
+const SCHEMA = 'worldcup/anchor-bank@1'
+// The four partitions (from the review): development (feedback allowed) · selection (hidden tuning) ·
+// certification (held out by family, scored once) · canary (drift detection). A FAMILY lands in
+// exactly one partition, so "held out by family" is structural, not a random per-item split.
+const PARTITIONS = [['dev', 0.5], ['selection', 0.2], ['certification', 0.2], ['canary', 0.1]]
+const HELD_OUT = new Set(['certification', 'canary'])   // partitions the certifying run must NOT author
+
+// ── content addressing. Canonical JSON (sorted keys) so the SAME logical value always hashes
+// identically — this is what makes versions reproducible and tampering detectable. Assumes JSON-shaped
+// values: undefined/NaN/Infinity all canonicalize to null (a JSON limitation), so don't feed it those.
+// The integrity path is safe by construction — verify() runs on JSON.parse'd banks, which cannot
+// contain undefined/NaN; the build path's domain (U20 string/array packets, U11 JSON item cards) doesn't either.
+const canonical = v => {
+  if (Array.isArray(v)) return '[' + v.map(canonical).join(',') + ']'
+  if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonical(v[k])).join(',') + '}'
+  return JSON.stringify(v === undefined ? null : v)
+}
+const sha = s => createHash('sha256').update(s).digest('hex')
+const fingerprint = obj => sha(canonical(obj)).slice(0, 16)
+
+// packetId identifies WHICH SOURCE_PACKET (U20) a bank certifies. Content-addressed: change the packet
+// (facts/entities/not_allowed/target) and you get a different id — "changing the packet bumps the bank".
+const packetId = packet => fingerprint(packet == null ? {} : packet)
+
+// Deterministic, stable family → partition. Keyed by (packetId, family) so it's reproducible across
+// runs and machines, splits by whole family, and re-partitions only when the packet itself changes.
+const partitionFor = (family, pid) => {
+  const h = parseInt(sha(pid + '|' + String(family)).slice(0, 8), 16) / 0x100000000   // [0,1)
+  let acc = 0
+  for (const [name, w] of PARTITIONS) { acc += w; if (h < acc) return name }
+  return PARTITIONS[PARTITIONS.length - 1][0]
+}
+
+const HEX16 = /^[0-9a-f]{16}$/   // shape of every fingerprint — also keeps packet_id/version safe as path components
+
+// The family→partition manifest is fully DERIVABLE from (packet_id, item families) — so it is the
+// single source of truth, recomputable and verifiable (see verify). A family with no value can't be
+// partitioned by family at all, so it is rejected at build, not silently dropped.
+function buildManifest(items, pid) {
+  const m = {}
+  for (const it of items) { const fam = it && it.family; if (fam != null && !(String(fam) in m)) m[String(fam)] = partitionFor(fam, pid) }
+  return m
+}
+
+// Assemble a bank from item cards (U11's shape; only `.family` / `.kind` / `.human_adjudicated` are
+// read here — the rest is carried through verbatim). created/provenance are caller-supplied (build
+// metadata, deliberately OUTSIDE the content-address so two builds of the same anchors are reproducible).
+function buildBank({ packet, items = [], provenance = {}, created = null }) {
+  const pid = packetId(packet)
+  for (const it of items)
+    if (it == null || it.family == null || String(it.family) === '')
+      throw new Error('anchorbank: every item must carry a non-empty family — held-out partitioning is BY family; an unpartitionable item would be invisible to certification.')
+  const checksum = fingerprint(items)
+  const version = fingerprint({ packet_id: pid, checksum })   // depends on packet AND items
+  return { schema: SCHEMA, packet_id: pid, version, created, provenance, manifest: buildManifest(items, pid), checksum, items }
+}
+
+// Integrity + consistency — a hand-edited or corrupted bank cannot silently certify. Checks, in order:
+// fingerprint shape (also path-safety for packet_id/version), item checksum, version, AND the manifest
+// RECOMPUTED from (packet_id, items): the held-out partition is the load-bearing security property, and
+// it is NOT in the checksum/version — so without this recompute, a forged manifest (move a certification
+// family to dev) would pass. The manifest is derivable, so recompute-and-compare is the canonical check.
+function verify(bank) {
+  if (!bank || typeof bank !== 'object' || Array.isArray(bank)) throw new Error('anchorbank: not an object')
+  if (bank.schema !== SCHEMA) throw new Error(`anchorbank: unknown schema ${JSON.stringify(bank.schema)} (want ${SCHEMA})`)
+  if (!Array.isArray(bank.items)) throw new Error('anchorbank: items must be an array')
+  if (!HEX16.test(bank.packet_id)) throw new Error(`anchorbank: packet_id must be 16 hex chars, got ${JSON.stringify(bank.packet_id)}`)
+  if (!HEX16.test(bank.version)) throw new Error(`anchorbank: version must be 16 hex chars, got ${JSON.stringify(bank.version)}`)
+  const cs = fingerprint(bank.items)
+  if (cs !== bank.checksum) throw new Error(`anchorbank: checksum mismatch (items tampered) — stored ${bank.checksum}, computed ${cs}`)
+  const ver = fingerprint({ packet_id: bank.packet_id, checksum: bank.checksum })
+  if (ver !== bank.version) throw new Error(`anchorbank: version mismatch — stored ${bank.version}, computed ${ver}`)
+  const manifest = canonical(bank.manifest || {}), recomputed = canonical(buildManifest(bank.items, bank.packet_id))
+  if (manifest !== recomputed) throw new Error('anchorbank: manifest mismatch — the stored family→partition split is not the canonical one for this (packet, items); a held-out family may have been reassigned.')
+  return bank
+}
+
+// Atomic write to anchors/<packet_id>/bank-v<version>.json (temp-file + rename), so a concurrent
+// reader never sees a half-written bank. Returns the path written.
+function write(bank, baseDir) {
+  verify(bank)
+  const dir = path.join(baseDir, 'anchors', bank.packet_id)
+  fs.mkdirSync(dir, { recursive: true })
+  const file = path.join(dir, `bank-v${bank.version}.json`)
+  const tmp = `${file}.tmp`
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(bank, null, 2) + '\n')
+    fs.renameSync(tmp, file)
+  } catch (e) {
+    try { fs.unlinkSync(tmp) } catch { /* nothing to clean up */ }   // never leave a partial temp on a failed write
+    throw e
+  }
+  return file
+}
+
+// Load + verify. Tags the failure with the file path so a corrupt/missing bank is diagnosable (a bare
+// JSON SyntaxError or ENOENT doesn't say WHICH bank); verify()'s own errors already carry stored-vs-computed.
+function read(file) {
+  let raw
+  try { raw = fs.readFileSync(file, 'utf8') } catch (e) { throw new Error(`anchorbank: cannot read ${file}: ${e.message}`) }
+  let bank
+  try { bank = JSON.parse(raw) } catch (e) { throw new Error(`anchorbank: ${file} is not valid JSON (corrupt/truncated bank): ${e.message}`) }
+  return verify(bank)
+}
+
+// The bank was built for a DIFFERENT packet than the one about to run → it cannot be used (stale).
+const isStaleFor = (bank, packet) => !bank || bank.packet_id !== packetId(packet)
+const partitionOf = (bank, family) => (bank && bank.manifest && bank.manifest[String(family)]) || null
+const itemsInPartition = (bank, name) => (bank && bank.items || []).filter(it => partitionOf(bank, it && it.family) === name)
+// Families the certifying run must NOT author (it reads these from the persisted bank) vs the families
+// it MAY (re)build this run. Disjoint by construction (one family → one partition).
+const heldOutFamilies = bank => Object.entries((bank && bank.manifest) || {}).filter(([, p]) => HELD_OUT.has(p)).map(([f]) => f)
+const authoredFamilies = bank => Object.entries((bank && bank.manifest) || {}).filter(([, p]) => !HELD_OUT.has(p)).map(([f]) => f)
+// Taste anchors awaiting human adjudication (U11 stamps item.kind/human_adjudicated; U12 must not
+// certify on un-adjudicated taste gold). Carried here; consumers decide policy.
+const unadjudicated = bank => (bank && bank.items || []).filter(it => it && it.kind === 'taste' && !it.human_adjudicated)
+
+function partitionCounts(bank) {
+  const c = { dev: 0, selection: 0, certification: 0, canary: 0, unpartitioned: 0 }
+  for (const it of (bank && bank.items) || []) { const p = partitionOf(bank, it && it.family); c[p || 'unpartitioned']++ }
+  return c
+}
+
+module.exports = {
+  SCHEMA, PARTITIONS, HELD_OUT, canonical, fingerprint, packetId, partitionFor,
+  buildBank, verify, write, read, isStaleFor, partitionOf, itemsInPartition,
+  heldOutFamilies, authoredFamilies, unadjudicated, partitionCounts,
+}
+
+if (require.main === module) {
+  const [cmd, file] = process.argv.slice(2)
+  if ((cmd !== 'verify' && cmd !== 'inspect') || !file) {
+    console.error('usage: anchorbank.js verify|inspect <bank.json>'); process.exit(2)
+  }
+  try {
+    const bank = read(file)
+    if (cmd === 'verify') { console.log(`OK  packet=${bank.packet_id} version=${bank.version} items=${bank.items.length}`); process.exit(0) }
+    console.log(JSON.stringify({ packet_id: bank.packet_id, version: bank.version, items: bank.items.length,
+      partitions: partitionCounts(bank), held_out_families: heldOutFamilies(bank), unadjudicated: unadjudicated(bank).length }, null, 2))
+  } catch (e) { console.error('FAIL', e.message); process.exit(1) }
+}

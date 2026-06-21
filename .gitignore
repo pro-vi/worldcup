@@ -8,3 +8,8 @@ node_modules/
 # local agent session data — not part of the repo
 .prov/
 .claude/
+
+# durable anchor bank (PLAN_3 U21): COMMIT the banks (anchors/<packet_id>/bank-v<version>.json —
+# reviewed, content-addressed ground truth). *.tmp (atomic-write temps) is already ignored above;
+# ignore only large raw mutant scratch.
+anchors/**/_scratch/
