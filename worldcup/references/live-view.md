@@ -69,13 +69,17 @@ line, never by un-escaping and scavenging nested JSON string values (the injecti
 ## Launching it on a real run (the sink is now resolved)
 
 The `Workflow(...)` launch returns a **Transcript dir** — the live spine for that run lives directly
-under it. So the launcher resolves the journal with no guesswork:
+under it. So the launcher resolves the journal with no guesswork. Pass a **per-run nonce** both into the
+Workflow (`args.liveNonce`) and to the watcher (`--nonce`) so only this run's beacons are accepted:
 
 ```bash
-# Workflow(...) → "Transcript dir: …/subagents/workflows/wf_<runId>"
-node references/live-view.js --events "<transcript-dir>/journal.jsonl" --out worldcup-live.html &
-open worldcup-live.html   # browser auto-refreshes every 2s; the watcher self-exits on `champion`
+NONCE=$(openssl rand -hex 8)
+# Workflow({ script: …, args: { liveNonce: NONCE } }) → "Transcript dir: …/subagents/workflows/wf_<runId>"
+node references/live-view.js --events "<transcript-dir>/journal.jsonl" --out worldcup-live.html --nonce "$NONCE" &
+open worldcup-live.html   # auto-refreshes every 2s; the watcher self-exits when the bracket completes
 ```
+
+(`SKILL.md` step 4 wires this as the opt-in Tier-1 path.)
 
 ```bash
 # one snapshot (a final render, or for the probe):
@@ -86,8 +90,11 @@ node references/live-view.js --events <journal.jsonl> --out worldcup-live.html -
   Tier-0 `WCEVENT ` line) — it never un-escapes and scavenges nested string values, so a judged essay or
   a judge's verdict containing a literal `WCEVENT {…}` cannot forge a live event. Non-beacon results,
   narrator lines, and partial trailing writes skip; a harness format change degrades to a *stale* view,
-  never a crash. (Stronger provenance — a per-run nonce so even a structured `__wc` can't be spoofed — is
-  the documented next step; today `__wc:'EVENT'` is a structural marker that judge schemas never emit.)
+  never a crash.
+- **Provenance (per-run nonce):** when the launcher passes `--nonce`, the consumer accepts a beacon ONLY
+  if its `result.nonce` matches. The producer reads the same token from `args.liveNonce` and stamps every
+  event; judges never see it, so even an agent that emitted a structured `{__wc:'EVENT'}` can't forge a
+  beacon without the (unguessable) nonce. No `--nonce` → accept any (legacy/testing).
 - **Atomic writes:** temp-file + rename, so a watching browser never reads a half-written file.
 - **Self-contained:** inline CSS mirroring `renderReportV2`'s palette; zero external requests; live
   snapshots carry `<meta http-equiv="refresh" content="2">`, the final render does not.

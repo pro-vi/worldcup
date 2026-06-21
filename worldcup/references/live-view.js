@@ -32,16 +32,18 @@ const he = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp
 //       marker buried (escaped) inside a record's string value does not. This is the injection guard.
 // Non-beacon results, narrator lines, and malformed/partial lines skip — never fatal. We re-read from the
 // top each tick (events are few), so there's no byte-offset bookkeeping.
-function parseEvents(text) {
+function parseEvents(text, nonce) {
   const events = []
   for (const raw of String(text == null ? '' : text).split('\n')) {
     if (!raw) continue
-    // (1) spine journal — trust only the structured top-level result.__wc
+    // (1) spine journal — trust only the structured top-level result.__wc, AND (when the launcher passed a
+    // per-run nonce) the matching result.nonce. An agent can't know the nonce, so it can't forge a beacon
+    // even by emitting a real __wc. No expected nonce → accept any (legacy/testing).
     if (raw.indexOf('"__wc"') !== -1) {
       try {
         const rec = JSON.parse(raw)
         const r = rec && (rec.result && typeof rec.result === 'object' ? rec.result : rec)
-        if (r && r.__wc === 'EVENT' && r.ev) { events.push(r); continue }
+        if (r && r.__wc === 'EVENT' && r.ev && (!nonce || r.nonce === nonce)) { events.push(r); continue }
       } catch (e) { /* not a clean json line — fall through */ }
     }
     // (2) legacy RAW WCEVENT line only — no nested-string scavenging (the injection guard, see header)
@@ -263,18 +265,19 @@ ${dqHtml}
 
 // ─────────────────────────────────────────────────────────── CLI
 function parseArgs(argv) {
-  const a = { out: 'worldcup-live.html', once: false }
+  const a = { out: 'worldcup-live.html', once: false, nonce: '' }
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--events') a.events = argv[++i]
     else if (argv[i] === '--out') a.out = argv[++i]
+    else if (argv[i] === '--nonce') a.nonce = argv[++i]   // per-run provenance; only beacons carrying it are accepted
     else if (argv[i] === '--once') a.once = true
   }
   return a
 }
-function readState(path) {
+function readState(path, nonce) {
   let text = ''
   try { text = fs.readFileSync(path, 'utf8') } catch (e) { /* sink not created yet — render the waiting state */ }
-  return fold(parseEvents(text))
+  return fold(parseEvents(text, nonce))
 }
 function writeAtomic(out, html) {
   const tmp = out + '.tmp'
@@ -291,7 +294,7 @@ function main() {
   // re-render only when new bytes appear.
   const GRACE_MS = 6000, IDLE_MS = 180000  // finalize 6s after the bracket completes; give up after 3min idle
   let lastSize = -1, idleSince = Date.now()
-  const tick = () => { lastSize = sizeOf(a.events); const st = readState(a.events); writeAtomic(a.out, render(st)); return st }
+  const tick = () => { lastSize = sizeOf(a.events); const st = readState(a.events, a.nonce); writeAtomic(a.out, render(st)); return st }
   let st = tick()
   if (a.once || complete(st)) { console.log(`live view -> ${a.out} (${complete(st) ? 'final' : statusLine(st)})`); return }
   console.log(`live view watching ${a.events} -> ${a.out} (browser auto-refreshes every 2s)`)

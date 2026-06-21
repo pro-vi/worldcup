@@ -469,6 +469,10 @@ function eloRatings(entries, decided, K = 24, base = 1500) {
 const LIVE_BEACONS = true
 const beacons = []
 let beaconSeq = 0
+// Per-run provenance nonce: the LAUNCHER passes a high-entropy token via args.liveNonce AND hands the
+// same one to live-view.js (--nonce). Judges never see it, so even an agent that emits a structured
+// {__wc:'EVENT'} can't forge a beacon. Absent (no launcher) → '' → consumer runs unauthenticated (legacy).
+const LIVE_NONCE = (() => { try { if (typeof args === 'undefined' || args == null) return ''; const a = typeof args === 'string' ? JSON.parse(args) : args; return (a && a.liveNonce) || '' } catch (e) { return '' } })()
 const BEACON_PROMPT = 'Output this exact JSON object as your structured result, preserving nested arrays/objects and numbers EXACTLY — do not stringify, reorder, or alter any field:\n'
 const bkStr = { type: 'string' }, bkNum = { type: 'number' }, bkEither = { type: ['string', 'number'] }, bkNullStr = { type: ['string', 'null'] }
 const bkObj = props => ({ type: 'object', additionalProperties: false, required: Object.keys(props), properties: props })
@@ -486,14 +490,14 @@ const EVENT_SCHEMAS = {
 }
 // Every event carries a monotonic emit `seq` — beacons land in COMPLETION order, so the consumer sorts
 // by seq to recover emit order (additionalProperties:false means the schema must allow seq explicitly).
-for (const __s of Object.values(EVENT_SCHEMAS)) { __s.properties.seq = bkNum; __s.required.push('seq') }
+for (const __s of Object.values(EVENT_SCHEMAS)) { __s.properties.seq = bkNum; __s.properties.nonce = bkStr; __s.required.push('seq', 'nonce') }
 // emit stays SYNC (no call-site churn): logs the Tier-0 line, then fires the live beacon fire-and-forget.
 const emit = ev => {
   ev.seq = ++beaconSeq   // logical EMIT order; the consumer folds by seq since beacons arrive out of order
   try { log('WCEVENT ' + JSON.stringify(ev)) } catch (e) { /* logging must never break a run */ }
   try {
     const schema = LIVE_BEACONS ? EVENT_SCHEMAS[ev.ev] : null
-    if (schema) beacons.push(agent(BEACON_PROMPT + JSON.stringify({ __wc: 'EVENT', ...ev }), { label: 'wc-live:' + ev.ev, schema, effort: 'low' })
+    if (schema) beacons.push(agent(BEACON_PROMPT + JSON.stringify({ __wc: 'EVENT', nonce: LIVE_NONCE, ...ev }), { label: 'wc-live:' + ev.ev, schema, effort: 'low' })
       .catch(() => { try { log('WCEVENT-BEACON-FAIL ' + ev.ev + ' #' + ev.seq) } catch (e) {} }))  // observable, not a silent hole
   } catch (e) { /* a beacon must NEVER break a run */ }
 }
