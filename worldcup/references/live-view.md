@@ -25,11 +25,16 @@ the event** (`{__wc:'EVENT', ev:…}`). The beacon streams into `journal.jsonl` 
 tails it. (A *loose* schema makes the model stringify nested arrays; a tight one forces faithful
 nesting — verified.) The beacon result is **discarded** by the orchestrator, so the bracket stays
 deterministic; beacons fire-and-forget and any failure is swallowed — a beacon never breaks a run.
-Toggle with `LIVE_BEACONS` in `workflow-template.js`; `effort:'low'` keeps the ~9 beacons/run cheap.
+Toggle with `LIVE_BEACONS` in `workflow-template.js`. Beacons are `effort:'low'` but there are a fair
+number — **~26 per 32-field run, ~43 per 48-field** (gate + draw + 3 group snapshots + bracket + one per
+knockout *game* + one per knockout *round* + champion). They share the run's concurrency cap, agent-count
+cap, and token budget, and `await Promise.allSettled(beacons)` before return waits on any stragglers
+(bounded by the harness's per-agent timeout). Determinism is unaffected (results discarded); capacity and
+end-of-run timing are not — drop the per-`match` beacons (round-level still works) if a run is tight.
 
 ## The event schema (producer ↔ consumer contract)
 
-`emit()` in `workflow-template.js` produces these five shapes (each as a tight beacon schema); the
+`emit()` in `workflow-template.js` produces these seven shapes (each as a tight beacon schema); the
 consumer's `parseEvents()` reads `result.__wc==='EVENT'` payloads (non-beacon judge results skip),
 then `fold()` reduces them. This is the **only** thing the two halves must agree on.
 
@@ -50,7 +55,10 @@ slot up front (round-1 matchups known, the rest TBD); each `round` result fills 
 `bracketTree()` **advances** each winner into match ⌊i/2⌋ of the next round — so you watch a team move on,
 and the round being judged shows as **"● playing"** (both names, no result yet).
 
-Fold is monotonic: `draw` paints the skeleton + seeds → `gate` marks DQs → `groups` fills the group
+**Arrival order ≠ emit order:** beacons are fire-and-forget agents, so they land in *completion* order.
+Every event carries a monotonic `seq`; the consumer **sorts by `seq` before folding**, so last-write-wins
+is correct (a late `draw`/partial-`groups`/`champion` can't clobber newer state). Logically: `draw` paints
+the skeleton + seeds → `gate` marks DQs → `groups` fills the group
 tables + advancers → each `round` appends a knockout column and crosses out losers → `champion`
 crowns. `stakes ∈ {R32,R16,QF,SF,FINAL}` orders the KO columns (32-field starts at R16, 48 at R32).
 The fold is **idempotent** — re-reading the growing journal from the top yields the same state

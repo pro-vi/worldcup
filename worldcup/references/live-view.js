@@ -79,18 +79,23 @@ function sliceBalanced(s, start) {
   return null
 }
 
-// ── fold the monotonic event stream into tournament state. Idempotent: folding the same prefix
-// twice yields the same state (round de-dupes by stakes), so re-reading the growing file is safe.
+// ── fold the event stream into tournament state. Beacons arrive in COMPLETION order, not emit order, so
+// we sort by the producer's monotonic `seq` FIRST (legacy raw lines without seq keep file order). Then
+// last-write-wins is correct because emit order is restored — a late draw/partial-groups/champion can no
+// longer clobber newer state. Idempotent: re-folding the growing file yields the same state.
 function fold(events) {
   const st = { field: null, groups: {}, groupOrder: [], dq: [], bracket: null, rounds: [], champion: null, gated: false, last: null }
-  for (const e of events || []) {
+  const ordered = (events || []).map((e, i) => ({ e, i, k: (e && typeof e.seq === 'number') ? e.seq : i })).sort((a, b) => a.k - b.k || a.i - b.i).map(x => x.e)
+  for (const e of ordered) {
     if (!e || !e.ev) continue
     st.last = e.ev
     if (e.ev === 'draw') {
       st.field = e.field
       for (const g of e.groups || []) {
         if (!st.groups[g.group]) st.groupOrder.push(g.group)
-        st.groups[g.group] = { teams: g.teams || [], table: null, advanced: null }
+        // merge, never wipe an already-folded table/advanced (defensive; seq makes draw precede groups anyway)
+        const prev = st.groups[g.group] || {}
+        st.groups[g.group] = { teams: g.teams || [], table: prev.table || null, advanced: prev.advanced || null }
       }
     } else if (e.ev === 'gate') {
       st.dq = e.disqualified || []
@@ -100,7 +105,8 @@ function fold(events) {
       for (const s of e.standings || []) {
         if (!st.groups[s.group]) { st.groupOrder.push(s.group); st.groups[s.group] = { teams: [] } }
         st.groups[s.group].table = s.table || []
-        st.groups[s.group].advanced = s.advanced || []
+        // never let an empty advanced (a partial snapshot) erase real advancers (defensive; seq orders these)
+        if ((s.advanced && s.advanced.length) || st.groups[s.group].advanced == null) st.groups[s.group].advanced = s.advanced || []
       }
     } else if (e.ev === 'bracket') {
       // the full knockout tree, emitted once after seeding: every round + slot, round-1 matchups known,
@@ -148,12 +154,24 @@ function bracketTree(st) {
   return rounds
 }
 
+// "complete" = champion crowned AND the bracket has no playing/pending match left. Refresh + exit must
+// key off THIS, not bare champion: the tiny champion beacon can land before heavier round/match beacons,
+// so champion alone ≠ done (else the view freezes on an incomplete bracket and stops polling).
+function complete(st) {
+  if (!st.champion) return false
+  const t = bracketTree(st)
+  return !t || t.every(r => r.matches.every(m => m.status === 'done'))
+}
+
 function statusLine(st) {
-  if (st.champion) return `final · champion ${st.champion.label}`
+  if (complete(st)) return `final · champion ${st.champion.label}`
   const tree = bracketTree(st)
-  if (tree) { const playing = tree.find(r => r.matches.some(m => m.status === 'playing')); if (playing) return `${playing.stakes} in progress` }
+  const playing = tree && tree.find(r => r.matches.some(m => m.status === 'playing'))
+  if (playing) return `${playing.stakes} in progress`
+  if (st.champion) return `champion ${st.champion.label} · awaiting late results…`
   if (st.rounds.length) return `${st.rounds[st.rounds.length - 1].stakes} in progress`
-  if (Object.keys(st.groups).some(g => st.groups[g].table)) return 'group stage'
+  if (st.bracket) return 'knockout underway'
+  if (st.groupOrder.some(g => st.groups[g] && st.groups[g].table != null)) return 'group stage'
   if (st.groupOrder.length) return 'draw done · group stage pending'
   if (st.gated) return `fatal-flaw gate done${st.dq.length ? ` · ${st.dq.length} DQ` : ''} · seeding…`
   return 'waiting for the first event…'
@@ -162,7 +180,7 @@ function statusLine(st) {
 // ── render one self-contained HTML snapshot. Mirrors renderReportV2's palette (purple pitch + gold)
 // so live and final read as the same artifact. Live snapshots carry <meta refresh>; the final does not.
 function render(st) {
-  const live = !st.champion
+  const live = !complete(st)   // keep <meta refresh> until the bracket is actually done, not just champion-present
   const groupCards = st.groupOrder.map(G => {
     const g = st.groups[G]
     const rows = g.table
@@ -182,7 +200,7 @@ function render(st) {
   const koCols = tree
     ? tree.map(r => `<div class="kocol"><div class="rnd">${he(r.stakes)}</div>${r.matches.map(matchHtml).join('')}</div>`).join('')
     : st.rounds.map(r => {  // legacy fallback: no `bracket` structure event — show completed rounds only
-        const ms = r.matches.map(m => `<div class="match done">${slot(m.winner, 'win', m.margin)}${slot(m.loser, 'lose')}</div>`).join('')
+        const ms = r.matches.filter(m => m && m.winner != null).map(m => `<div class="match done">${slot(m.winner, 'win', m.margin)}${slot(m.loser, 'lose')}</div>`).join('')
         return `<div class="kocol"><div class="rnd">${he(r.stakes)}</div>${ms || `<div class="match pending">${slot(null, 'tbd')}</div>`}</div>`
       }).join('')
   const champCol = st.champion
@@ -265,15 +283,20 @@ function main() {
   // workflow agent, appended the moment it completes — so it only GROWS, a handful of times over a run.
   // Gate each re-read on a cheap statSync(size): the steady-state poll is a stat, and we re-read +
   // re-render only when new bytes appear.
-  let lastSize = -1
+  const GRACE_MS = 6000, IDLE_MS = 180000  // finalize 6s after the bracket completes; give up after 3min idle
+  let lastSize = -1, idleSince = Date.now()
   const tick = () => { lastSize = sizeOf(a.events); const st = readState(a.events); writeAtomic(a.out, render(st)); return st }
   let st = tick()
-  if (a.once || st.champion) { console.log(`live view -> ${a.out} (${st.champion ? 'final' : statusLine(st)})`); return }
+  if (a.once || complete(st)) { console.log(`live view -> ${a.out} (${complete(st) ? 'final' : statusLine(st)})`); return }
   console.log(`live view watching ${a.events} -> ${a.out} (browser auto-refreshes every 2s)`)
   const iv = setInterval(() => {
-    if (sizeOf(a.events) === lastSize) return  // no new bytes — skip the full re-read + re-render
-    st = tick()
-    if (st.champion) { clearInterval(iv); console.log('champion crowned; live view final.'); process.exit(0) }
+    if (sizeOf(a.events) > lastSize) { idleSince = Date.now(); st = tick() }   // grew → re-read + re-render
+    const idle = Date.now() - idleSince
+    // finalize ONLY when the bracket is complete AND the journal has been quiet for the grace window — a
+    // late round/match beacon can still arrive after the (tiny) champion beacon.
+    if (complete(st) && idle > GRACE_MS) { clearInterval(iv); tick(); console.log('bracket complete; live view final.'); process.exit(0) }
+    // safety net: champion never lands (its beacon failed/was capped) — never leak a polling process forever.
+    if (idle > IDLE_MS) { clearInterval(iv); tick(); console.log('no new events for 3min; live view stopped (may be incomplete).'); process.exit(0) }
   }, 1000)
   process.on('SIGINT', () => { clearInterval(iv); process.exit(0) })
 }

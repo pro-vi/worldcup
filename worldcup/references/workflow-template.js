@@ -468,6 +468,7 @@ function eloRatings(entries, decided, K = 24, base = 1500) {
 // beacon must NEVER break or alter a run. Set LIVE_BEACONS=false for Tier-0 only.
 const LIVE_BEACONS = true
 const beacons = []
+let beaconSeq = 0
 const BEACON_PROMPT = 'Output this exact JSON object as your structured result, preserving nested arrays/objects and numbers EXACTLY — do not stringify, reorder, or alter any field:\n'
 const bkStr = { type: 'string' }, bkNum = { type: 'number' }, bkEither = { type: ['string', 'number'] }, bkNullStr = { type: ['string', 'null'] }
 const bkObj = props => ({ type: 'object', additionalProperties: false, required: Object.keys(props), properties: props })
@@ -483,12 +484,17 @@ const EVENT_SCHEMAS = {
   match: bkObj({ __wc: bkStr, ev: bkStr, stakes: bkStr, slot: bkNum, winner: bkStr, loser: bkStr, margin: bkEither }),
   champion: bkObj({ __wc: bkStr, ev: bkStr, label: bkStr, stakes: bkStr }),
 }
+// Every event carries a monotonic emit `seq` — beacons land in COMPLETION order, so the consumer sorts
+// by seq to recover emit order (additionalProperties:false means the schema must allow seq explicitly).
+for (const __s of Object.values(EVENT_SCHEMAS)) { __s.properties.seq = bkNum; __s.required.push('seq') }
 // emit stays SYNC (no call-site churn): logs the Tier-0 line, then fires the live beacon fire-and-forget.
 const emit = ev => {
+  ev.seq = ++beaconSeq   // logical EMIT order; the consumer folds by seq since beacons arrive out of order
   try { log('WCEVENT ' + JSON.stringify(ev)) } catch (e) { /* logging must never break a run */ }
   try {
     const schema = LIVE_BEACONS ? EVENT_SCHEMAS[ev.ev] : null
-    if (schema) beacons.push(agent(BEACON_PROMPT + JSON.stringify({ __wc: 'EVENT', ...ev }), { label: 'wc-live:' + ev.ev, schema, effort: 'low' }).catch(() => {}))
+    if (schema) beacons.push(agent(BEACON_PROMPT + JSON.stringify({ __wc: 'EVENT', ...ev }), { label: 'wc-live:' + ev.ev, schema, effort: 'low' })
+      .catch(() => { try { log('WCEVENT-BEACON-FAIL ' + ev.ev + ' #' + ev.seq) } catch (e) {} }))  // observable, not a silent hole
   } catch (e) { /* a beacon must NEVER break a run */ }
 }
 // Compact monospace standings for the free Tier-0 watch-in-/workflows view (no artifact needed).

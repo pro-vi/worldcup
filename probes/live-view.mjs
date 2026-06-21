@@ -113,6 +113,38 @@ const tPartial = lv.render(lv.fold([
 ]))
 ok('a single `match` fills ONE slot, its sibling keeps playing', (tPartial.match(/class="match done"/g) || []).length === 1 && (tPartial.match(/class="match playing"/g) || []).length === 1)
 
+// ── out-of-order arrival (beacons land in COMPLETION order, not emit order — the P1 regression) ──────
+console.log('out-of-order arrival (fold-by-seq repairs reorder):')
+const seqd = [
+  { seq: 1, ev: 'draw', field: 2, groups: [{ group: 'A', teams: [{ label: 'x', seed: 1 }, { label: 'y', seed: 2 }] }] },
+  { seq: 2, ev: 'groups', standings: [{ group: 'A', table: [{ label: 'x', pts: 3 }, { label: 'y', pts: 0 }], advanced: [] }] },     // partial
+  { seq: 3, ev: 'bracket', rounds: [{ stakes: 'FINAL', matches: [{ slot: 0, a: 'x', b: 'y' }] }] },
+  { seq: 4, ev: 'groups', standings: [{ group: 'A', table: [{ label: 'x', pts: 6 }, { label: 'y', pts: 3 }], advanced: ['x'] }] },  // final
+  { seq: 5, ev: 'match', stakes: 'FINAL', slot: 0, winner: 'x', loser: 'y', margin: '2-0' },
+  { seq: 6, ev: 'champion', label: 'x', stakes: 'FINAL' },
+]
+const inOrder = JSON.stringify(lv.fold(seqd))
+const shuffled = [seqd[5], seqd[3], seqd[0], seqd[4], seqd[1], seqd[2]]   // champion + final-groups early, partial-groups + draw late
+ok('folding a PERMUTED journal == folding in emit order (seq repair)', JSON.stringify(lv.fold(shuffled)) === inOrder)
+const reord = lv.fold([seqd[5], seqd[1], seqd[0], seqd[4], seqd[3], seqd[2]])
+ok('a late partial-groups does NOT regress the final table/advancers', reord.groups.A.advanced.join() === 'x' && reord.groups.A.table.find(t => t.label === 'x').pts === 6)
+ok('a late draw does NOT wipe the folded table', reord.groups.A.table.length === 2)
+
+// ── completeness gate: a champion landing before the last game must NOT finalize the view ───────────
+console.log('completeness gate (champion ≠ done):')
+const earlyChamp = lv.fold([
+  { seq: 1, ev: 'bracket', rounds: [{ stakes: 'SF', matches: [{ slot: 0, a: 'x', b: 'y' }, { slot: 1, a: 'p', b: 'q' }] }, { stakes: 'FINAL', matches: [{ slot: 0, a: null, b: null }] }] },
+  { seq: 9, ev: 'champion', label: 'x', stakes: 'FINAL' },   // champion beacon landed early; SF/FINAL not done
+])
+ok('champion-before-bracket-done still renders LIVE (keeps refreshing)', lv.render(earlyChamp).includes('http-equiv="refresh"'))
+ok('statusLine does not prematurely say "final"', !lv.statusLine(earlyChamp).startsWith('final'))
+const fullDone = lv.fold([
+  { seq: 1, ev: 'bracket', rounds: [{ stakes: 'FINAL', matches: [{ slot: 0, a: 'x', b: 'y' }] }] },
+  { seq: 2, ev: 'match', stakes: 'FINAL', slot: 0, winner: 'x', loser: 'y', margin: '1-0' },
+  { seq: 3, ev: 'champion', label: 'x', stakes: 'FINAL' },
+])
+ok('a complete bracket + champion drops the refresh (final, no more polling)', !lv.render(fullDone).includes('http-equiv="refresh"'))
+
 // ── empty input (sink not ready) ─────────────────────────────────────────────────────────
 console.log('empty input:')
 const empty = lv.render(lv.fold(lv.parseLines('')))
