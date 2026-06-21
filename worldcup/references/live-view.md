@@ -79,7 +79,9 @@ node references/live-view.js --events "<transcript-dir>/journal.jsonl" --out wor
 open worldcup-live.html   # auto-refreshes every 2s; the watcher self-exits when the bracket completes
 ```
 
-(`SKILL.md` step 4 wires this as the opt-in Tier-1 path.)
+In **given** (bring-your-own) mode `args` already carries the entrant array, so wrap both rather than
+replacing it: `args: { items: [...entrants], liveNonce: NONCE }`. (`SKILL.md` step 4 wires this as the
+opt-in Tier-1 path.)
 
 ```bash
 # one snapshot (a final render, or for the probe):

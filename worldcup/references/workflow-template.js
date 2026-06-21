@@ -469,10 +469,16 @@ function eloRatings(entries, decided, K = 24, base = 1500) {
 const LIVE_BEACONS = true
 const beacons = []
 let beaconSeq = 0
-// Per-run provenance nonce: the LAUNCHER passes a high-entropy token via args.liveNonce AND hands the
-// same one to live-view.js (--nonce). Judges never see it, so even an agent that emits a structured
-// {__wc:'EVENT'} can't forge a beacon. Absent (no launcher) → '' → consumer runs unauthenticated (legacy).
-const LIVE_NONCE = (() => { try { if (typeof args === 'undefined' || args == null) return ''; const a = typeof args === 'string' ? JSON.parse(args) : args; return (a && a.liveNonce) || '' } catch (e) { return '' } })()
+// `args` carries two things that must NOT collide: the GIVEN-mode entrant array, and (when Tier-1 live
+// view is on) the per-run nonce. Canonical shapes: a bare array (legacy entrants, no nonce), or an object
+// { items?: [...entrants], liveNonce?: "…" } — so a bring-your-own run can ALSO enable Tier-1. Parse once.
+const ARGS = (() => { try { if (typeof args === 'undefined' || args == null) return undefined; return typeof args === 'string' ? JSON.parse(args) : args } catch (e) { return undefined } })()
+// Per-run provenance nonce: the LAUNCHER passes it via args.liveNonce AND hands the same one to
+// live-view.js (--nonce). Judges never see it, so even an agent that emits a structured {__wc:'EVENT'}
+// can't forge a beacon. Absent → '' → the consumer runs unauthenticated (legacy).
+const LIVE_NONCE = (ARGS && !Array.isArray(ARGS) && ARGS.liveNonce) || ''
+// GIVEN-mode entrants: a bare array, or `args.items` when wrapped alongside a nonce.
+const GIVEN_ITEMS = Array.isArray(ARGS) ? ARGS : ((ARGS && ARGS.items) || [])
 const BEACON_PROMPT = 'Output this exact JSON object as your structured result, preserving nested arrays/objects and numbers EXACTLY — do not stringify, reorder, or alter any field:\n'
 const bkStr = { type: 'string' }, bkNum = { type: 'number' }, bkEither = { type: ['string', 'number'] }, bkNullStr = { type: ['string', 'null'] }
 const bkObj = props => ({ type: 'object', additionalProperties: false, required: Object.keys(props), properties: props })
@@ -883,8 +889,8 @@ if (SOURCE === 'generate') {
     pool = got.sort((a, b) => a.id - b.id)
   }
 } else {
-  // GIVEN: args is the array of items. Normalize to { id, label, coords, markdown }.
-  pool = (args || []).slice(0, FIELD).map((it, i) => ({
+  // GIVEN: the entrant array (bare `args`, or `args.items` when wrapped with a live nonce). Normalize.
+  pool = GIVEN_ITEMS.slice(0, FIELD).map((it, i) => ({
     id: i, label: it.label || `entry-${i + 1}`, coords: { entry: it.label || `entry-${i + 1}` }, markdown: it.markdown || it.text || String(it) }))
   if (pool.length !== FIELD) return { error: `expected ${FIELD} items, got ${pool.length}` }
 }

@@ -125,7 +125,9 @@ context; pick sane defaults for the rest and state them.
    happens* (group tables building, knockout games "playing", winners advancing). To enable:
    a. Make a high-entropy nonce: `openssl rand -hex 8`.
    b. Fire the Workflow with `args: { liveNonce: "<nonce>" }`. The producer stamps every live
-      event with it; judges never see it, so judged prose can't forge events.
+      event with it; judges never see it, so judged prose can't forge events. (In bring-your-own
+      `given` mode `args` already holds the entrants, so wrap both: `args: { items: [...entrants],
+      liveNonce: "<nonce>" }`.)
    c. The launch returns a **Transcript dir** — the run's live spine sits right under it. Start the
       watcher in the background and open the artifact:
       `node references/live-view.js --events "<transcript-dir>/journal.jsonl" --out worldcup-live.html --nonce "<nonce>" &`
