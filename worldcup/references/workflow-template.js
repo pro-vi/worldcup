@@ -107,7 +107,10 @@ const packetUnfilled = p => !((p && p.supported_facts) || []).length &&
 const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i])
 const renderLedger = (packet = SOURCE_PACKET) => {
   const p = packet || {}
-  const na = (Array.isArray(p.not_allowed) && p.not_allowed.length) ? p.not_allowed : DEFAULT_NOT_ALLOWED
+  // Respect an EXPLICIT not_allowed (even []); substitute the default ONLY when it is absent/non-array.
+  // An empty list means the operator cleared the class-level bans — rendering the default 9 classes
+  // would tell judges to enforce bans the structured packet doesn't carry (single-source-of-truth leak).
+  const na = Array.isArray(p.not_allowed) ? p.not_allowed : DEFAULT_NOT_ALLOWED
   // The unfilled default renders today's prose byte-for-byte. Compare not_allowed BY VALUE (not
   // reference) so a JSON-roundtripped / U12-rebuilt default still reproduces it (no silent drift).
   if (packetUnfilled(p) && sameList(na, DEFAULT_NOT_ALLOWED)) return FILL_LEDGER_PROSE
@@ -118,9 +121,10 @@ const renderLedger = (packet = SOURCE_PACKET) => {
     for (const [k, vals] of Object.entries(ents))
       if (Array.isArray(vals)) for (const v of vals) lines.push(`  - ${k}: ${v}`)
   const body = lines.join('\n') || '  FILL.'
+  const banned = na.length ? `${na.join(', ')}, or any` : 'any'   // empty list ⇒ drop the leading enumeration
   return `- FACT LEDGER (what is actually true; everything concrete must trace here):
 ${body}
-- NOT ALLOWED unless in the ledger: ${na.join(', ')}, or any concrete detail presented as lived fact. Manufactured specificity is a flaw, not a strength.`
+- NOT ALLOWED unless in the ledger: ${banned} concrete detail presented as lived fact. Manufactured specificity is a flaw, not a strength.`
 }
 // Mechanical fact-ledger lookup — NO LLM CALL. A span is SUPPORTED iff it traces to the structured
 // packet, matched WHOLE-TOKEN (punctuation stays in-token, so a compound value is atomic and its
@@ -147,10 +151,12 @@ const tokenRun = (hay, needle) => {
   return false
 }
 const ledgerLookup = (span, packet) => {
-  // No-arg resolves the ACTIVE evaluator's packet at CALL time (not the module default at definition
-  // time), so once U12 reassigns EVALUATOR, lookup follows the same packet the prompts render from —
-  // never a stale template. An explicit packet arg always wins (for testing / per-call checks).
-  const p = packet || (EVALUATOR && EVALUATOR.sourcePacket) || SOURCE_PACKET
+  // Resolve the packet at CALL time: an explicit arg wins; else the ACTIVE evaluator's packet; else an
+  // EMPTY packet — never the module template. Once U12 reassigns EVALUATOR, lookup follows the same
+  // packet the prompts render from. If the active evaluator is a prose-only config (no sourcePacket,
+  // which validation allows), nothing is mechanically supported (errs UNSUPPORTED) rather than leaking
+  // facts from a stale/filled module SOURCE_PACKET the active judges never see.
+  const p = packet || (EVALUATOR && EVALUATOR.sourcePacket) || {}
   const needle = normLedger(span)
   if (!needle || !hasAlnum(needle)) return { status: 'UNSUPPORTED', provenance: null }
   const nToks = toksLedger(needle)

@@ -124,6 +124,12 @@ for (const span of ['three days', 'Parser.ts', 'Mara'])
 const multi = M.renderLedger({ supported_facts: [], allowed_entities: { files: ['Parser.ts', 'Lexer.ts'] }, not_allowed: M.DEFAULT_NOT_ALLOWED, target: null })
 ok('multi-member entities render one per line', multi.includes('- files: Parser.ts') && multi.includes('- files: Lexer.ts'))
 ok('no comma-joined entity phrase',             !multi.includes('Parser.ts, Lexer.ts'))
+// Re-review Finding A: an EXPLICIT empty not_allowed is preserved — judges are NOT told to enforce the
+// default 9 banned classes the structured packet cleared (single-source-of-truth for custom configs).
+const emptyNA = M.renderLedger({ supported_facts: ['a real fact'], allowed_entities: {}, not_allowed: [], target: null })
+ok('explicit empty not_allowed is preserved',   !emptyNA.includes('invented line numbers'))
+ok('empty not_allowed still bans concrete detail', emptyNA.includes('NOT ALLOWED unless in the ledger: any concrete detail'))
+ok('non-empty not_allowed still enumerates',    M.renderLedger({ supported_facts: ['f'], allowed_entities: {}, not_allowed: ['secrets'], target: null }).includes('NOT ALLOWED unless in the ledger: secrets, or any concrete detail'))
 // Finding 4: render is defensive — a raw (un-validated) packet (non-array na/bucket) must not throw.
 ok('renderLedger does not throw on a raw packet', (() => { try { M.renderLedger({ not_allowed: 'dates', allowed_entities: ['x'] }); return true } catch { return false } })())
 // Finding 6: byte-identity short-circuit compares not_allowed BY VALUE — a JSON-roundtripped default
@@ -173,6 +179,13 @@ ok('after reassign: no-arg lookup follows it', M.ledgerLookup('certified only fa
 ok('explicit packet arg still overrides',      M.ledgerLookup('certified only fact', M.SOURCE_PACKET).status === 'UNSUPPORTED')
 M.EVALUATOR.sourcePacket = savedPacket
 ok('restore: no-arg lookup back to default',   M.ledgerLookup('certified only fact').status === 'UNSUPPORTED')
+// Re-review Finding B: a prose-only active evaluator (no sourcePacket, which validation allows) must NOT
+// fall back to the module template — a FILLED module SOURCE_PACKET must not leak facts the active judge omits.
+M.SOURCE_PACKET.supported_facts.push('stale module fact')
+M.EVALUATOR.sourcePacket = undefined
+ok('prose-only evaluator does not see stale module fact', M.ledgerLookup('stale module fact').status === 'UNSUPPORTED')
+M.SOURCE_PACKET.supported_facts.pop()
+M.EVALUATOR.sourcePacket = savedPacket
 
 console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${pass} passed, ${fail} failed`)
 process.exit(fail === 0 ? 0 : 1)
