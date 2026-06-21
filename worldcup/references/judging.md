@@ -95,6 +95,32 @@ inventing the author's life; target-truth guards against misrepresenting someone
 (Headless / no-operator runs: a phase-0 fetch agent using built-in WebFetch/WebSearch is the
 fallback, since interactively-authed MCP servers can be absent there.)
 
+### Structured form (the machine-readable twin) — PLAN_3 U20/P2
+
+The prose packet above is what the **judges read**; it is now **rendered from a structured object**
+(`SOURCE_PACKET` in `workflow-template.js`) that is the **single source of truth**, so the prose a
+juror reads and the mechanical check below can never disagree:
+
+```
+SOURCE_PACKET = {
+  supported_facts:  [ "...", ... ],                 // concrete things that ARE true (variants may use them)
+  allowed_entities: { dates:[], names:[], files:[], quotes:[], places:[] },  // the named specifics permitted, by kind
+  not_allowed:      [ "dates", "names", "files", ... ],  // entity classes barred unless they trace to the ledger
+  target:           { raw, claims:[], scope, quotes:[], sources:[] } | null, // structured twin of TARGET (target-truth)
+}
+```
+
+Why structured, not just prose: a truth anchor (U11) claims a **mechanical** proof that a planted
+specific is unsupported, but checking a span against *prose* is itself prompt-parsing — not a proof.
+`ledgerLookup(span)` makes it real: a span is **SUPPORTED** iff a `supported_fact` contains it or it
+matches a member of an `allowed_entities` bucket, else **UNSUPPORTED**, with provenance and **no LLM
+call**. Matching is one-directional on entities (an allowed `Parser.ts` does **not** excuse
+`line 417 of Parser.ts`), so a fabrication that merely embeds a real entity is still caught. The
+**default packet is the unfilled template**: it renders today's prose ledger byte-for-byte and every
+concrete span reads UNSUPPORTED (nothing is declared true yet), so the qualifier is fully opt-in —
+a run with no packet is unchanged. Fill the structured packet (not the prose) and the judge prompts
+re-render from it automatically.
+
 ## 2. Deterministic preflight (cheap, runs before any agent)
 
 Do not spend an LLM call to detect an em dash. Grep. This catches house-style violations
