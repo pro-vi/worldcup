@@ -68,14 +68,92 @@ const DESIGN = {
 const TARGET_RAW = ''  // FILL for critique/response runs only; '' otherwise (see note above)
 const TARGET = TARGET_RAW.trim()  // whitespace-only is NOT a target — activation requires a real anchor, not just a truthy string
 
+// ─────────────────────────── (U20/P2) STRUCTURED SOURCE PACKET + the mechanical fact-ledger proof
+// PLAN_3 U20: the fact ledger today is PROSE inside CRITERIA_BASE — checking a planted specific
+// against prose is itself prompt-parsing, not a proof. This makes the ledger a STRUCTURED object,
+// the SINGLE SOURCE OF TRUTH: the prose the judges read is RENDERED from it (renderLedger), and
+// ledgerLookup(span) is a real set-membership/substring check returning SUPPORTED|UNSUPPORTED with
+// provenance and NO LLM call — the mechanical proof U11's truth anchors stand on. The DEFAULT packet
+// is the unfilled template, so its render reproduces today's CRITERIA_BASE byte-for-byte (the
+// qualifier is opt-in; nothing changes until an operator fills the packet or U12 certifies one).
+const DEFAULT_NOT_ALLOWED = ['invented line numbers', 'class/file names', 'stack traces',
+  'error messages', 'dates', 'names', 'places', 'quotes', 'scenes']
+// The exact hand-authored ledger block for the UNFILLED template packet — the byte-identity anchor.
+// renderLedger returns THIS verbatim for the default packet; once facts/entities are added it renders
+// STRUCTURED prose. (The default short-circuit is why a no-packet run is byte-for-byte unchanged.)
+const FILL_LEDGER_PROSE =
+`- FACT LEDGER (what is actually true; everything concrete must trace here): FILL.
+- NOT ALLOWED unless in the ledger: invented line numbers, class/file names, stack
+  traces, error messages, dates, names, places, quotes, scenes, or any concrete detail
+  presented as lived fact. Manufactured specificity is a flaw, not a strength.`
+// The structured fact ledger. supported_facts = concrete things that ARE true (variants may use
+// them); allowed_entities = the named specifics permitted, bucketed by kind; not_allowed = entity
+// classes barred unless they trace to the ledger; target = the structured twin of TARGET
+// (claims/scope/quotes/sources) for target-truth. Default = the unfilled template (renders FILL).
+const SOURCE_PACKET = {
+  supported_facts: [],                                                            // strings: true, supported facts
+  allowed_entities: { dates: [], names: [], files: [], quotes: [], places: [] }, // permitted specifics, by kind
+  not_allowed: DEFAULT_NOT_ALLOWED,                                              // entity classes barred unless in the ledger
+  target: TARGET ? { raw: TARGET, claims: [], scope: '', quotes: [], sources: [] } : null,
+}
+// True only for the UNFILLED template: no facts and no allowed entities of any kind.
+const packetUnfilled = p => !((p && p.supported_facts) || []).length &&
+  Object.values((p && p.allowed_entities) || {}).every(v => !(v || []).length)
+// Render the prose fact-ledger lines FROM the structured packet (one source of truth). The unfilled
+// default reproduces FILL_LEDGER_PROSE byte-for-byte; a populated packet lists its facts + allowed
+// entities so the prose the judges read can never disagree with what ledgerLookup checks.
+const renderLedger = (packet = SOURCE_PACKET) => {
+  const p = packet || {}
+  const na = (p.not_allowed && p.not_allowed.length) ? p.not_allowed : DEFAULT_NOT_ALLOWED
+  if (packetUnfilled(p) && na === DEFAULT_NOT_ALLOWED) return FILL_LEDGER_PROSE
+  const ents = Object.entries(p.allowed_entities || {})
+    .filter(([, v]) => (v || []).length).map(([k, v]) => `  - ${k}: ${v.join(', ')}`)
+  const body = [...(p.supported_facts || []).map(f => `  - ${f}`), ...ents].join('\n') || '  FILL.'
+  return `- FACT LEDGER (what is actually true; everything concrete must trace here):
+${body}
+- NOT ALLOWED unless in the ledger: ${na.join(', ')}, or any concrete detail presented as lived fact. Manufactured specificity is a flaw, not a strength.`
+}
+// Mechanical fact-ledger lookup — NO LLM CALL. A span is SUPPORTED iff it traces to the structured
+// packet: a supported_fact contains it, or it is contained by a member of an allowed_entities bucket,
+// in both cases on TOKEN boundaries (see spanIn). Else UNSUPPORTED. Provenance names the source on a
+// hit. This is what lets a planted fabrication ('line 417', 'Parser.ts') be flagged deterministically
+// — a prose ledger can only ever be re-read by a judge. Matching is one-directional on entities
+// (entity ⊇ span, never span ⊇ entity), so 'line 417 of Parser.ts' is NOT excused by an allowed
+// 'Parser.ts'.
+const normLedger = s => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim()
+// Whole-token containment: `needle` must occur in `hay` bounded by a non-alphanumeric (or a string
+// edge) on each side that is itself alphanumeric. So 'three days' ⊂ 'took three days' but '417' ⊄
+// '4170' and '201' ⊄ '2019' — a coincidental character fragment can no longer falsely excuse a
+// fabrication (the false-SUPPORTED the whole mechanical proof exists to prevent).
+const alnumLedger = c => c >= '0' && c <= '9' || c >= 'a' && c <= 'z'
+const spanIn = (hay, needle) => {
+  for (let i = hay.indexOf(needle); i !== -1; i = hay.indexOf(needle, i + 1)) {
+    const lOK = i === 0 || !alnumLedger(hay[i - 1]) || !alnumLedger(needle[0])
+    const end = i + needle.length
+    const rOK = end >= hay.length || !alnumLedger(hay[end]) || !alnumLedger(needle[needle.length - 1])
+    if (lOK && rOK) return true
+  }
+  return false
+}
+const ledgerLookup = (span, packet = SOURCE_PACKET) => {
+  const needle = normLedger(span)
+  if (!needle) return { status: 'UNSUPPORTED', provenance: null }
+  const p = packet || {}
+  for (const fact of (p.supported_facts || []))
+    if (spanIn(normLedger(fact), needle)) return { status: 'SUPPORTED', provenance: { kind: 'fact', value: fact } }
+  for (const [bucket, vals] of Object.entries(p.allowed_entities || {}))
+    for (const v of (vals || [])) {
+      const nv = normLedger(v)
+      if (nv && spanIn(nv, needle)) return { status: 'SUPPORTED', provenance: { kind: bucket, value: v } }
+    }
+  return { status: 'UNSUPPORTED', provenance: null }
+}
+
 const CRITERIA_BASE = `FILL: the source packet — rubric, fact ledger, disqualifiers.
 Example for Provi prose:
 - Voice: follow-the-thought, affirmative not question-led, cross-domain without
   signposting, deflating close, varied sentence length, non-native texture is fine.
-- FACT LEDGER (what is actually true; everything concrete must trace here): FILL.
-- NOT ALLOWED unless in the ledger: invented line numbers, class/file names, stack
-  traces, error messages, dates, names, places, quotes, scenes, or any concrete detail
-  presented as lived fact. Manufactured specificity is a flaw, not a strength.
+${renderLedger(SOURCE_PACKET)}
 - HARD DISQUALIFIERS: any em dash; banned LLM vocab (delve, harness, unlock,
   navigate-metaphorical, realm, seamless, ultimately, furthermore, profound, ...);
   an announced thesis; a swelling uplift closer; AND fabricated specifics presented
@@ -184,6 +262,7 @@ const panelFor = stakes => {
 // module EVALUATOR but accept an explicit `ev` for testing and per-call overrides.
 let EVALUATOR = {
   criteriaBlock:    CRITERIA_BLOCK,      // taste spec + fact ledger + disqualifiers the judges read
+  sourcePacket:     SOURCE_PACKET,       // structured fact ledger (U20/P2) — mechanical twin of the prose ledger; ledgerLookup reads it
   incumbentClause:  INCUMBENT_CLAUSE,    // the "must beat the incumbent" clause seated in lens prompts
   targetGateClause: targetGateClause,    // the MISREPRESENTS_TARGET gate clause ('' when no TARGET)
   hardDqCategories: HARD_DQ_CATEGORIES,  // canonical hard-DQ vocabulary (gate prompt + enum + tally)
@@ -263,6 +342,18 @@ function validateEvaluatorConfig(ev) {
     if (!Array.isArray(panel)) throw new Error(`EVALUATOR.panelFor("${st}") must return an ARRAY (got ${typeof panel}); a bare string is iterable-by-char and playMatch calls .map on it.`)
     if (!panel.length) throw new Error(`EVALUATOR.panelFor("${st}") returned an empty panel.`)
     for (const ln of panel) if (!ev.lenses[ln]) throw new Error(`EVALUATOR.panelFor("${st}") seats undefined lens "${ln}".`)
+  }
+  // (f) sourcePacket (U20/P2) is OPTIONAL — a config can carry only a prose criteriaBlock — but if
+  // present it must be the structured shape ledgerLookup reads, or the mechanical proof silently
+  // degrades (a non-array bucket throws in renderLedger; a missing one makes every lookup UNSUPPORTED).
+  if (ev.sourcePacket !== undefined) {
+    const p = ev.sourcePacket
+    if (!p || typeof p !== 'object') throw new Error('EVALUATOR.sourcePacket must be an object when present.')
+    if (!Array.isArray(p.supported_facts)) throw new Error('EVALUATOR.sourcePacket.supported_facts must be an array.')
+    if (!Array.isArray(p.not_allowed)) throw new Error('EVALUATOR.sourcePacket.not_allowed must be an array.')
+    if (!p.allowed_entities || typeof p.allowed_entities !== 'object') throw new Error('EVALUATOR.sourcePacket.allowed_entities must be an object.')
+    for (const [k, v] of Object.entries(p.allowed_entities))
+      if (!Array.isArray(v)) throw new Error(`EVALUATOR.sourcePacket.allowed_entities.${k} must be an array.`)
   }
   return ev
 }
