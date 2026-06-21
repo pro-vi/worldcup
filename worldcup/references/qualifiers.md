@@ -72,14 +72,23 @@ The worldcup Workflow is **sandboxed — no filesystem** (the same constraint be
 
 1. **Build once** (U11): construct item cards → `buildBank({ packet, items, provenance, created })` →
    `write(bank, baseDir)`. Commit it (reviewed taste-gold is versioned data).
-2. **Each run** (U12): the orchestrator `read()`s the bank, checks `isStaleFor` against the live
-   `SOURCE_PACKET`, and passes the **held-out partition** into the Workflow via `args` (the Workflow
-   cannot read disk). The Workflow runs judges against those anchors; `anchor_bank_version` goes into
-   the calibration card so the certified config provably names the bank it was scored on.
+2. **Each run** (U12): the orchestrator loads the bank with **`readForPacket(file, livePacket)`** — a
+   composed read that does `read` → `isStaleFor` → throw-on-stale, so the packet-binding check can't be
+   skipped by forgetting a call — then `assertCertifiable(bank)` (the certification partition must be
+   non-empty), and passes the **held-out partition** into the Workflow via `args` (the Workflow cannot
+   read disk). The Workflow runs judges against those anchors; `anchor_bank_version` goes into the
+   calibration card so the certified config provably names the bank it was scored on.
 
-`anchorbank.js` provides: `packetId`, `buildBank`, `write`, `read`, `verify`, `isStaleFor`,
-`partitionOf`, `itemsInPartition`, `heldOutFamilies`, `authoredFamilies`, `unadjudicated`,
-`partitionCounts`. CLI: `node anchorbank.js verify|inspect <bank.json>`.
+`anchorbank.js` provides: `packetId`, `buildBank`, `write`, `read`, **`readForPacket`**, `verify`,
+`isStaleFor`, `partitionOf`, `itemsInPartition`, `heldOutFamilies`, `authoredFamilies`,
+`certificationFamilies`, `unadjudicated`, `partitionCounts`, **`assertCertifiable`**. CLI: `node
+anchorbank.js verify|inspect <bank.json>`.
+
+Two identity notes: (1) the content checksum is **order-independent** — the anchor set is unordered, so
+reordering item cards does not mint a new version. (2) `created`/`provenance` are outside the
+content-address, so a rebuild of the same anchors **overwrites** them last-writer-wins (content is
+identical; provenance is advisory audit metadata, not integrity-critical — if a unit needs durable
+build history, write a sidecar rather than relying on the bank file).
 
 ## Commit policy
 
@@ -89,7 +98,7 @@ generates large raw mutant pools, gitignore those under a `_scratch/` subdir rat
 
 ## Tested
 
-`probes/p3-anchorbank.mjs` (30 assertions): reproducibility, packet/item change bumps version,
+`probes/p3-anchorbank.mjs` (52 assertions): reproducibility, packet/item change bumps version,
 held-out-by-family disjointness, partition stability, and tamper-evidence (edited items / forged
 version / forged checksum / unknown schema all throw on read).
 

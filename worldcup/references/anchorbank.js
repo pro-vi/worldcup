@@ -18,13 +18,14 @@
 // ledger the judges no longer read. Dependency-free (Node stdlib only).
 const fs = require('fs')
 const path = require('path')
-const { createHash } = require('crypto')
+const { createHash, randomBytes } = require('crypto')
 
 const SCHEMA = 'worldcup/anchor-bank@1'
 // The four partitions (from the review): development (feedback allowed) · selection (hidden tuning) ·
 // certification (held out by family, scored once) · canary (drift detection). A FAMILY lands in
 // exactly one partition, so "held out by family" is structural, not a random per-item split.
 const PARTITIONS = [['dev', 0.5], ['selection', 0.2], ['certification', 0.2], ['canary', 0.1]]
+const PARTITION_NAMES = new Set(PARTITIONS.map(([n]) => n))
 const HELD_OUT = new Set(['certification', 'canary'])   // partitions the certifying run must NOT author
 
 // ── content addressing. Canonical JSON (sorted keys) so the SAME logical value always hashes
@@ -55,12 +56,27 @@ const partitionFor = (family, pid) => {
 
 const HEX16 = /^[0-9a-f]{16}$/   // shape of every fingerprint — also keeps packet_id/version safe as path components
 
-// The family→partition manifest is fully DERIVABLE from (packet_id, item families) — so it is the
-// single source of truth, recomputable and verifiable (see verify). A family with no value can't be
-// partitioned by family at all, so it is rejected at build, not silently dropped.
+// Every item MUST carry a non-empty STRING family — held-out partitioning is BY family, so a missing,
+// numeric, or object family would be unpartitionable (invisible to certification) or collapse distinct
+// families to one key. Enforced at BOTH buildBank AND verify, so a hand-edited bank can't smuggle one in.
+function assertItems(items) {
+  if (!Array.isArray(items)) throw new Error('anchorbank: items must be an array')
+  for (const it of items)
+    if (it == null || typeof it.family !== 'string' || it.family === '')
+      throw new Error(`anchorbank: every item must carry a non-empty string family (got ${JSON.stringify(it && it.family)}); held-out partitioning is BY family.`)
+}
+// Order-INDEPENDENT content checksum: the anchor set is unordered, so reordering the cards must NOT
+// mint a new version (version is the on-disk filename AND the U12 calibration-card handle). Sort the
+// canonical item strings before hashing, so the version content-addresses the SET, not the ordering.
+const checksumItems = items => fingerprint([...items].map(canonical).sort())
+
+// The family→partition manifest is fully DERIVABLE from (packet_id, item families) — the single source
+// of truth, recomputable and verifiable (see verify). Built on a NULL-prototype object so a family
+// literally named `toString`/`constructor`/`__proto__` can't collide with Object.prototype and silently
+// escape partitioning (the exact "invisible held-out family" failure this module exists to prevent).
 function buildManifest(items, pid) {
-  const m = {}
-  for (const it of items) { const fam = it && it.family; if (fam != null && !(String(fam) in m)) m[String(fam)] = partitionFor(fam, pid) }
+  const m = Object.create(null)
+  for (const it of items) { const fam = String(it.family); if (!(fam in m)) m[fam] = partitionFor(fam, pid) }
   return m
 }
 
@@ -68,12 +84,10 @@ function buildManifest(items, pid) {
 // read here — the rest is carried through verbatim). created/provenance are caller-supplied (build
 // metadata, deliberately OUTSIDE the content-address so two builds of the same anchors are reproducible).
 function buildBank({ packet, items = [], provenance = {}, created = null }) {
+  assertItems(items)
   const pid = packetId(packet)
-  for (const it of items)
-    if (it == null || it.family == null || String(it.family) === '')
-      throw new Error('anchorbank: every item must carry a non-empty family — held-out partitioning is BY family; an unpartitionable item would be invisible to certification.')
-  const checksum = fingerprint(items)
-  const version = fingerprint({ packet_id: pid, checksum })   // depends on packet AND items
+  const checksum = checksumItems(items)
+  const version = fingerprint({ packet_id: pid, checksum })   // depends on packet AND the anchor SET (order-independent)
   return { schema: SCHEMA, packet_id: pid, version, created, provenance, manifest: buildManifest(items, pid), checksum, items }
 }
 
@@ -85,10 +99,10 @@ function buildBank({ packet, items = [], provenance = {}, created = null }) {
 function verify(bank) {
   if (!bank || typeof bank !== 'object' || Array.isArray(bank)) throw new Error('anchorbank: not an object')
   if (bank.schema !== SCHEMA) throw new Error(`anchorbank: unknown schema ${JSON.stringify(bank.schema)} (want ${SCHEMA})`)
-  if (!Array.isArray(bank.items)) throw new Error('anchorbank: items must be an array')
+  assertItems(bank.items)   // re-enforce the build precondition — a hand-edit can't smuggle in an unpartitionable item
   if (!HEX16.test(bank.packet_id)) throw new Error(`anchorbank: packet_id must be 16 hex chars, got ${JSON.stringify(bank.packet_id)}`)
   if (!HEX16.test(bank.version)) throw new Error(`anchorbank: version must be 16 hex chars, got ${JSON.stringify(bank.version)}`)
-  const cs = fingerprint(bank.items)
+  const cs = checksumItems(bank.items)
   if (cs !== bank.checksum) throw new Error(`anchorbank: checksum mismatch (items tampered) — stored ${bank.checksum}, computed ${cs}`)
   const ver = fingerprint({ packet_id: bank.packet_id, checksum: bank.checksum })
   if (ver !== bank.version) throw new Error(`anchorbank: version mismatch — stored ${bank.version}, computed ${ver}`)
@@ -104,12 +118,14 @@ function write(bank, baseDir) {
   const dir = path.join(baseDir, 'anchors', bank.packet_id)
   fs.mkdirSync(dir, { recursive: true })
   const file = path.join(dir, `bank-v${bank.version}.json`)
-  const tmp = `${file}.tmp`
+  // WRITER-PRIVATE temp (pid + random) so concurrent writers of the same version don't share a temp
+  // path, and the failure-path unlink only ever removes OUR temp — never a peer's staged bytes.
+  const tmp = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
   try {
     fs.writeFileSync(tmp, JSON.stringify(bank, null, 2) + '\n')
-    fs.renameSync(tmp, file)
+    fs.renameSync(tmp, file)   // rename is atomic for readers; same dir ⇒ no EXDEV
   } catch (e) {
-    try { fs.unlinkSync(tmp) } catch { /* nothing to clean up */ }   // never leave a partial temp on a failed write
+    try { fs.unlinkSync(tmp) } catch { /* our temp; nothing to clean up */ }
     throw e
   }
   return file
@@ -122,31 +138,58 @@ function read(file) {
   try { raw = fs.readFileSync(file, 'utf8') } catch (e) { throw new Error(`anchorbank: cannot read ${file}: ${e.message}`) }
   let bank
   try { bank = JSON.parse(raw) } catch (e) { throw new Error(`anchorbank: ${file} is not valid JSON (corrupt/truncated bank): ${e.message}`) }
-  return verify(bank)
+  // Tag verify() failures with the file too — the common surviving corruption (a byte-flip inside valid
+  // JSON) surfaces as a checksum mismatch that otherwise names neither the file nor the bank.
+  try { return verify(bank) } catch (e) { throw new Error(`anchorbank: ${file} failed integrity — ${e.message}`) }
 }
 
 // The bank was built for a DIFFERENT packet than the one about to run → it cannot be used (stale).
 const isStaleFor = (bank, packet) => !bank || bank.packet_id !== packetId(packet)
-const partitionOf = (bank, family) => (bank && bank.manifest && bank.manifest[String(family)]) || null
+// hasOwnProperty-guarded so an ABSENT family named e.g. "toString" returns null, not Object.prototype's
+// inherited function (which would corrupt counts and partition queries).
+const partitionOf = (bank, family) => {
+  const m = bank && bank.manifest
+  return (m && Object.prototype.hasOwnProperty.call(m, String(family))) ? m[String(family)] : null
+}
 const itemsInPartition = (bank, name) => (bank && bank.items || []).filter(it => partitionOf(bank, it && it.family) === name)
-// Families the certifying run must NOT author (it reads these from the persisted bank) vs the families
-// it MAY (re)build this run. Disjoint by construction (one family → one partition).
-const heldOutFamilies = bank => Object.entries((bank && bank.manifest) || {}).filter(([, p]) => HELD_OUT.has(p)).map(([f]) => f)
-const authoredFamilies = bank => Object.entries((bank && bank.manifest) || {}).filter(([, p]) => !HELD_OUT.has(p)).map(([f]) => f)
+const familiesIn = (bank, pred) => Object.entries((bank && bank.manifest) || {}).filter(([, p]) => pred(p)).map(([f]) => f)
+// Families the certifying run must NOT author (read from the persisted bank) vs the families it MAY
+// (re)build this run. Disjoint by construction (one family → one partition).
+const heldOutFamilies = bank => familiesIn(bank, p => HELD_OUT.has(p))
+const authoredFamilies = bank => familiesIn(bank, p => PARTITION_NAMES.has(p) && !HELD_OUT.has(p))
+const certificationFamilies = bank => familiesIn(bank, p => p === 'certification')
 // Taste anchors awaiting human adjudication (U11 stamps item.kind/human_adjudicated; U12 must not
 // certify on un-adjudicated taste gold). Carried here; consumers decide policy.
 const unadjudicated = bank => (bank && bank.items || []).filter(it => it && it.kind === 'taste' && !it.human_adjudicated)
 
 function partitionCounts(bank) {
   const c = { dev: 0, selection: 0, certification: 0, canary: 0, unpartitioned: 0 }
-  for (const it of (bank && bank.items) || []) { const p = partitionOf(bank, it && it.family); c[p || 'unpartitioned']++ }
+  for (const it of (bank && bank.items) || []) { const p = partitionOf(bank, it && it.family); c[PARTITION_NAMES.has(p) ? p : 'unpartitioned']++ }
   return c
 }
 
+// A bank with an EMPTY certification partition certifies vacuously (nothing held out to score). U11/U12
+// call this before certifying; NOT enforced at build (a partial bank may legitimately be empty mid-construction).
+function assertCertifiable(bank) {
+  if (!certificationFamilies(bank).length)
+    throw new Error('anchorbank: certification partition is empty — nothing is held out to score (too few anchor families). Add more families before certifying.')
+  return bank
+}
+
+// Composed read that BINDS the bank to the active packet, so the staleness check can't be skipped by
+// forgetting to call isStaleFor. The recommended entry point for U12's certifying run.
+function readForPacket(file, packet) {
+  const bank = read(file)
+  if (isStaleFor(bank, packet))
+    throw new Error(`anchorbank: ${file} was built for packet ${bank.packet_id}, not the active packet ${packetId(packet)} — refusing to certify against a stale ledger.`)
+  return bank
+}
+
 module.exports = {
-  SCHEMA, PARTITIONS, HELD_OUT, canonical, fingerprint, packetId, partitionFor,
-  buildBank, verify, write, read, isStaleFor, partitionOf, itemsInPartition,
-  heldOutFamilies, authoredFamilies, unadjudicated, partitionCounts,
+  SCHEMA, PARTITIONS, PARTITION_NAMES, HELD_OUT, canonical, fingerprint, packetId, partitionFor,
+  assertItems, checksumItems, buildBank, verify, write, read, readForPacket, isStaleFor,
+  partitionOf, itemsInPartition, heldOutFamilies, authoredFamilies, certificationFamilies,
+  unadjudicated, partitionCounts, assertCertifiable,
 }
 
 if (require.main === module) {

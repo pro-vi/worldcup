@@ -74,6 +74,30 @@ ok('unadjudicated flags un-adjudicated taste anchors only',
 ok('buildBank rejects a family-less item',  throws(() => ab.buildBank({ packet: packetA, items: [{ id: 1, kind: 'truth' }] })))
 ok('buildBank rejects an empty-string family', throws(() => ab.buildBank({ packet: packetA, items: [{ id: 1, family: '' }] })))
 
+// ── re-review fixes ───────────────────────────────────────────────────────────────────────────
+console.log('re-review hardening (prototype/non-string families, order, verify parity, certifiable):')
+// Finding 1: a family literally named "toString" must NOT collide with Object.prototype and escape
+const proto = ab.buildBank({ packet: packetA, items: [{ id: 1, family: 'toString', kind: 'truth' }, { id: 2, family: 'real', kind: 'truth' }] })
+ok('toString family is partitioned, not dropped', ['dev', 'selection', 'certification', 'canary'].includes(ab.partitionOf(proto, 'toString')))
+ok('manifest stores the toString family',        Object.prototype.hasOwnProperty.call(proto.manifest, 'toString'))
+ok('absent "constructor" family → null (not inherited fn)', ab.partitionOf(proto, 'constructor') === null)
+ok('partitionCounts has no NaN with a proto family', Object.values(ab.partitionCounts(proto)).every(Number.isFinite) && Object.values(ab.partitionCounts(proto)).reduce((a, c) => a + c, 0) === 2)
+// Finding 1b: non-string families are rejected, not collapsed to "[object Object]"
+ok('buildBank rejects an object family',  throws(() => ab.buildBank({ packet: packetA, items: [{ id: 1, family: {} }] })))
+ok('buildBank rejects a numeric family',  throws(() => ab.buildBank({ packet: packetA, items: [{ id: 1, family: 3 }] })))
+// Finding 4: checksum/version are ORDER-INDEPENDENT — reordering the cards must not mint a new version
+const rev = ab.buildBank({ packet: packetA, items: mkItems().reverse() })
+ok('reordered items ⇒ same checksum', rev.checksum === b1.checksum)
+ok('reordered items ⇒ same version',  rev.version === b1.version)
+// Finding 2: verify re-enforces the family precondition — a hand-edited family-less item is rejected
+const sneaky = JSON.parse(JSON.stringify(b1)); sneaky.items.push({ id: 9999, kind: 'truth' })
+sneaky.checksum = ab.checksumItems(sneaky.items); sneaky.version = ab.fingerprint({ packet_id: sneaky.packet_id, checksum: sneaky.checksum })
+ok('verify rejects a hand-edited family-less item (checksum recomputed)', throws(() => ab.verify(sneaky)))
+// Finding 7: an empty certification partition is a vacuous certification — assertCertifiable throws
+ok('assertCertifiable throws on an empty bank', throws(() => ab.assertCertifiable(ab.buildBank({ packet: packetA, items: [] }))))
+ok('assertCertifiable matches cert-partition presence',
+  throws(() => ab.assertCertifiable(b1)) === (ab.certificationFamilies(b1).length === 0))
+
 // ── (d) tamper-evident persistence (write → read roundtrip + integrity) ──────────────────────
 console.log('tamper-evident persistence:')
 const base = mkdtempSync(join(tmpdir(), 'wc-anchorbank-'))
@@ -119,6 +143,15 @@ try {
   // missing file ⇒ read throws an error that names the path
   let merr = ''; try { ab.read(join(base, 'nope.json')) } catch (e) { merr = e.message }
   ok('missing file ⇒ read throws naming the path', merr.includes('nope.json'))
+  // Finding 5: a byte-flip INSIDE valid JSON (survives parse) surfaces as a checksum mismatch — read()
+  // must tag it with the file, not pass verify()'s bare error through.
+  const bf = JSON.parse(JSON.stringify(b1)); bf.items[0].id = 'FLIPPED'
+  const bffile = join(base, 'byteflip.json'); writeFileSync(bffile, JSON.stringify(bf))
+  let bferr = ''; try { ab.read(bffile) } catch (e) { bferr = e.message }
+  ok('read tags an integrity failure with the file', bferr.includes(bffile) && /failed integrity|checksum/i.test(bferr))
+  // readForPacket binds the bank to the active packet — staleness can't be skipped
+  ok('readForPacket returns the bank for the matching packet', ab.readForPacket(file, packetA).version === b1.version)
+  ok('readForPacket throws for a different packet',            throws(() => ab.readForPacket(file, packetB)))
 } finally {
   rmSync(base, { recursive: true, force: true })
 }
