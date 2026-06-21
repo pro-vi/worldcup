@@ -94,9 +94,12 @@ node references/live-view.js --events <journal.jsonl> --out worldcup-live.html -
   narrator lines, and partial trailing writes skip; a harness format change degrades to a *stale* view,
   never a crash.
 - **Provenance (per-run nonce):** when the launcher passes `--nonce`, the consumer accepts a beacon ONLY
-  if its `result.nonce` matches. The producer reads the same token from `args.liveNonce` and stamps every
-  event; judges never see it, so even an agent that emitted a structured `{__wc:'EVENT'}` can't forge a
-  beacon without the (unguessable) nonce. No `--nonce` → accept any (legacy/testing).
+  if its `result.nonce` matches, **and the legacy raw-`WCEVENT` path is disabled** (raw lines can't carry
+  the nonce) — the authenticated channel is spine-only; raw parsing remains for unauthenticated replay /
+  Tier-0. The producer reads the same token from `args.liveNonce` (coerced to a string) and stamps every
+  event; judges never see it, so even an agent emitting a structured `{__wc:'EVENT'}` can't forge a beacon
+  without the (unguessable) nonce. Diagnosable: with no `--nonce` the watcher warns it's unauthenticated;
+  if beacons are present but none match, it warns once (a typo'd/mismatched nonce, not "not started").
 - **Atomic writes:** temp-file + rename, so a watching browser never reads a half-written file.
 - **Self-contained:** inline CSS mirroring `renderReportV2`'s palette; zero external requests; live
   snapshots carry `<meta http-equiv="refresh" content="2">`, the final render does not.

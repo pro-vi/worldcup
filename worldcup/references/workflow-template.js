@@ -476,7 +476,7 @@ const ARGS = (() => { try { if (typeof args === 'undefined' || args == null) ret
 // Per-run provenance nonce: the LAUNCHER passes it via args.liveNonce AND hands the same one to
 // live-view.js (--nonce). Judges never see it, so even an agent that emits a structured {__wc:'EVENT'}
 // can't forge a beacon. Absent → '' → the consumer runs unauthenticated (legacy).
-const LIVE_NONCE = (ARGS && !Array.isArray(ARGS) && ARGS.liveNonce) || ''
+const LIVE_NONCE = (ARGS && !Array.isArray(ARGS) && ARGS.liveNonce != null) ? String(ARGS.liveNonce) : ''  // coerce: a non-string would fail the {type:'string'} schema → every beacon silently dropped
 // GIVEN-mode entrants: a bare array, or `args.items` when wrapped alongside a nonce.
 const GIVEN_ITEMS = Array.isArray(ARGS) ? ARGS : ((ARGS && ARGS.items) || [])
 const BEACON_PROMPT = 'Output this exact JSON object as your structured result, preserving nested arrays/objects and numbers EXACTLY — do not stringify, reorder, or alter any field:\n'

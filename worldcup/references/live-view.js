@@ -32,7 +32,7 @@ const he = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp
 //       marker buried (escaped) inside a record's string value does not. This is the injection guard.
 // Non-beacon results, narrator lines, and malformed/partial lines skip — never fatal. We re-read from the
 // top each tick (events are few), so there's no byte-offset bookkeeping.
-function parseEvents(text, nonce) {
+function parseEvents(text, nonce, stats) {
   const events = []
   for (const raw of String(text == null ? '' : text).split('\n')) {
     if (!raw) continue
@@ -43,11 +43,17 @@ function parseEvents(text, nonce) {
       try {
         const rec = JSON.parse(raw)
         const r = rec && (rec.result && typeof rec.result === 'object' ? rec.result : rec)
-        if (r && r.__wc === 'EVENT' && r.ev && (!nonce || r.nonce === nonce)) { events.push(r); continue }
+        if (r && r.__wc === 'EVENT' && r.ev) {
+          if (stats) stats.seen++
+          if (!nonce || r.nonce === nonce) { events.push(r); continue }
+          if (stats) stats.rejected++   // a well-formed beacon with the wrong/absent nonce (config or mis-stamp)
+        }
       } catch (e) { /* not a clean json line — fall through */ }
     }
-    // (2) legacy RAW WCEVENT line only — no nested-string scavenging (the injection guard, see header)
-    if (raw.indexOf('WCEVENT ') !== -1) {
+    // (2) legacy RAW WCEVENT line — ONLY when no nonce is expected. Raw lines can't carry the per-run
+    // nonce, so on an authenticated channel they aren't trusted; this path is for unauthenticated
+    // replay / Tier-0 (and stays no-nested-string-scavenging, the injection guard, see header).
+    if (!nonce && raw.indexOf('WCEVENT ') !== -1) {
       const ev = extractEvent(raw)
       if (ev) events.push(ev)
     }
@@ -265,19 +271,28 @@ ${dqHtml}
 
 // ─────────────────────────────────────────────────────────── CLI
 function parseArgs(argv) {
-  const a = { out: 'worldcup-live.html', once: false, nonce: '' }
+  const a = { out: 'worldcup-live.html', once: false, nonce: '', nonceProvided: false }
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--events') a.events = argv[++i]
     else if (argv[i] === '--out') a.out = argv[++i]
-    else if (argv[i] === '--nonce') a.nonce = argv[++i]   // per-run provenance; only beacons carrying it are accepted
+    else if (argv[i] === '--nonce') { a.nonce = argv[++i] || ''; a.nonceProvided = true }   // per-run provenance
     else if (argv[i] === '--once') a.once = true
   }
   return a
 }
+let warnedNonceMiss = false
 function readState(path, nonce) {
   let text = ''
   try { text = fs.readFileSync(path, 'utf8') } catch (e) { /* sink not created yet — render the waiting state */ }
-  return fold(parseEvents(text, nonce))
+  const stats = { seen: 0, rejected: 0 }
+  const st = fold(parseEvents(text, nonce, stats))
+  // Finding 1: a silent nonce mismatch looks identical to "not started yet". If beacons are present but
+  // none match the expected nonce, say so once — the #1 cause of a mysterious blank live view.
+  if (nonce && !warnedNonceMiss && stats.seen > 0 && stats.seen === stats.rejected) {
+    warnedNonceMiss = true
+    console.error(`live-view: ${stats.seen} beacon(s) present but NONE matched --nonce "${nonce}" — check it equals the run's args.liveNonce`)
+  }
+  return st
 }
 function writeAtomic(out, html) {
   const tmp = out + '.tmp'
@@ -287,7 +302,10 @@ function writeAtomic(out, html) {
 function sizeOf(p) { try { return fs.statSync(p).size } catch (e) { return -1 } }
 function main() {
   const a = parseArgs(process.argv)
-  if (!a.events) { console.error('usage: live-view.js --events <path-to-journal.jsonl> [--out worldcup-live.html] [--once]'); process.exit(2) }
+  if (!a.events) { console.error('usage: live-view.js --events <path-to-journal.jsonl> [--out worldcup-live.html] [--nonce <token>] [--once]'); process.exit(2) }
+  // Finding 3: surface the auth posture — otherwise the control this PR adds is off/misconfigured silently.
+  if (a.nonceProvided && !a.nonce) console.error('live-view: --nonce was given but is empty — every beacon will be rejected; pass the same token you set as args.liveNonce')
+  else if (!a.nonceProvided) console.error('live-view: no --nonce — accepting any beacon (unauthenticated / legacy mode)')
   // The sink is the run's spine journal (subagents/workflows/<runId>/journal.jsonl): one JSON record per
   // workflow agent, appended the moment it completes — so it only GROWS, a handful of times over a run.
   // Gate each re-read on a cheap statSync(size): the steady-state poll is a stat, and we re-read +
