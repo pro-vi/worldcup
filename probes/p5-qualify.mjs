@@ -112,6 +112,11 @@ try {
   ok('writeCard needs a baseDir', throws(() => q.writeCard(card)))
   let rerr = ''; try { q.readCard(join(base, 'nope.json')) } catch (e) { rerr = e.message }
   ok('readCard tags a missing file with its path', rerr.includes('nope.json'))
+  // P3a: readCard fails loud on a malformed/foreign file rather than returning a parse-only value
+  const arrFile = join(base, 'arr.json'); writeFileSync(arrFile, '[1,2,3]')
+  ok('readCard rejects a non-object card (array)', throws(() => q.readCard(arrFile)))
+  const foreignFile = join(base, 'foreign.json'); writeFileSync(foreignFile, '{"hello":"world"}')
+  ok('readCard rejects a card missing packet_id/run_id', throws(() => q.readCard(foreignFile)))
 } finally {
   rmSync(base, { recursive: true, force: true })
 }

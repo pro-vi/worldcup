@@ -70,6 +70,8 @@ function anchorBankArg(loaded) {
 // (mirrors anchorbank.write), so a watcher never reads a half-written card. The card is schema-agnostic
 // here (U24 owns the payload), but its two PATH components are validated: packet_id must be 16-hex and
 // run_id must be traversal-safe, so a forged id can't escape the anchors dir. Returns the path written.
+// Same-(packet_id,run_id) is last-writer-wins (a re-run with the same id overwrites) — effectively
+// unreachable in practice because run_id carries the per-run nonce (review P3a: documented, not guarded).
 function writeCard(card, baseDir) {
   if (!card || typeof card !== 'object' || Array.isArray(card)) throw new Error('qualify: writeCard needs a card object.')
   if (!baseDir) throw new Error('qualify: writeCard needs a baseDir.')
@@ -98,7 +100,13 @@ function writeCard(card, baseDir) {
 function readCard(file) {
   let raw
   try { raw = fs.readFileSync(file, 'utf8') } catch (e) { throw new Error(`qualify: cannot read ${file}: ${e.message}`) }
-  try { return JSON.parse(raw) } catch (e) { throw new Error(`qualify: ${file} is not valid JSON (corrupt assurance card): ${e.message}`) }
+  let card
+  try { card = JSON.parse(raw) } catch (e) { throw new Error(`qualify: ${file} is not valid JSON (corrupt assurance card): ${e.message}`) }
+  // Shape check (review P3a): fail loud on a malformed/foreign file rather than handing a parse-only value
+  // to a consumer that would silently misread it. A card is a plain object naming its run (packet_id+run_id).
+  if (!card || typeof card !== 'object' || Array.isArray(card) || typeof card.run_id !== 'string' || typeof card.packet_id !== 'string')
+    throw new Error(`qualify: ${file} is not a well-formed assurance card (need an object with string packet_id + run_id).`)
+  return card
 }
 
 module.exports = { persistAnchors, loadCorpusForRun, anchorBankArg, writeCard, readCard }
