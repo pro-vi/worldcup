@@ -83,7 +83,7 @@ const FILL_LEDGER_PROSE =
 `- FACT LEDGER (what is actually true; everything concrete must trace here): FILL.
 - NOT ALLOWED unless in the ledger: invented line numbers, class/file names, stack
   traces, error messages, dates, names, places, quotes, scenes, or any concrete detail
-  presented as lived fact. Manufactured specificity is a flaw, not a strength.`
+  presented as real. Manufactured specificity is a flaw, not a strength.`
 // The structured fact ledger. supported_facts = concrete things that ARE true (variants may use
 // them); allowed_entities = the named specifics permitted, bucketed by kind; not_allowed = entity
 // classes barred unless they trace to the ledger; target = the structured twin of TARGET (target-truth
@@ -121,14 +121,14 @@ const renderLedger = (packet = SOURCE_PACKET) => {
   const banned = na.length ? `${na.join(', ')}, or any` : 'any'   // empty list ⇒ drop the leading enumeration
   return `- FACT LEDGER (what is actually true; everything concrete must trace here):
 ${body}
-- NOT ALLOWED unless in the ledger: ${banned} concrete detail presented as lived fact. Manufactured specificity is a flaw, not a strength.`
+- NOT ALLOWED unless in the ledger: ${banned} concrete detail presented as real. Manufactured specificity is a flaw, not a strength.`
 }
 
 const CRITERIA_BASE = `FILL: the rubric — what makes one entry better, in the USER'S words (distilled
 from their voice skill / stated criteria). Be specific; vague criteria = a tasteless judge.
 - TASTE: <the positive qualities a strong entry has — the user's, not the engine's>.
 ${renderLedger(SOURCE_PACKET)}
-- HARD DISQUALIFIERS (auto-kill, domain-general): fabricated specifics presented as lived fact
+- HARD DISQUALIFIERS (auto-kill, domain-general): fabricated specifics presented as real
   (a lie against the fact ledger), genre breach, non-responsiveness to the brief. Add the user's
   own house-style hard bans ONLY if they truly want auto-kills — style tics (punctuation, word
   choice) belong in the lenses (scored down), not the gate. See references/profiles/ for examples.
@@ -152,19 +152,20 @@ if (!TARGET && (TARGET_BLOCK !== '' || targetGateClause !== '' || CRITERIA_BLOCK
 // prompt, and the tally. MISREPRESENTS_TARGET is present ONLY when a TARGET exists, so a
 // non-target run cannot offer it, cannot return it (schema forbids), and the tally ignores it
 // even if a screener invents it — inert by construction, not just by doctrine.
-const HARD_DQ_CATEGORIES = ['FABRICATED_CONCRETE_DETAIL', 'FAKE_AUTHORITY_SIGNAL',
-  'FALSE_AUTHORIAL_EXPERIENCE', 'CONTRADICTS_SOURCE',
+// Domain-GENERAL hard-DQ vocabulary (the engine ships no domain-specific categories — a profile may add
+// subtypes, e.g. prose adds FALSE_AUTHORIAL_EXPERIENCE; code adds FAKE_TEST_PASS). FABRICATION = invented
+// or faked specifics presented as real (false facts, fabricated results/data, claimed work not done).
+const HARD_DQ_CATEGORIES = ['FABRICATION', 'CONTRADICTS_SOURCE',
   ...(TARGET ? ['MISREPRESENTS_TARGET'] : []),
   'GENRE_BREACH', 'HOUSE_STYLE_HARD_BAN', 'PLAGIARISTIC_OR_NON_RESPONSIVE']
-// Violation FAMILIES for the gate tally. A real fabrication is usually several overlapping
-// subtypes at once (an invented first-person stack trace is FABRICATED_CONCRETE_DETAIL AND
-// FAKE_AUTHORITY_SIGNAL AND FALSE_AUTHORIAL_EXPERIENCE), so requiring the same SUBTYPE would let
-// three screeners who all correctly see fabrication — but name it differently — wrongly PASS it.
-// The overlapping fabrication subtypes share one family; distinct failure modes (genre, style,
-// responsiveness) stay separate so two unrelated hallucinations can't combine to DQ a clean entry.
+// Violation FAMILIES for the gate tally. A real fabrication is usually several overlapping subtypes at
+// once (a faked result is FABRICATION AND CONTRADICTS_SOURCE), so requiring the same SUBTYPE would let
+// three screeners who all correctly see fabrication — but name it differently — wrongly PASS it. The
+// overlapping fabrication subtypes share one family; distinct failure modes (genre, style, responsiveness)
+// stay separate so two unrelated hallucinations can't combine to DQ a clean entry. A profile that adds a
+// fabrication subtype maps it to 'fabrication' here so it joins the same-family majority.
 const DQ_FAMILY = {
-  FABRICATED_CONCRETE_DETAIL: 'fabrication', FAKE_AUTHORITY_SIGNAL: 'fabrication',
-  FALSE_AUTHORIAL_EXPERIENCE: 'fabrication', CONTRADICTS_SOURCE: 'fabrication',
+  FABRICATION: 'fabrication', CONTRADICTS_SOURCE: 'fabrication',
   MISREPRESENTS_TARGET: 'fabrication', GENRE_BREACH: 'genre',
   HOUSE_STYLE_HARD_BAN: 'style', PLAGIARISTIC_OR_NON_RESPONSIVE: 'responsiveness',
 }
@@ -204,12 +205,15 @@ const SEED_SCHEMA = { type: 'object', additionalProperties: false,
     confidence: { type: 'string', enum: ['toss-up', 'lean', 'strong'] } } }
 
 // ─────────────────────────────────────────────────────── LENSES
+// DOMAIN-GENERAL lens axes — they apply to any artifact (essay, code, design, tagline, plan, config).
+// The user's criteria fills in what "good" means in their domain; a profile may add/replace lenses (e.g.
+// prose adds 'voice'/'taste', code adds 'correctness'/'simplicity'). The engine ships no prose-specific lens.
 const LENSES = {
-  voice:     'Does this sound like the author actually wrote it, or like a machine performing the author. Flag voice tells, performed vulnerability, imitation over authorship.',
-  substance: 'Strip the style. Is there a real claim earned by real reasoning, or vibes and momentum. Does the argument advance and land.',
-  taste:     'You are a discerning editor who has read ten thousand of these. Fresh or formulaic. Earned or performed. Would you publish it.',
-  integrity: 'Is the concrete detail honest or manufactured. For nonfiction, does it buy vividness with invented fact. Penalize performed authenticity; reward earned, plausibly-true specifics and honest understatement.',
-  coherence: 'Does this read as one continuous piece, or a stapled lineup of mismatched parts? Penalize tonal breaks, a dropped throughline, and seams where one section\'s voice or stance clashes with the next. Reward a single argument carried across every section in one register — a team that plays together, not eleven soloists.',
+  substance: 'Strip the surface polish. Is there real quality underneath — sound reasoning, correct logic, a genuine idea — or confident-looking filler? Does it actually do the thing it is for, and do it well?',
+  fit:       'Does this serve the actual goal and the stated criteria, or drift to an adjacent thing that is easier to do well? Reward the entry that answers what was asked, in the form that was asked for.',
+  craft:     'You are an expert in this domain who has seen ten thousand of these. Is it well-made — sharp, economical, fresh not formulaic — or competent-but-generic? Would you ship it / publish it / merge it?',
+  integrity: 'Is it honest — no invented facts, fabricated specifics, faked or claimed-but-not-done results presented as real? Penalize manufactured credibility; reward what is verifiable, earned, and plausibly true.',
+  coherence: 'Does it read or work as one coherent whole, or a stapled lineup of mismatched parts? Penalize breaks in register/structure, a dropped throughline, and seams where one section clashes with the next. Reward a single intent carried across every part — a team that plays together, not eleven soloists.',
 }
 // Assembled (kind:'sections') candidates are stapled from independently-judged slots, so a
 // coherence juror rides in every panel to catch Frankenstein seams a whole-generated piece
@@ -217,11 +221,11 @@ const LENSES = {
 const COHERENCE_ON = DESIGN.kind === 'sections'
 const panelFor = stakes => {
   const base = {
-    R32: ['voice', 'substance', 'taste'], R16: ['voice', 'substance', 'taste'],
-    QF: ['voice', 'substance', 'taste', 'integrity'],
-    SF: ['voice', 'substance', 'taste', 'integrity'],
-    FINAL: ['voice', 'substance', 'taste', 'integrity'],
-  }[stakes] || ['voice', 'substance', 'taste']
+    R32: ['substance', 'fit', 'craft'], R16: ['substance', 'fit', 'craft'],
+    QF: ['substance', 'fit', 'craft', 'integrity'],
+    SF: ['substance', 'fit', 'craft', 'integrity'],
+    FINAL: ['substance', 'fit', 'craft', 'integrity'],
+  }[stakes] || ['substance', 'fit', 'craft']
   return COHERENCE_ON ? [...base, 'coherence'] : base
 }
 
@@ -350,7 +354,7 @@ const flawPrompt = (e, ev = EVALUATOR) => `You are screening ONE entry for FATAL
 CRITERIA AND HARD DISQUALIFIERS:
 ${ev.criteriaBlock}
 
-Disqualify (name the rule) only if the entry: presents invented specifics as lived fact (suspiciously perfect, load-bearing, almost certainly fabricated to manufacture authenticity — treat manufactured specificity as a flaw, not a strength), OR breaks a hard disqualifier above. Do not disqualify for being merely weak.${ev.targetGateClause}
+Disqualify (name the rule) only if the entry: presents invented or faked specifics as real — false facts, fabricated results or data, claimed work not actually done, or details that don't trace to the source (suspiciously perfect, load-bearing, almost certainly fabricated to manufacture credibility — treat manufactured specificity as a flaw, not a strength) — OR breaks a hard disqualifier above. Do not disqualify for being merely weak.${ev.targetGateClause}
 
 When you disqualify, name the single best-fitting hard-DQ category: ${ev.hardDqCategories.join(', ')}. Use NONE when not disqualifying.
 
@@ -1019,7 +1023,7 @@ await parallel(groupSpecs.map((m, idx) => () =>
   })))
 // NOTE: group matches use a single rotated juror for cost; override panelFor('R32') -> single
 // if you want strict 1-vote groups. Default template runs the 3-lens panel; for FIELD=48
-// or tight budgets, switch group matches to a single 'taste' juror.
+// or tight budgets, switch group matches to a single 'craft' juror.
 
 const adv = groups.map((g, gi) => { const s = standings(g, gi, groupResults); return { ...s, gi } })
 // Realtime group standings + who advanced (the user-requested "live group standings"). The

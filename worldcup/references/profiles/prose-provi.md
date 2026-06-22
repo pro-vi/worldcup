@@ -36,6 +36,22 @@ const BANS = {
 > reward stealthier-but-worse writing. It's a deliberate, owned choice for this author; prefer banning
 > the *behavior* ("manufactured, performed phrasing") in the integrity lens over a literal word list.
 
-## Lenses
-voice · substance · taste · integrity (the engine default lens set; integrity carries the
-honest-vs-manufactured-specificity judgment).
+## Profile override (EvaluatorConfig)
+The engine ships **domain-general** lenses (`substance` · `fit` · `craft` · `integrity`) and categories
+(`FABRICATION`, `CONTRADICTS_SOURCE`, `GENRE_BREACH`, `HOUSE_STYLE_HARD_BAN`, `PLAGIARISTIC_OR_NON_RESPONSIVE`).
+This prose profile **adds** the prose-specific bits back, as overrides you assign to `EVALUATOR`:
+
+```js
+// Prose lenses (add to the general set):
+lenses: {
+  voice: 'Does this sound like the author actually wrote it, or like a machine performing the author. Flag voice tells, performed vulnerability, imitation over authorship.',
+  taste: 'You are a discerning editor who has read ten thousand of these. Fresh or formulaic. Earned or performed. Would you publish it.',
+},
+panelFor: stakes => ['voice', 'substance', 'taste', 'integrity'],  // seat voice + taste in the prose panel
+
+// Prose fabrication SUBTYPES (the general FABRICATION specialized for first-person nonfiction):
+hardDqCategories: [...HARD_DQ_CATEGORIES, 'FALSE_AUTHORIAL_EXPERIENCE', 'FAKE_AUTHORITY_SIGNAL'],
+dqFamily:         { FALSE_AUTHORIAL_EXPERIENCE: 'fabrication', FAKE_AUTHORITY_SIGNAL: 'fabrication' },
+```
+`integrity` (general, kept) carries the honest-vs-manufactured-specificity judgment; the prose subtypes
+let three screeners who all see a fabrication name it more precisely while still landing in one family.

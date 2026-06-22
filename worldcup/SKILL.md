@@ -160,8 +160,9 @@ Full version in "references/judging.md". The non-negotiables:
 - **A match is a panel, not one judge.** Group stage: 1 juror (round-robin averages
   the noise). Knockout: best-of-3. Semis and final: best-of-5 with distinct lenses,
   optionally a cross-model juror. Vote counts scale with stakes.
-- **Diverse lenses, not replicas.** Panelists wear different hats — voice, substance,
-  reader-taste, integrity — and each is told to be ruthless on its one axis. A vote
+- **Diverse lenses, not replicas.** Panelists wear different hats — the general default set is
+  substance, fit, craft, integrity (a profile swaps in domain lenses, e.g. prose adds voice/taste,
+  code adds correctness/simplicity) — and each is told to be ruthless on its one axis. A vote
   is the lens's verdict, not a generic "which is nicer."
 - **Truth is a gate, not a score.** A regex preflight kills the cheap violations (em
   dashes, banned vocab) before any agent runs. Then a 3-judge fabrication gate, armed

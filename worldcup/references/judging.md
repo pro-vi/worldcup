@@ -234,8 +234,16 @@ The pipeline (gates -> pairwise taste -> reference challenge -> rating + trust) 
 domain-general. What you swap per domain is the **gate** and the **lens set**. Essays are
 one profile, not the shape of the tool.
 
+> **The ENGINE default is domain-general** (see `workflow-template.js`): lenses `substance` ·
+> `fit` · `craft` · `integrity` (+ `coherence` for assembled artifacts), and hard-DQ categories
+> `FABRICATION` · `CONTRADICTS_SOURCE` · `GENRE_BREACH` · `HOUSE_STYLE_HARD_BAN` ·
+> `PLAGIARISTIC_OR_NON_RESPONSIVE`. Everything below — and the prose lens/category names elsewhere
+> in this doc — is the **prose profile**, one example you swap in (see `references/profiles/`). The
+> engine ships no prose-specific lens or category; the user's profile / voice skill adds them.
+
 - **Prose / voice** (essays, copy, posts): gate = the fabrication gate above (preflight +
-  3-judge fact-ledger check). Lenses = fidelity, taste, anti-gaming, argument, cold-reader.
+  3-judge fact-ledger check). Lenses = the general set + prose's `voice`/`taste`; the prose
+  fabrication subtypes (`FALSE_AUTHORIAL_EXPERIENCE`, `FAKE_AUTHORITY_SIGNAL`) specialize `FABRICATION`.
   - *Critique / response sub-mode* (the field critiques or responds to a named external
     work): the packet adds a TARGET section built from that work's fetched source, and the
     gate adds MISREPRESENTS_TARGET. A dedicated target-fidelity lens (distinct from

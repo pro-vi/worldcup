@@ -64,8 +64,8 @@ ok('lensWeight default returns 1',       M.EVALUATOR.lensWeight('voice') === 1)
 console.log('default prompts interpolate constants:')
 ok('flawPrompt has CRITERIA_BLOCK',  M.flawPrompt(E).includes(M.CRITERIA_BLOCK))
 ok('flawPrompt has DQ vocabulary',   M.flawPrompt(E).includes(M.HARD_DQ_CATEGORIES.join(', ')))
-ok('lensPrompt has lens text',       M.lensPrompt('voice', E, F).includes(M.LENSES.voice))
-ok('lensPrompt has CRITERIA_BLOCK',  M.lensPrompt('voice', E, F).includes(M.CRITERIA_BLOCK))
+ok('lensPrompt has lens text',       M.lensPrompt('substance', E, F).includes(M.LENSES.substance))
+ok('lensPrompt has CRITERIA_BLOCK',  M.lensPrompt('substance', E, F).includes(M.CRITERIA_BLOCK))
 ok('seedPrompt has CRITERIA_BLOCK',  M.seedPrompt(E, F).includes(M.CRITERIA_BLOCK))
 
 // ── (b) a MARKED config flows through every surface ────────────────────────────────────────
@@ -197,6 +197,16 @@ ok('opted-in profile flags vocab + phrase patterns (soft)',
   pf2.soft.includes('banned:delve') && pf2.soft.includes('announced thesis') && pf2.soft.includes('uplift closer'))
 ok('a malformed profile softPattern is skipped, never fatal',
   (() => { try { return M.preflight('x', { ...M.EVALUATOR, bans: { softPatterns: [{ label: 'bad', re: '(' }] } }).soft.length === 0 } catch { return false } })())
+
+// ── domain-general default judge (de-prose): no prose-specific lenses/categories baked in ──────
+console.log('default judge is domain-general (not prose-shaped):')
+const lensNames = Object.keys(M.LENSES)
+ok('default lenses are the general axes', ['substance', 'fit', 'craft', 'integrity'].every(l => lensNames.includes(l)))
+ok('default lenses drop prose-specific voice/taste', !lensNames.includes('voice') && !lensNames.includes('taste'))
+ok('default DQ categories use general FABRICATION', M.HARD_DQ_CATEGORIES.includes('FABRICATION'))
+ok('default DQ categories drop prose subtypes', !M.HARD_DQ_CATEGORIES.includes('FALSE_AUTHORIAL_EXPERIENCE') && !M.HARD_DQ_CATEGORIES.includes('FAKE_AUTHORITY_SIGNAL'))
+ok('default panel seats only defined general lenses', ['R32', 'QF', 'FINAL'].every(s => M.EVALUATOR.panelFor(s).every(l => M.LENSES[l])))
+ok('no prose-only words in the default lens descriptions', !/\b(essay|nonfiction|author|prose)\b/i.test(Object.values(M.LENSES).join(' ')))
 
 console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${pass} passed, ${fail} failed`)
 process.exit(fail === 0 ? 0 : 1)
