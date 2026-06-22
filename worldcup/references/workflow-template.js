@@ -26,6 +26,7 @@ const SCREENERS = 3            // fabrication-gate judges per entry: 1 = MVP, 3 
 const BANS = {                 // FILL: deterministic preflight bans (cheap, run before any agent). EMPTY by
   emDash: false,               // default — these are HOUSE-STYLE rules, not universal quality. Fill them from
   vocab: [],                   // the user's voice profile, e.g. { emDash:true, vocab:['delve','tapestry',...] }.
+  softPatterns: [],            // profile phrase flags: [{ label, re:'alt|alt2', tail?:N }] — e.g. announced thesis / uplift closer.
 }                              // See references/profiles/ for an example. Style tics belong in lenses, not the gate.
 const LETTERS = 'ABCDEFGHIJKL'.split('')
 
@@ -403,8 +404,13 @@ function preflight(text, ev = EVALUATOR) {
   const hard = [], soft = []
   if (bans.emDash && text.includes('—')) hard.push('em dash')
   for (const w of (bans.vocab || [])) if (new RegExp(`\\b${w}\\b`, 'i').test(text)) soft.push(`banned:${w}`)
-  if (/\b(this essay|in this piece|what i want to explore)\b/i.test(text)) soft.push('announced thesis')
-  if (/\b(ultimately|in the end|at the end of the day|what it means to be)\b/i.test(text.slice(-600))) soft.push('uplift closer')
+  // House-style PHRASE flags are PROFILE-driven (default none) — NOT baked into the engine, so the
+  // engine stays taste-neutral. Each entry: { label, re: 'alt|alt2' (word-bounded, case-insensitive),
+  // tail?: N } — tail tests only the last N chars (e.g. an "uplift closer" lives in the ending).
+  for (const p of (bans.softPatterns || [])) {
+    try { if (p && p.re && new RegExp(`\\b(${p.re})\\b`, 'i').test(p.tail ? text.slice(-p.tail) : text)) soft.push(p.label || 'house-style') }
+    catch { /* a malformed profile pattern is skipped, never crashes a run */ }
+  }
   return { hardDQ: hard.length > 0, hard, soft }
 }
 // Fabrication gate: preflight, then SCREENERS independent judges; DQ needs majority.

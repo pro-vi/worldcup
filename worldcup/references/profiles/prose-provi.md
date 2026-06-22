@@ -23,9 +23,12 @@ const BANS = {
   emDash: true,   // this author auto-DQs the em dash. NOTE: a hard kill on punctuation is a strong
                   // choice — most writers would make this a lens penalty, not a gate kill.
   vocab: ['delve', 'harness', 'unlock', 'realm', 'seamless', 'ultimately', 'furthermore', 'profound', 'tapestry', 'testament'],
+  softPatterns: [ // phrase flags this author wants — the engine defaults these to [] (taste-neutral)
+    { label: 'announced thesis', re: 'this essay|in this piece|what i want to explore' },
+    { label: 'uplift closer',    re: 'ultimately|in the end|at the end of the day|what it means to be', tail: 600 },
+  ],
 }
 ```
-- Plus, stated in the criteria prose: an **announced thesis** and a **swelling uplift closer**.
 
 > **Caveat on the vocab list (read before copying):** this is an *AI-tell-avoidance* heuristic, not a
 > quality rule — "ultimately"/"furthermore" are normal English, flagged only because they're common in

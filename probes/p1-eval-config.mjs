@@ -175,5 +175,28 @@ ok('default screeners == SCREENERS calls', captured.length === M.SCREENERS)
 ok('default gate uses module FLAW_SCHEMA',  captured[0].opts.schema === M.EVALUATOR.schemas.flaw)
 ok('default gate inherits model (no override)', captured[0].opts.model === undefined)
 
+// ── neutrality regression (PR #10 de-personalize): the ENGINE bakes in NO taste ───────────────
+// Default BANS is empty and preflight flags NOTHING on a text full of one author's house-style tics
+// (em dash, "ultimately", "this essay"). A future re-added default ban must fail here — and this pins
+// that the announced-thesis / uplift-closer heuristics are now PROFILE-driven, not hardcoded in preflight.
+console.log('engine is taste-neutral by default:')
+ok('default BANS.emDash is false',        M.BANS.emDash === false)
+ok('default BANS.vocab is empty',         Array.isArray(M.BANS.vocab) && M.BANS.vocab.length === 0)
+ok('default BANS.softPatterns is empty',  Array.isArray(M.BANS.softPatterns) && M.BANS.softPatterns.length === 0)
+const tics = 'In this essay I will show that — ultimately — what it means to be free.'
+const pf = M.preflight(tics)   // default EVALUATOR, neutral BANS
+ok('default preflight raises NO hard flag (em dash not baked in)', pf.hardDQ === false && pf.hard.length === 0)
+ok('default preflight raises NO soft flag (no vocab/announced-thesis/uplift baked in)', pf.soft.length === 0)
+// a PROFILE that opts in DOES flag — the heuristics are config-driven, not deleted
+const profileEv = { ...M.EVALUATOR, bans: { emDash: true, vocab: ['delve'], softPatterns: [
+  { label: 'announced thesis', re: 'this essay|in this piece' },
+  { label: 'uplift closer', re: 'ultimately|what it means to be', tail: 600 }] } }
+const pf2 = M.preflight('We delve in. ' + tics, profileEv)
+ok('opted-in profile flags em dash (hard)', pf2.hard.includes('em dash'))
+ok('opted-in profile flags vocab + phrase patterns (soft)',
+  pf2.soft.includes('banned:delve') && pf2.soft.includes('announced thesis') && pf2.soft.includes('uplift closer'))
+ok('a malformed profile softPattern is skipped, never fatal',
+  (() => { try { return M.preflight('x', { ...M.EVALUATOR, bans: { softPatterns: [{ label: 'bad', re: '(' }] } }).soft.length === 0 } catch { return false } })())
+
 console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${pass} passed, ${fail} failed`)
 process.exit(fail === 0 ? 0 : 1)
