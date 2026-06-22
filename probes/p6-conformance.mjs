@@ -122,7 +122,8 @@ ok('a family that scored ≥1 anchor is NOT flagged unscored', !rMixed.unscored_
 
 // ── (f) DIR/INV deferred to fresh probes, never silently passed ───────────────────────────────
 console.log('directional anchors deferred (not silently passed):')
-ok('deferred_to_probes counts the DIR/INV anchors', rPass.deferred_to_probes === corpus.filter(c => c.test_type !== 'MFT').length && rPass.deferred_to_probes > 0)
+ok('directional_not_scored honestly counts the DIR/INV anchors (a gap, not coverage)', rPass.directional_not_scored === corpus.filter(c => c.test_type !== 'MFT').length && rPass.directional_not_scored > 0)
+ok('no field claims directional anchors are scored by U23', !('deferred_to_probes' in rPass))
 ok('total counts only scored gate anchors', rPass.total === corpus.filter(c => c.kind === 'truth' && c.test_type === 'MFT').length)
 
 // ── (g) adoptEvaluator: validate THEN reassign (no half-adopt) ────────────────────────────────

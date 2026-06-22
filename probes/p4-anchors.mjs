@@ -103,6 +103,24 @@ ok('cannot mark a packet-supported span FORBIDDEN', throws(() => M.authorityFor(
 ok('an entity span minted AUTHORIZED only when SUPPORTED', M.authorityFor('Parser.ts', packet, 'authorized').authority_status === M.AUTHORITY.AUTHORIZED)
 ok('a fact span minted ASSERTED_TRUE only when SUPPORTED', M.authorityFor('three days', packet, 'authorized').authority_status === M.AUTHORITY.ASSERTED_TRUE)
 
+// finding 9 — family suffix agrees with the RESOLVED authority (an allowed-entity that is ALSO a fact
+// token-run resolves ASSERTED_TRUE, and must be filed with the fact family, not split across partitions)
+console.log('family label agrees with resolved authority (#9):')
+ok('every authorized truth MFT family suffix matches its authority_status',
+  cards.filter(c => c.kind === 'truth' && c.test_type === 'MFT' && (c.authority_status === M.AUTHORITY.ASSERTED_TRUE || c.authority_status === M.AUTHORITY.AUTHORIZED))
+    .every(c => c.family === `truth/integrity/MFT-${c.authority_status === M.AUTHORITY.ASSERTED_TRUE ? 'fact' : 'entity'}`))
+const dualPacket = { supported_facts: ['we shipped App.ts on tuesday'], allowed_entities: { files: ['App.ts'] }, not_allowed: M.DEFAULT_NOT_ALLOWED, target: null }
+const appCard = M.buildAnchors({ incumbent, packet: dualPacket, packetId: 'deadbeefdeadbeef' }).find(c => c.mutation && c.mutation.span === 'App.ts')
+ok('an entity that is also a fact token-run resolves ASSERTED_TRUE → fact family',
+  appCard && appCard.authority_status === M.AUTHORITY.ASSERTED_TRUE && appCard.family === 'truth/integrity/MFT-fact')
+
+// finding 7 — a planted fab span that COLLIDES with the live packet is skipped, not thrown (no bricking)
+console.log('fab-span collision is skipped, not fatal (#7):')
+let collideCards
+ok('a fab-span collision does not throw', !throws(() => { collideCards = M.buildAnchors({ incumbent, packet: { supported_facts: ['we made commit 9f3a2b1 yesterday'], allowed_entities: {}, not_allowed: M.DEFAULT_NOT_ALLOWED, target: null } }) }))
+ok('the colliding span is NOT emitted as a FORBIDDEN anchor', !collideCards.some(c => c.mutation && c.mutation.span === 'commit 9f3a2b1'))
+ok('other fab spans still produce FORBIDDEN anchors', collideCards.some(c => c.authority_status === M.AUTHORITY.FORBIDDEN))
+
 // ── (c) mandatory directional coverage ──────────────────────────────────────────────────────────
 console.log('DIR coverage (every construct + the 5 mandatory controls):')
 const dir = cards.filter(c => c.test_type === 'DIR')

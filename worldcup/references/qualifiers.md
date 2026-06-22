@@ -144,17 +144,20 @@ unlike banks they are not content-addressed.
 - `probes/p3-anchorbank.mjs` (52): bank reproducibility, packet/item change bumps version, held-out-by-
   family disjointness, partition stability, tamper-evidence (edited items / forged version / checksum /
   manifest / unknown schema all throw on read).
-- `probes/p4-anchors.mjs` (53): `buildAnchors` is deterministic + zero `agent()`; the authority/proof
+- `probes/p4-anchors.mjs` (58): `buildAnchors` is deterministic + zero `agent()`; the authority/proof
   consistency invariant with **executed anti-laundering counterexamples**; DIR coverage + the 5 controls;
-  disaggregated taste votes; no answer-key leak; cards compose a verifiable held-out bank.
-- `probes/p5-qualify.mjs` (30): `persistAnchors`/`loadCorpusForRun`/`anchorBankArg`/`writeCard` round-trip
-  on real fs; executed counterexamples (stale packet, path-traversal `run_id`, tampered bank).
-- `probes/p6-conformance.mjs` (27): exact pass/fail; blind gate ⇒ `BLOCKED`, over-eager ⇒ `BLOCKED`; **no
-  Wilson/recall/CI** anywhere; ABSTAIN; DIR/INV deferred not silently passed; `adoptEvaluator` validates-then-reassigns.
-- `probes/p7-ecological.mjs` (20): probe-type coverage; run-scoped + **anchorbank refuses to ingest a
-  probe**; drift surfaced under a drifty judge; A/B reversal swaps arguments (catches position bias).
-- `probes/p8-assurance.mjs` (35): the 4-state machine (BLOCKED dominates; across-band-only UNSTABLE;
-  reseed envelope-only; alt-model `not_run`; HUMAN_REVIEW); no certified/accuracy/recall language; card writes back.
+  family label agrees with resolved authority; a fab-span collision is skipped not fatal; cards compose a bank.
+- `probes/p5-qualify.mjs` (35): `persistAnchors`/`loadCorpusForRun`/`anchorBankArg`/`writeCard` round-trip
+  on real fs; counterexamples (stale packet, path-traversal `run_id`, tampered bank); **the mandatory floor
+  is scored every run regardless of partition** (the held-out machinery is not applied to spec tests).
+- `probes/p6-conformance.mjs` (33): exact pass/fail; blind ⇒ `BLOCKED`, over-eager ⇒ `BLOCKED`; **no
+  Wilson/recall/CI**; ABSTAIN; **floor-coverage signal** (must-DQ + must-PASS scored); directional anchors
+  counted as an honest *gap* (not scored yet, not "deferred to U23"); `adoptEvaluator` validates-then-reassigns.
+- `probes/p7-ecological.mjs` (22): probe-type coverage; run-scoped + **anchorbank refuses to ingest a
+  probe**; drift under a drifty judge; A/B reversal swaps arguments; dir/inv generation requires both a+b.
+- `probes/p8-assurance.mjs` (61): the **fail-closed allowlist** `decide()` — every evidence channel gates
+  (verdict=PASS allowlist, floor scored, probe drift, author veto, recognized band); BLOCKED dominates;
+  across-band-only UNSTABLE; reseed envelope-only; no certified/accuracy/recall language; card writes back.
 - `probes/p1-eval-config.mjs` (73): the byte-identity guard — `QUALIFY` off ⇒ the default evaluator and
   every judge surface are unchanged.
 

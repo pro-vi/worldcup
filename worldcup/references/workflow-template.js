@@ -637,11 +637,19 @@ function buildAnchors({ incumbent = INCUMBENT, packet = SOURCE_PACKET, packetId 
     for (const [bucket, vals] of Object.entries(ents))
       if (Array.isArray(vals)) for (const v of vals) {
         const a = authorityFor(v, packet, 'authorized')
-        card({ construct: 'integrity', test_type: 'MFT', kind: 'truth', ...a, mutation: { span: v, operator: 'use_supported', bucket }, expected: { gate: 'PASS', taste_comparison: null }, family: 'truth/integrity/MFT-entity' })
+        // Family is keyed on the RESOLVED authority, not the source bucket: ledgerLookup is fact-first, so
+        // an allowed-entity that also appears in a supported_fact resolves ASSERTED_TRUE → file it with the
+        // fact family (matching the supported_facts branch), or one logical family splits across partitions.
+        card({ construct: 'integrity', test_type: 'MFT', kind: 'truth', ...a, mutation: { span: v, operator: 'use_supported', bucket }, expected: { gate: 'PASS', taste_comparison: null }, family: `truth/integrity/MFT-${a.authority_status === AUTHORITY.ASSERTED_TRUE ? 'fact' : 'entity'}` })
       }
   // (2) TRUTH MFT — planted load-bearing fabrications (gate must DQ): FORBIDDEN, proof is the UNSUPPORTED result.
-  for (const span of FAB_SPANS)
+  for (const span of FAB_SPANS) {
+    // A planted fabrication that COLLIDES with the live packet (a supported_fact happens to contain the
+    // span) is not UNSUPPORTED — SKIP it rather than throwing and bricking the whole opt-in corpus build.
+    // (The floor-coverage guard backstops the pathological all-collide case → HUMAN_REVIEW, never a false pass.)
+    if (ledgerLookup(span, packet).status !== 'UNSUPPORTED') continue
     card({ construct: 'integrity', test_type: 'MFT', kind: 'truth', ...authorityFor(span, packet, 'forbidden'), mutation: { span, operator: 'plant_lived_fact' }, expected: { gate: 'DQ', taste_comparison: null }, difficulty: 'easy', family: 'truth/integrity/MFT-fabrication' })
+  }
   // (3) TRUTH MFT — UNKNOWN, hedged & non-load-bearing (gate must NOT DQ): the false-accusation guard.
   for (const span of HEDGED_ABSENT_SPANS)
     card({ construct: 'integrity', test_type: 'MFT', kind: 'truth', ...authorityFor(span, packet, 'unknown'), mutation: { span, operator: 'hedge_absent' }, expected: { gate: 'PASS', taste_comparison: null }, known_confounds: ['absent ≠ false'], family: 'truth/integrity/MFT-unknown' })
@@ -682,7 +690,7 @@ const isGateAnchor = a => a && a.kind === 'truth' && a.expected && (a.expected.g
 async function qualifyConformance(corpus, { ev = EVALUATOR, incumbent = INCUMBENT, phase = 'qualify' } = {}) {
   const items = Array.isArray(corpus) ? corpus : (corpus && corpus.items) || []
   const gate = items.filter(isGateAnchor)
-  const deferred = items.filter(a => a && !isGateAnchor(a))   // DIR/INV directional — scored by U23 fresh probes
+  const deferred = items.filter(a => a && !isGateAnchor(a))   // DIR/INV directional — NOT scored yet (counted, honestly, as a gap)
   // Realize every scorable gate anchor; the unrealizable ones ABSTAIN (escalate), excluded from pass/total.
   const realized = gate.map((a, i) => ({ a, md: realizeGate(a, incumbent), id: `gate${i}`, label: `gate${i}` }))
   const abstained = realized.filter(r => r.md == null).map(r => r.a.family)
@@ -712,9 +720,12 @@ async function qualifyConformance(corpus, { ev = EVALUATOR, incumbent = INCUMBEN
   const floor = { scored_must_dq: scoredDQ, scored_must_pass: scoredPASS,
     untested: scoredDQ === 0 ? 'no_scored_must_dq' : (scoredPASS === 0 ? 'no_scored_must_pass' : null) }
   const verdict = mandatoryFailed.size ? 'BLOCKED' : 'PASS'   // noncompensatory: any mandatory gate failure dominates
+  // NOTE: directional DIR/INV anchors are NOT scored anywhere yet — U23 generates its own fixed probe set
+  // and does not consume these corpus anchors. `directional_not_scored` is an honest COUNT of that gap, not
+  // a coverage claim (do not read it as "scored by U23"). Wiring them into judgeProbes is a follow-up.
   return { verdict, passed, total: scored.length, failed_families: [...failedFamilies],
     mandatory_failed: [...mandatoryFailed], abstained, unscored_families, floor,
-    deferred_to_probes: deferred.length, by_construct: byConstruct }
+    directional_not_scored: deferred.length, by_construct: byConstruct }
 }
 // Adopt a (default or qualified) config as THE module evaluator — every judge surface reads the module
 // `let EVALUATOR`, so this is what makes "the config we qualified is the config the tournament runs" true.
@@ -742,8 +753,10 @@ const PROBE_TYPES = [
   { type: 'harmless_format',     kind: 'inv',  construct: 'overall',   expected: { invariant: true } }, // a harmless length/format change must not move the verdict
   { type: 'judge_bait',          kind: 'dir',  construct: 'taste',     expected: { winner: 'a' } },      // honest beats an obvious gaming attempt (smoke test, not the audit)
 ]
-const PROBE_GEN_SCHEMA = { type: 'object', additionalProperties: false, required: ['a'],
-  properties: { a: { type: 'string' }, b: { type: 'string' } } }
+// gate probes need only `a` (the passage to screen); dir/inv probes are A/B pairs and MUST carry both —
+// an empty `b` would make judgeProbes compare against an empty entry, so it can't be optional for them.
+const PROBE_GEN_SCHEMA = { type: 'object', additionalProperties: false, required: ['a'], properties: { a: { type: 'string' } } }
+const PROBE_PAIR_SCHEMA = { type: 'object', additionalProperties: false, required: ['a', 'b'], properties: { a: { type: 'string' }, b: { type: 'string' } } }
 const probeGenPrompt = (t, ctx, ev) => `Generate ONE fresh probe of type "${t.type}" in the LIVE regime, against this rubric. ${t.kind === 'gate' ? 'Return only "a": a passage that exhibits the failure to test.' : 'Return "a" (the entry that SHOULD prevail / be invariant) and "b" (its counterpart).'}
 
 CRITERIA:
@@ -755,7 +768,7 @@ ${ctx.incumbent}
 ---
 Return JSON { a${t.kind === 'gate' ? '' : ', b'} }.`
 const defaultProbeGenerate = (ev, phase) => async (t, ctx) => {
-  const r = await agent(probeGenPrompt(t, ctx, ev), { ...ev.agentOptions, label: `gen:${t.type}`, phase, schema: PROBE_GEN_SCHEMA })
+  const r = await agent(probeGenPrompt(t, ctx, ev), { ...ev.agentOptions, label: `gen:${t.type}`, phase, schema: t.kind === 'gate' ? PROBE_GEN_SCHEMA : PROBE_PAIR_SCHEMA })
   return { a: (r && r.a) || '', b: (r && r.b) || '' }
 }
 // Build the fresh probe set (content generated live; never persisted). `generate` is injectable for tests.

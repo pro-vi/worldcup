@@ -79,6 +79,14 @@ ctl.judge = async (prompt, opts) => (opts && opts.label && opts.label.startsWith
 await M.buildProbes({ incumbent, packet })
 ok('default generator issued gen: agent calls', captured.some(c => c.opts && c.opts.label && c.opts.label.startsWith('gen:')))
 ok('one generation call per probe type', captured.filter(c => c.opts && c.opts.label && c.opts.label.startsWith('gen:')).length === M.PROBE_TYPES.length)
+// finding 8 — dir/inv probes are A/B pairs: their generation schema MUST require both a AND b (an empty b
+// would make judgeProbes compare against an empty entry). gate probes need only a.
+const genCalls = captured.filter(c => c.opts && c.opts.label && String(c.opts.label).startsWith('gen:'))
+const reqOf = c => (c.opts.schema && c.opts.schema.required) || []
+const typeOf = c => String(c.opts.label).slice('gen:'.length)
+const kindOf = t => (M.PROBE_TYPES.find(pt => pt.type === t) || {}).kind
+ok('gate-probe generation requires only "a"', genCalls.filter(c => kindOf(typeOf(c)) === 'gate').every(c => reqOf(c).includes('a') && !reqOf(c).includes('b')))
+ok('dir/inv-probe generation requires BOTH "a" and "b"', genCalls.filter(c => kindOf(typeOf(c)) !== 'gate').every(c => reqOf(c).includes('a') && reqOf(c).includes('b')))
 
 // judges: flaw calls are labeled flaw*; lens calls carry two entries. Split the lens prompt at ENTRY Y.
 const xpart = prompt => prompt.slice(0, prompt.indexOf('ENTRY Y:'))
