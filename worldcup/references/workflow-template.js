@@ -68,14 +68,10 @@ const DESIGN = {
 const TARGET_RAW = ''  // FILL for critique/response runs only; '' otherwise (see note above)
 const TARGET = TARGET_RAW.trim()  // whitespace-only is NOT a target — activation requires a real anchor, not just a truthy string
 
-// ─────────────────────────── (U20/P2) STRUCTURED SOURCE PACKET + the mechanical fact-ledger proof
-// PLAN_3 U20: the fact ledger today is PROSE inside CRITERIA_BASE — checking a planted specific
-// against prose is itself prompt-parsing, not a proof. This makes the ledger a STRUCTURED object,
-// the SINGLE SOURCE OF TRUTH: the prose the judges read is RENDERED from it (renderLedger), and
-// ledgerLookup(span) is a real set-membership/substring check returning SUPPORTED|UNSUPPORTED with
-// provenance and NO LLM call — the mechanical proof U11's truth anchors stand on. The DEFAULT packet
-// is the unfilled template, so its render reproduces today's CRITERIA_BASE byte-for-byte (the
-// qualifier is opt-in; nothing changes until an operator fills the packet or U12 certifies one).
+// ─────────────────────────── (U20/P2) STRUCTURED SOURCE PACKET — the single source of truth for the rubric
+// The fact ledger is a STRUCTURED object, not just prose: the prose the judges read is RENDERED from it
+// (renderLedger), so the ledger has one authoritative form. The DEFAULT packet is the unfilled template, so
+// its render reproduces today's CRITERIA_BASE byte-for-byte — a no-packet run is byte-for-byte unchanged.
 const DEFAULT_NOT_ALLOWED = ['invented line numbers', 'class/file names', 'stack traces',
   'error messages', 'dates', 'names', 'places', 'quotes', 'scenes']
 // The exact hand-authored ledger block for the UNFILLED template packet — the byte-identity anchor.
@@ -88,9 +84,8 @@ const FILL_LEDGER_PROSE =
   presented as lived fact. Manufactured specificity is a flaw, not a strength.`
 // The structured fact ledger. supported_facts = concrete things that ARE true (variants may use
 // them); allowed_entities = the named specifics permitted, bucketed by kind; not_allowed = entity
-// classes barred unless they trace to the ledger; target = the structured twin of TARGET, a forward-
-// declaration for U11/U12 target-truth — NOT consumed by U20 (ledgerLookup checks author-truth only;
-// target-truth stays the prose MISREPRESENTS_TARGET gate). Default = the unfilled template (FILL).
+// classes barred unless they trace to the ledger; target = the structured twin of TARGET (target-truth
+// stays the prose MISREPRESENTS_TARGET gate). Default = the unfilled template (FILL).
 const SOURCE_PACKET = {
   supported_facts: [],                                                            // strings: true, supported facts
   allowed_entities: { dates: [], names: [], files: [], quotes: [], places: [] }, // permitted specifics, by kind
@@ -102,8 +97,8 @@ const packetUnfilled = p => !((p && p.supported_facts) || []).length &&
   Object.values((p && p.allowed_entities) || {}).every(v => !(v || []).length)
 // Render the prose fact-ledger lines FROM the structured packet (one source of truth). The unfilled
 // default reproduces FILL_LEDGER_PROSE byte-for-byte; a populated packet lists each fact + allowed
-// entity ON ITS OWN LINE so the prose the judges read can never be re-parsed differently from what
-// ledgerLookup checks. Guards are defensive: a raw (un-validated) packet must not throw here.
+// entity ON ITS OWN LINE so the prose the judges read stays unambiguous. Guards are defensive: a raw
+// (un-validated) packet must not throw here.
 const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i])
 const renderLedger = (packet = SOURCE_PACKET) => {
   const p = packet || {}
@@ -112,7 +107,7 @@ const renderLedger = (packet = SOURCE_PACKET) => {
   // would tell judges to enforce bans the structured packet doesn't carry (single-source-of-truth leak).
   const na = Array.isArray(p.not_allowed) ? p.not_allowed : DEFAULT_NOT_ALLOWED
   // The unfilled default renders today's prose byte-for-byte. Compare not_allowed BY VALUE (not
-  // reference) so a JSON-roundtripped / U12-rebuilt default still reproduces it (no silent drift).
+  // reference) so a JSON-roundtripped default still reproduces it (no silent drift).
   if (packetUnfilled(p) && sameList(na, DEFAULT_NOT_ALLOWED)) return FILL_LEDGER_PROSE
   const lines = []
   for (const f of (Array.isArray(p.supported_facts) ? p.supported_facts : [])) lines.push(`  - ${f}`)
@@ -125,51 +120,6 @@ const renderLedger = (packet = SOURCE_PACKET) => {
   return `- FACT LEDGER (what is actually true; everything concrete must trace here):
 ${body}
 - NOT ALLOWED unless in the ledger: ${banned} concrete detail presented as lived fact. Manufactured specificity is a flaw, not a strength.`
-}
-// Mechanical fact-ledger lookup — NO LLM CALL. A span is SUPPORTED iff it traces to the structured
-// packet, matched WHOLE-TOKEN (punctuation stays in-token, so a compound value is atomic and its
-// fragments are NOT forgeable):
-//   • a supported_fact contains the span as a contiguous run of whitespace tokens
-//     ('three days' ⊂ 'took three days'; '417' ⊄ 'ran 4170 iterations'; 'test.ts' ⊄ 'config.test.ts'), OR
-//   • an allowed_entities member EQUALS the span as a whole value ('Parser.ts' matches 'Parser.ts',
-//     but 'Parser', '15' from '2024-03-15', 'users' from '/api/v2/users' do NOT).
-// Else UNSUPPORTED. Provenance names the source on a hit. NOTE: not_allowed is ADVISORY prose for the
-// judges; support is fact/entity membership only — ledgerLookup never consults not_allowed or the
-// target twin (target-truth stays the MISREPRESENTS_TARGET gate). This is the deterministic proof
-// U11 stands on, so it errs UNSUPPORTED: a fragment of a compound value never excuses a fabrication.
-const normLedger = s => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim()
-const hasAlnum = s => /[\p{L}\p{N}]/u.test(s)   // Unicode-aware: an all-punctuation span (',', '...') is never support
-const toksLedger = s => s.split(' ').filter(Boolean)
-// needle's tokens appear as an unbroken run in hay's tokens, matched whole-token (exact equality).
-const tokenRun = (hay, needle) => {
-  if (!needle.length) return false
-  for (let i = 0; i + needle.length <= hay.length; i++) {
-    let m = true
-    for (let j = 0; j < needle.length; j++) if (hay[i + j] !== needle[j]) { m = false; break }
-    if (m) return true
-  }
-  return false
-}
-const ledgerLookup = (span, packet) => {
-  // Resolve the packet at CALL time: an explicit arg wins; else the ACTIVE evaluator's packet; else an
-  // EMPTY packet — never the module template. Once U12 reassigns EVALUATOR, lookup follows the same
-  // packet the prompts render from. If the active evaluator is a prose-only config (no sourcePacket,
-  // which validation allows), nothing is mechanically supported (errs UNSUPPORTED) rather than leaking
-  // facts from a stale/filled module SOURCE_PACKET the active judges never see.
-  const p = packet || (EVALUATOR && EVALUATOR.sourcePacket) || {}
-  const needle = normLedger(span)
-  if (!needle || !hasAlnum(needle)) return { status: 'UNSUPPORTED', provenance: null }
-  const nToks = toksLedger(needle)
-  for (const fact of (Array.isArray(p.supported_facts) ? p.supported_facts : []))
-    if (typeof fact === 'string' && tokenRun(toksLedger(normLedger(fact)), nToks))
-      return { status: 'SUPPORTED', provenance: { kind: 'fact', value: fact } }
-  const ents = p.allowed_entities
-  if (ents && typeof ents === 'object' && !Array.isArray(ents))
-    for (const [bucket, vals] of Object.entries(ents))
-      if (Array.isArray(vals)) for (const v of vals)
-        if (typeof v === 'string' && normLedger(v) === needle)
-          return { status: 'SUPPORTED', provenance: { kind: bucket, value: v } }
-  return { status: 'UNSUPPORTED', provenance: null }
 }
 
 const CRITERIA_BASE = `FILL: the source packet — rubric, fact ledger, disqualifiers.
@@ -233,7 +183,7 @@ const GEN_SCHEMA = { type: 'object', additionalProperties: false,
   properties: { title: { type: 'string' }, oneLineAngle: { type: 'string' }, markdown: { type: 'string' } } }
 // The flaw schema's category enum MUST track the hard-DQ vocabulary, or the gate prompts/tallies for
 // one category set while the schema permits another. Derive it from a category list (not a captured
-// constant) so a certified EVALUATOR with a custom hardDqCategories gets a matching schema via
+// constant) so a custom EVALUATOR with custom hardDqCategories gets a matching schema via
 // makeFlawSchema(ev.hardDqCategories) — validateEvaluatorConfig enforces they agree.
 const makeFlawSchema = categories => ({ type: 'object', additionalProperties: false,
   required: ['disqualified', 'category'],
@@ -277,15 +227,14 @@ const panelFor = stakes => {
 // ─────────────────────────────────────── EVALUATOR_CONFIG (PLAN_3 U19/P1: the judge as one object)
 // Every judge surface — the fabrication gate, the seed pre-pass, the lens panel, the panel policy,
 // the schemas, the agent model/options, the family-DQ vocabulary, and the vote aggregation — reads
-// from THIS object instead of scattered constants. The DEFAULT below references today's exact
-// constants, so a run with the default EVALUATOR is byte-identical to before this extraction (the
-// qualifier is opt-in; nothing changes until a certified config is assigned). PLAN_3 U12 produces a
-// CERTIFIED EvaluatorConfig and reassigns EVALUATOR here, so the config that was certified is
-// provably the one the tournament runs (probe: probes/p1-eval-config.mjs). Consumers default to the
-// module EVALUATOR but accept an explicit `ev` for testing and per-call overrides.
+// from THIS object instead of scattered constants — one judge config, threaded everywhere. The DEFAULT
+// below references today's exact constants, so a run with the default EVALUATOR is byte-identical to
+// before this extraction (probe: probes/p1-eval-config.mjs). An operator who supplies custom judging
+// criteria sets these fields; otherwise the rubric is auto-sourced. Consumers default to the module
+// EVALUATOR but accept an explicit `ev` for testing and per-call overrides.
 let EVALUATOR = {
   criteriaBlock:    CRITERIA_BLOCK,      // taste spec + fact ledger + disqualifiers the judges read
-  sourcePacket:     SOURCE_PACKET,       // structured fact ledger (U20/P2) — mechanical twin of the prose ledger; ledgerLookup reads it
+  sourcePacket:     SOURCE_PACKET,       // structured fact ledger (U20/P2) — the single source of truth renderLedger renders from
   incumbentClause:  INCUMBENT_CLAUSE,    // the "must beat the incumbent" clause seated in lens prompts
   targetGateClause: targetGateClause,    // the MISREPRESENTS_TARGET gate clause ('' when no TARGET)
   hardDqCategories: HARD_DQ_CATEGORIES,  // canonical hard-DQ vocabulary (gate prompt + enum + tally)
@@ -295,7 +244,7 @@ let EVALUATOR = {
   panelFor,                              // stakes -> [lens, ...]  (the per-stakes panel policy)
   tiebreakLens:     'integrity',         // the extra juror seated on an even split (was hardcoded)
   screeners:        SCREENERS,           // independent fabrication-gate judges per entry
-  bans:             BANS,                // deterministic preflight policy (em dash, banned vocab) — part of the gate, so certified too
+  bans:             BANS,                // deterministic preflight policy (em dash, banned vocab) — part of the gate, in the config too
   schemas:          { flaw: FLAW_SCHEMA, lens: LENS_SCHEMA, seed: SEED_SCHEMA },
   agentOptions:     {},                  // merged into every judge agent() call (e.g. { model }); {} = inherit. NEVER overrides label/phase/schema (spread FIRST at call sites)
   lensWeight:       () => 1,             // (lens) -> weight in the tally; ()=>1 is today's 1:1 (PLAN_3 U13 fills this in)
@@ -309,11 +258,11 @@ const lensW = (ev, lens) => { const w = ev.lensWeight(lens); return (Number.isFi
 // so the invariant lives in ONE place — every judge call site (gate, lens panel, tiebreak, seed
 // pre-pass, slot judge) routes through this and can't drift.
 const judgeOpts = (ev, schemaKey, label, phase) => ({ ...ev.agentOptions, label, phase, schema: ev.schemas[schemaKey] })
-// Integrity check for a (default or certified) config — the contract that a certified config has NO
-// hole a fabrication can slip through. PLAN_3 U12 MUST run this on every config it emits.
+// Integrity check for a judge config — the contract that a config has NO hole a fabrication can slip
+// through. Run on the default config at load; any operator-supplied config must pass it too.
 const EVAL_STAKES = ['R32', 'R16', 'QF', 'SF', 'FINAL']
 function validateEvaluatorConfig(ev) {
-  // (0) PRESENCE/SHAPE: every runtime-required field must be present and the right type, or a certified
+  // (0) PRESENCE/SHAPE: every runtime-required field must be present and the right type, or a custom
   // config that OMITS one passes here and explodes later (playMatch -> ev.schemas.lens / ev.lensWeight,
   // the seed pre-pass -> ev.schemas.seed). Reject incomplete configs up front.
   for (const k of ['criteriaBlock', 'incumbentClause', 'targetGateClause', 'preflightHardDqCategory', 'tiebreakLens'])
@@ -367,10 +316,9 @@ function validateEvaluatorConfig(ev) {
     for (const ln of panel) if (!ev.lenses[ln]) throw new Error(`EVALUATOR.panelFor("${st}") seats undefined lens "${ln}".`)
   }
   // (f) sourcePacket (U20/P2) is OPTIONAL — a config can carry only a prose criteriaBlock — but if
-  // present it must be the structured shape ledgerLookup reads AND the single source of truth the
-  // judges read. Without these, the mechanical proof silently degrades (a non-array bucket throws in
-  // renderLedger; a non-string member renders 'null'/'[object Object]' and inverts support) or, worse,
-  // jurors read one ledger while lookup checks another.
+  // present it must be the structured shape renderLedger reads AND the single source of truth the judges
+  // read. Without these the render degrades (a non-array bucket throws in renderLedger; a non-string
+  // member renders 'null'/'[object Object]') or, worse, jurors read prose that doesn't match the packet.
   if (ev.sourcePacket !== undefined) {
     const p = ev.sourcePacket
     if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error('EVALUATOR.sourcePacket must be a plain object when present.')
@@ -378,8 +326,7 @@ function validateEvaluatorConfig(ev) {
     if (!Array.isArray(p.not_allowed)) throw new Error('EVALUATOR.sourcePacket.not_allowed must be an array.')
     if (!p.allowed_entities || typeof p.allowed_entities !== 'object' || Array.isArray(p.allowed_entities))
       throw new Error('EVALUATOR.sourcePacket.allowed_entities must be a plain object (not an array — Object.entries on an array yields numeric "bucket" keys).')
-    // Every member must be a non-empty string, or render emits null/[object Object] and the mechanical
-    // lookup inverts (a real entity becomes un-provable; a phantom '[object Object]' becomes SUPPORTED).
+    // Every member must be a non-empty string, or render emits null/[object Object] in the prose the jurors read.
     const str = (where, x) => { if (typeof x !== 'string' || !x.trim()) throw new Error(`EVALUATOR.sourcePacket.${where} must be non-empty strings.`) }
     for (const f of p.supported_facts) str('supported_facts[]', f)
     for (const n of p.not_allowed) str('not_allowed[]', n)
@@ -388,8 +335,7 @@ function validateEvaluatorConfig(ev) {
       for (const v of vals) str(`allowed_entities.${k}[]`, v)
     }
     // Single source of truth: the prose jurors read MUST contain the ledger rendered from THIS packet,
-    // or a certified config can have judges reading stale prose while ledgerLookup checks a fact they
-    // never see (support inverted across the two channels).
+    // or a config can have judges reading stale prose that no longer matches the structured packet.
     if (typeof ev.criteriaBlock === 'string' && !ev.criteriaBlock.includes(renderLedger(p)))
       throw new Error('EVALUATOR.criteriaBlock must contain renderLedger(sourcePacket) — the prose jurors read and the mechanical ledger must be the same source (single source of truth).')
   }
@@ -450,8 +396,8 @@ Return JSON { winner:"X"|"Y", confidence }.`
 
 // ─────────────────────────────────────────────────────── JUDGE PIPELINE
 // Deterministic preflight: cheap regex gate, runs before any agent. Reads the ban policy from the
-// config (ev.bans), so the deterministic half of the gate is certified alongside the LLM half — not
-// an uncertified global side-channel. Default ev = EVALUATOR (whose bans default to the module BANS).
+// config (ev.bans), so the deterministic half of the gate lives in the config alongside the LLM half —
+// not an out-of-band global side-channel. Default ev = EVALUATOR (whose bans default to the module BANS).
 function preflight(text, ev = EVALUATOR) {
   const bans = ev.bans || {}
   const hard = [], soft = []
@@ -555,379 +501,6 @@ function marginOf(votes, w, ev = EVALUATOR) {
 function record(winner, loser, margin, reason, decided) {
   decided.push({ winnerId: winner.id, loserId: loser.id })
   return { winner, loser, margin, reason }
-}
-
-// ════════════════════════════════ (PLAN_3 U11a/U12/U23/U24) QUALIFY — opt-in run assurance ════════
-// OFF by default ⇒ the tournament path NEVER calls any of these and EVALUATOR is byte-identical to
-// before this block (probes/p1 73/73 is the guard). When on, the run additionally: builds a falsifier
-// CONFORMANCE CORPUS (U11a), runs exact pass/fail conformance against a held-out partition (U12),
-// builds FRESH ECOLOGICAL PROBES in the live regime (U23), and emits a 4-state run-status ASSURANCE
-// CARD (U24). NONE of this asserts a portable "certified judge" — it qualifies THIS run within a stated
-// operating envelope. See docs/plans/qualifiers-run-assurance.md (Architecture Decision: falsifier-not-
-// verifier, spec-tests-not-statistical-samples, authorization-not-truth — there is no Wilson/CI math here).
-const QUALIFY = false
-
-// ── U11a — conformance-corpus generation (the FALSIFIER, not a statistical sample) ─────────────────
-// DETERMINISTIC, ZERO agent() calls: a card is a mutation SPECIFICATION + expected outcome + provenance
-// (the card shape carries no realized text — realization into prose is downstream/stochastic in U23/U12).
-// The load-bearing property is ANTI-LAUNDERING: authority_status is DERIVED from the mechanical
-// ledgerLookup, never asserted by a caller over a contradicting span — you cannot mint a SUPPORTED-backed
-// status (ASSERTED_TRUE/AUTHORIZED) for a span the packet does not authorize, nor a FORBIDDEN status for
-// one it does. UNKNOWN/EXTERNALLY_VERIFIED are DECLARATIVE (proof:null): "absent ≠ false", never an accusation.
-const AUTHORITY = { ASSERTED_TRUE: 'ASSERTED_TRUE', AUTHORIZED: 'AUTHORIZED', UNKNOWN: 'UNKNOWN', FORBIDDEN: 'FORBIDDEN', EXTERNALLY_VERIFIED: 'EXTERNALLY_VERIFIED' }
-// Statuses with a real mechanical backing (a ledgerLookup result in proof) vs declarative (proof:null).
-const MECHANICAL_AUTHORITY = new Set([AUTHORITY.ASSERTED_TRUE, AUTHORITY.AUTHORIZED, AUTHORITY.FORBIDDEN])
-// Derive an honest (authority_status, proof) from the packet via ledgerLookup. Throws on a contradiction
-// rather than silently emitting a laundered card — the analog of U20/U21's punctuation/manifest leaks.
-function authorityFor(span, packet, intent) {
-  if (intent === 'unknown') return { authority_status: AUTHORITY.UNKNOWN, proof: null }            // absent, non-load-bearing — declarative
-  if (intent === 'external') return { authority_status: AUTHORITY.EXTERNALLY_VERIFIED, proof: null } // cited source / target packet — declarative (ledgerLookup does author-truth only)
-  const lk = ledgerLookup(span, packet)
-  if (intent === 'authorized') {
-    if (lk.status !== 'SUPPORTED') throw new Error(`buildAnchors: cannot mint a SUPPORTED-backed authority for span ${JSON.stringify(span)} — ledgerLookup says ${lk.status} (authority laundering).`)
-    return { authority_status: lk.provenance && lk.provenance.kind === 'fact' ? AUTHORITY.ASSERTED_TRUE : AUTHORITY.AUTHORIZED, proof: { ledger_lookup: lk } }
-  }
-  if (intent === 'forbidden') {
-    if (lk.status !== 'UNSUPPORTED') throw new Error(`buildAnchors: span ${JSON.stringify(span)} IS authorized by the packet — it cannot be a FORBIDDEN fabrication anchor.`)
-    return { authority_status: AUTHORITY.FORBIDDEN, proof: { ledger_lookup: lk } }   // the UNSUPPORTED result is the mechanical basis for the DQ
-  }
-  throw new Error(`buildAnchors: unknown intent ${JSON.stringify(intent)}`)
-}
-// The five MANDATORY DIR positive controls (winner-role ≻ loser-role). Role CODES only — never the
-// literal Original/Fabricated/Bland answer-key words a juror could read off (labels are stripped at
-// presentation; these specs only name roles). Semantics are this plan's interpretation of the shorthand.
-const DIR_CONTROLS = [
-  { id: 'I>O',  winner: 'improved', loser: 'baseline', confounds: [] },                 // a genuine improvement beats the untouched source
-  { id: 'T>B',  winner: 'tight',    loser: 'bloated',  confounds: ['length'] },         // earned concision beats padded performance
-  { id: 'I>L',  winner: 'improved', loser: 'lazy',     confounds: [] },                 // a real rewrite beats a low-effort one
-  { id: 'O>C',  winner: 'baseline', loser: 'hollow',   confounds: ['fluency'] },        // honest source beats a fluent-but-empty rewrite (fluency ≠ quality)
-  { id: 'I2>I1', winner: 'iter2',   loser: 'iter1',    confounds: [] },                 // a second improvement pass beats the first
-]
-// Synthetic load-bearing fabrications (concrete specifics no real packet authorizes — verified
-// UNSUPPORTED at build, else authorityFor throws loud). And vague, hedged, non-load-bearing absences
-// (UNKNOWN) that the gate must NOT DQ — the false-fabrication-accusation guard.
-const FAB_SPANS = ['at 3:47am that Tuesday', 'commit 9f3a2b1', 'my editor Priya said', 'on line 417 of the parser', 'the 2019 Lisbon workshop']
-const HEDGED_ABSENT_SPANS = ['some afternoon years back', 'a friend once mentioned', 'somewhere along the way']
-function buildAnchors({ incumbent = INCUMBENT, packet = SOURCE_PACKET, packetId = null, ev = EVALUATOR } = {}) {
-  // No incumbent ⇒ nothing to mutate ⇒ an empty corpus (NOT a throw): the corpus is single-span
-  // mutations OF the reference artifact, and a run without one simply has no truth-anchor base.
-  if (!incumbent || typeof incumbent !== 'string' || !incumbent.trim()) return []
-  const constructs = Object.keys(ev.lenses || {})
-  const tasteJurors = (Array.isArray(ev.tasteJurors) && ev.tasteJurors.length) ? ev.tasteJurors.map(String) : ['juror-1', 'juror-2', 'juror-3']
-  // editor_votes is DISAGGREGATED by construction — one entry per named juror, vote null until the
-  // blinded-juror run fills it; the AUTHOR adjudicates out-of-band (sets human_adjudicated/author_veto
-  // when reviewing the committed bank). Never a single collapsed "known answer" score.
-  const votesSlate = () => tasteJurors.map(j => ({ juror: j, vote: null }))
-  const cards = []
-  const card = o => { cards.push({
-    construct: o.construct, test_type: o.test_type, kind: o.kind, authority_status: o.authority_status,
-    source_packet_id: packetId, base_id: 'incumbent', mutation: o.mutation, expected: o.expected,
-    proof: o.proof || null, editor_votes: o.kind === 'taste' ? votesSlate() : [], author_veto: false,
-    known_confounds: o.known_confounds || [], difficulty: o.difficulty || 'medium',
-    provenance: { generator: 'buildAnchors@U11a', deterministic: true }, human_adjudicated: false,
-    family: o.family,
-  }) }
-  // (1) TRUTH MFT — authorized details (gate must PASS): every supported fact / allowed entity.
-  for (const f of (Array.isArray(packet && packet.supported_facts) ? packet.supported_facts : [])) {
-    const a = authorityFor(f, packet, 'authorized')
-    card({ construct: 'integrity', test_type: 'MFT', kind: 'truth', ...a, mutation: { span: f, operator: 'use_supported' }, expected: { gate: 'PASS', taste_comparison: null }, family: `truth/integrity/MFT-${a.authority_status === AUTHORITY.ASSERTED_TRUE ? 'fact' : 'entity'}` })
-  }
-  const ents = packet && packet.allowed_entities
-  if (ents && typeof ents === 'object' && !Array.isArray(ents))
-    for (const [bucket, vals] of Object.entries(ents))
-      if (Array.isArray(vals)) for (const v of vals) {
-        const a = authorityFor(v, packet, 'authorized')
-        // Family is keyed on the RESOLVED authority, not the source bucket: ledgerLookup is fact-first, so
-        // an allowed-entity that also appears in a supported_fact resolves ASSERTED_TRUE → file it with the
-        // fact family (matching the supported_facts branch), or one logical family splits across partitions.
-        card({ construct: 'integrity', test_type: 'MFT', kind: 'truth', ...a, mutation: { span: v, operator: 'use_supported', bucket }, expected: { gate: 'PASS', taste_comparison: null }, family: `truth/integrity/MFT-${a.authority_status === AUTHORITY.ASSERTED_TRUE ? 'fact' : 'entity'}` })
-      }
-  // (2) TRUTH MFT — planted load-bearing fabrications (gate must DQ): FORBIDDEN, proof is the UNSUPPORTED result.
-  for (const span of FAB_SPANS) {
-    // A planted fabrication that COLLIDES with the live packet (a supported_fact happens to contain the
-    // span) is not UNSUPPORTED — SKIP it rather than throwing and bricking the whole opt-in corpus build.
-    // (The floor-coverage guard backstops the pathological all-collide case → HUMAN_REVIEW, never a false pass.)
-    if (ledgerLookup(span, packet).status !== 'UNSUPPORTED') continue
-    card({ construct: 'integrity', test_type: 'MFT', kind: 'truth', ...authorityFor(span, packet, 'forbidden'), mutation: { span, operator: 'plant_lived_fact' }, expected: { gate: 'DQ', taste_comparison: null }, difficulty: 'easy', family: 'truth/integrity/MFT-fabrication' })
-  }
-  // (3) TRUTH MFT — UNKNOWN, hedged & non-load-bearing (gate must NOT DQ): the false-accusation guard.
-  for (const span of HEDGED_ABSENT_SPANS)
-    card({ construct: 'integrity', test_type: 'MFT', kind: 'truth', ...authorityFor(span, packet, 'unknown'), mutation: { span, operator: 'hedge_absent' }, expected: { gate: 'PASS', taste_comparison: null }, known_confounds: ['absent ≠ false'], family: 'truth/integrity/MFT-unknown' })
-  // (4) TRUTH INV — paraphrase/reorder invariance: the gate verdict must NOT CHANGE (an invariance
-  // obligation, not a single PASS/DQ — gate:null so U12 defers it to U23's live two-presentation check).
-  for (const c of constructs)
-    card({ construct: c, test_type: 'INV', kind: 'truth', authority_status: AUTHORITY.UNKNOWN, proof: null, mutation: { span: null, operator: 'paraphrase' }, expected: { gate: null, taste_comparison: { invariant: true } }, family: `truth/${c}/INV` })
-  // (5) TASTE DIR — a directional quality anchor for EVERY construct (a clear improvement should win).
-  for (const c of constructs)
-    card({ construct: c, test_type: 'DIR', kind: 'taste', authority_status: AUTHORITY.UNKNOWN, proof: null, mutation: { span: null, operator: 'compare' }, expected: { gate: null, taste_comparison: { direction: 'I>O', winner: 'improved', loser: 'baseline' } }, family: `taste/${c}/DIR` })
-  // (6) TASTE DIR — the 5 mandatory positive controls (the noncompensatory direction set).
-  for (const d of DIR_CONTROLS)
-    card({ construct: 'positive_control', test_type: 'DIR', kind: 'taste', authority_status: AUTHORITY.UNKNOWN, proof: null, mutation: { span: null, operator: 'compare' }, expected: { gate: null, taste_comparison: { direction: d.id, winner: d.winner, loser: d.loser } }, known_confounds: d.confounds, family: `taste/positive_control/${d.id}` })
-  return cards
-}
-
-// ── U12 — conformance qualification (EXACT pass/fail; the noncompensatory spec-test GATE) ──────────
-// Scores a config (`ev`, the config under test) against the held-out corpus with EXACT pass/fail —
-// NO Wilson/Bernoulli/CI math anywhere (a curated obligation set is not a random sample; see
-// Architecture Decision #2). The load-bearing, deterministically-realizable obligations are the GATE
-// anchors (truth MFT): a planted FORBIDDEN fabrication MUST be DQ'd; an AUTHORIZED/UNKNOWN detail must
-// NOT be (a false accusation is just as fatal). Realization is a non-leaking splice — the planted span
-// IS the input, the judge must catch it, no answer key reaches the judge. DIRECTIONAL (DIR/INV) anchors
-// need live-generated comparison texts (an honest "improved vs baseline" pair can't be synthesized
-// deterministically without leaking the answer) — so they are DEFERRED to U23's fresh probes here, never
-// silently passed. Noncompensatory: ANY mandatory gate failure ⇒ BLOCKED (no averaging rescues it).
-const baseText = incumbent => (typeof incumbent === 'string' && incumbent.trim()) ? incumbent : 'A short honest passage in the author\'s own voice.'
-// Realize a gate anchor into ONE entry by splicing its span as a lived-fact sentence. Returns null when
-// the test can't be constructed (a must-DQ anchor with no span) ⇒ ABSTAIN, not a fabricated pass/fail.
-function realizeGate(a, incumbent) {
-  const span = a.mutation && a.mutation.span
-  if (a.expected && a.expected.gate === 'DQ' && !span) return null
-  return span ? `${baseText(incumbent)}\n\n${span}.` : baseText(incumbent)
-}
-// A gate anchor is a truth MFT anchor with a binary gate expectation — every one is MANDATORY (both the
-// must-DQ fabrications and the must-PASS authorized/unknown details: a false accusation is noncompensatory too).
-const isGateAnchor = a => a && a.kind === 'truth' && a.expected && (a.expected.gate === 'DQ' || a.expected.gate === 'PASS')
-async function qualifyConformance(corpus, { ev = EVALUATOR, incumbent = INCUMBENT, phase = 'qualify' } = {}) {
-  const items = Array.isArray(corpus) ? corpus : (corpus && corpus.items) || []
-  const gate = items.filter(isGateAnchor)
-  const deferred = items.filter(a => a && !isGateAnchor(a))   // DIR/INV directional — NOT scored yet (counted, honestly, as a gap)
-  // Realize every scorable gate anchor; the unrealizable ones ABSTAIN (escalate), excluded from pass/total.
-  const realized = gate.map((a, i) => ({ a, md: realizeGate(a, incumbent), id: `gate${i}`, label: `gate${i}` }))
-  const abstained = realized.filter(r => r.md == null).map(r => r.a.family)
-  const scored = realized.filter(r => r.md != null)
-  const entries = scored.map(r => ({ id: r.id, label: r.label, markdown: r.md }))
-  if (entries.length) await screenAll(entries, phase, ev)   // the CONFIG UNDER TEST runs the real gate
-  const byId = new Map(entries.map(e => [e.id, e]))
-  const failedFamilies = new Set(), mandatoryFailed = new Set(), scoredFamilies = new Set(), byConstruct = {}
-  let passed = 0, scoredDQ = 0, scoredPASS = 0
-  for (const r of scored) {
-    scoredFamilies.add(r.a.family)
-    if (r.a.expected.gate === 'DQ') scoredDQ++; else if (r.a.expected.gate === 'PASS') scoredPASS++
-    const v = byId.get(r.id).flaw || { disqualified: false }
-    const pass = (!!v.disqualified) === (r.a.expected.gate === 'DQ')   // exact: caught a fab iff it should, passed a clean iff it should
-    const bc = byConstruct[r.a.construct] || (byConstruct[r.a.construct] = { passed: 0, total: 0, failed: [] })
-    bc.total++
-    if (pass) { passed++; bc.passed++ }
-    else { failedFamilies.add(r.a.family); bc.failed.push(r.a.family); if (isGateAnchor(r.a)) mandatoryFailed.add(r.a.family) }
-  }
-  // A mandatory family that ONLY abstained (zero scored anchors) was never actually tested — surface it so
-  // the run gates to HUMAN_REVIEW rather than passing the floor vacuously. (A family that scored ≥1 anchor
-  // AND abstained another is fine — it was tested.)
-  const unscored_families = [...new Set(abstained)].filter(f => !scoredFamilies.has(f))
-  // FLOOR COVERAGE (the P0 guard): the noncompensatory floor is only meaningful if BOTH a must-DQ
-  // (catch a fabrication) AND a must-PASS (don't false-accuse) anchor were actually scored this run. If
-  // either class scored zero, the floor was never tested ⇒ insufficient evidence (qualifyRun escalates).
-  const floor = { scored_must_dq: scoredDQ, scored_must_pass: scoredPASS,
-    untested: scoredDQ === 0 ? 'no_scored_must_dq' : (scoredPASS === 0 ? 'no_scored_must_pass' : null) }
-  const verdict = mandatoryFailed.size ? 'BLOCKED' : 'PASS'   // noncompensatory: any mandatory gate failure dominates
-  // NOTE: directional DIR/INV anchors are NOT scored anywhere yet — U23 generates its own fixed probe set
-  // and does not consume these corpus anchors. `directional_not_scored` is an honest COUNT of that gap, not
-  // a coverage claim (do not read it as "scored by U23"). Wiring them into judgeProbes is a follow-up.
-  return { verdict, passed, total: scored.length, failed_families: [...failedFamilies],
-    mandatory_failed: [...mandatoryFailed], abstained, unscored_families, floor,
-    directional_not_scored: deferred.length, by_construct: byConstruct }
-}
-// Adopt a (default or qualified) config as THE module evaluator — every judge surface reads the module
-// `let EVALUATOR`, so this is what makes "the config we qualified is the config the tournament runs" true.
-// validateEvaluatorConfig FIRST (a hole-free config is the contract); it throws BEFORE reassigning, so a
-// rejected config never half-adopts. ONLY called under QUALIFY when conformance + probes both pass (U24).
-function adoptEvaluator(E) { validateEvaluatorConfig(E); EVALUATOR = E; return EVALUATOR }
-
-// ── U23 — fresh, run-scoped ecological probes (DRIFT detection, NOT the adversarial audit) ─────────
-// The structural upgrade the durable single-span corpus structurally cannot give: probes generated
-// INSIDE THE LIVE regime (this packet / context length / incumbent / generator), covering the multi-edit
-// interactions a single-span mutation misses — distributed persona-drift (unauthorized lived fact spread
-// across sentences, no single forgeable span), load-bearing omission, a genuine structural improvement,
-// earned/supported vividness, A/B order reversal, a harmless length/format change, and 1–2 judge-bait
-// smoke tests. They are RUN-SCOPED: regenerated every run and NEVER written to the durable bank (a probe
-// carries no `family`, so anchorbank can't even ingest one) — that is what keeps them un-gameable. This
-// detects DRIFT, NOT adaptive exploitation: judge_bait is a smoke test for obvious gaming, not the
-// freeze-rubric → red-team → 16–32-attempt exploit-rate audit (that is U12b, deferred; the card flags
-// adversarial_audit:'not_run'). Do not read U23's drift coverage as exploitation robustness.
-const PROBE_TYPES = [
-  { type: 'persona_drift',       kind: 'gate', construct: 'integrity', expected: { gate: 'DQ' } },     // distributed unauthorized lived fact — must be caught with no single span
-  { type: 'omission',            kind: 'dir',  construct: 'substance', expected: { winner: 'a' } },     // the complete piece beats one with a load-bearing omission
-  { type: 'structural_improve',  kind: 'dir',  construct: 'substance', expected: { winner: 'a' } },     // a genuine structural improvement should win
-  { type: 'supported_vividness', kind: 'dir',  construct: 'integrity', expected: { winner: 'a' } },     // earned, source-supported vividness should win
-  { type: 'ab_reversal',         kind: 'inv',  construct: 'overall',   expected: { invariant: true } }, // same pair, order reversed — verdict must not flip
-  { type: 'harmless_format',     kind: 'inv',  construct: 'overall',   expected: { invariant: true } }, // a harmless length/format change must not move the verdict
-  { type: 'judge_bait',          kind: 'dir',  construct: 'taste',     expected: { winner: 'a' } },      // honest beats an obvious gaming attempt (smoke test, not the audit)
-]
-// gate probes need only `a` (the passage to screen); dir/inv probes are A/B pairs and MUST carry both —
-// an empty `b` would make judgeProbes compare against an empty entry, so it can't be optional for them.
-const PROBE_GEN_SCHEMA = { type: 'object', additionalProperties: false, required: ['a'], properties: { a: { type: 'string' } } }
-const PROBE_PAIR_SCHEMA = { type: 'object', additionalProperties: false, required: ['a', 'b'], properties: { a: { type: 'string' }, b: { type: 'string' } } }
-const probeGenPrompt = (t, ctx, ev) => `Generate ONE fresh probe of type "${t.type}" in the LIVE regime, against this rubric. ${t.kind === 'gate' ? 'Return only "a": a passage that exhibits the failure to test.' : 'Return "a" (the entry that SHOULD prevail / be invariant) and "b" (its counterpart).'}
-
-CRITERIA:
-${ev.criteriaBlock}
-
-REFERENCE (live incumbent):
----
-${ctx.incumbent}
----
-Return JSON { a${t.kind === 'gate' ? '' : ', b'} }.`
-const defaultProbeGenerate = (ev, phase) => async (t, ctx) => {
-  const r = await agent(probeGenPrompt(t, ctx, ev), { ...ev.agentOptions, label: `gen:${t.type}`, phase, schema: t.kind === 'gate' ? PROBE_GEN_SCHEMA : PROBE_PAIR_SCHEMA })
-  return { a: (r && r.a) || '', b: (r && r.b) || '' }
-}
-// Build the fresh probe set (content generated live; never persisted). `generate` is injectable for tests.
-async function buildProbes({ incumbent = INCUMBENT, packet = SOURCE_PACKET, ev = EVALUATOR, phase = 'probes', generate } = {}) {
-  const gen = generate || defaultProbeGenerate(ev, phase)
-  const probes = []
-  for (const t of PROBE_TYPES) {
-    const c = await gen(t, { incumbent, packet })
-    probes.push({ type: t.type, kind: t.kind, construct: t.construct, expected: t.expected,
-      a: (c && c.a) || '', b: (c && c.b) || '', run_scoped: true })   // run_scoped + no `family` ⇒ cannot enter the durable bank
-  }
-  return probes
-}
-// Judge the fresh probes THROUGH the live config and report DRIFT per probe (not validity). gate probes
-// screen; dir probes must pick `a`; inv probes must hold the verdict stable across reversed order.
-async function judgeProbes(probes, { ev = EVALUATOR, phase = 'probes' } = {}) {
-  const mkEntry = (id, md) => ({ id, label: id, markdown: md, rating: 1500 })
-  const drift = [], byType = {}
-  let passed = 0
-  for (const p of probes) {
-    let pass
-    if (p.kind === 'gate') {
-      const e = mkEntry('probe', p.a)
-      await screenAll([e], phase, ev)
-      pass = (!!(e.flaw && e.flaw.disqualified)) === (p.expected.gate === 'DQ')
-    } else if (p.kind === 'inv') {
-      const A = mkEntry('A', p.a), B = mkEntry('B', p.b)
-      // A/B reversal SWAPS which entry is presented first (the a/b arguments), not the internal orderIdx
-      // — playMatch already counterbalances orderIdx + breaks ties toward `a`, so an orderIdx flip cancels
-      // out and would hide real position bias. Swapping the arguments is the genuine order-reversal test.
-      const r1 = await playMatch(A, B, 0, 'FINAL', phase, [], ev)
-      const r2 = await playMatch(B, A, 0, 'FINAL', phase, [], ev)
-      pass = !!r1 && !!r2 && r1.winner.id === r2.winner.id   // a position-biased judge flips; a faithful one holds
-    } else {   // dir — the live config must pick `a` (the entry that should prevail)
-      const A = mkEntry('A', p.a), B = mkEntry('B', p.b)
-      const r = await playMatch(A, B, 0, 'FINAL', phase, [], ev)
-      pass = !!r && r.winner.id === 'A'
-    }
-    const bt = byType[p.type] || (byType[p.type] = { passed: 0, total: 0 }); bt.total++
-    if (pass) { passed++; bt.passed++ } else drift.push({ type: p.type, construct: p.construct })
-  }
-  // scope:'drift' + adversarial_audit:'not_run' are FIRST-CLASS — this is drift detection, and it does
-  // NOT stand in for the deferred adaptive-exploitation audit (U12b). Never reported as "robust".
-  return { scope: 'drift', adversarial_audit: 'not_run', passed, total: probes.length, drift, by_type: byType }
-}
-
-// ── U24 — run envelope + 4-state run status + assurance card (the headline output) ─────────────────
-// A STATE MACHINE, not a score. Perturbations run on the CHAMPION (final pair) ONLY — O(perturbations),
-// not O(matches) — and UNSTABLE is a precise, narrow claim: the champion flips under a JUDGE-side
-// perturbation AND the flip crosses a MARGIN BAND (both directions were clear, not a near-tie). A flip
-// INSIDE the near-tie band is a close call, NOT UNSTABLE. Bracket-reseed is NOT a judge-side perturbation
-// (reseed flips are inherent knockout variance) — it is recorded in operating_envelope.bracket_seed_
-// sensitivity, never the headline status. alt-judge-model is OPTIONAL: absent ⇒ 'not_run' (NEVER read as
-// stability). UNSTABLE is a claim about the champion the author acts on, NOT about evaluator validity.
-const RUN_STATUS = { BLOCKED: 'BLOCKED', QUALIFIED: 'QUALIFIED_FOR_THIS_RUN', UNSTABLE: 'UNSTABLE', HUMAN: 'HUMAN_REVIEW_REQUIRED' }
-const JUDGE_PERTURBATIONS = ['mirrored_order', 'paraphrase', 'alt_model']   // bracket_reseed is deliberately NOT here
-// A flip is "across" the band only when BOTH directions were decisive/clear; any near-tie ('narrow') ⇒ "within".
-const bandOf = (m1, m2) => ([m1, m2].every(m => m === 'clear' || m === 'decisive') ? 'across' : 'within')
-// Champion-only judge-side perturbations (the cost-bounded set). mirrored_order swaps the entry arguments
-// (playMatch already counterbalances orderIdx); paraphrase re-judges under a paraphrased rubric; alt_model
-// re-judges under a second model IFF one is configured (else 'not_run' — not silent stability).
-async function runPerturbations(a, b, { ev = EVALUATOR, phase = 'perturb', altModel = null, paraphrase = true } = {}) {
-  const base = await playMatch(a, b, 0, 'FINAL', phase, [], ev)
-  const win = r => r && r.winner && r.winner.id
-  const mir = await playMatch(b, a, 0, 'FINAL', phase, [], ev)
-  const out = { mirrored_order: { flipped: win(mir) !== win(base), band: bandOf(base.margin, mir.margin) }, paraphrase: 'not_run', alt_model: 'not_run' }
-  if (paraphrase) {
-    const par = await playMatch(a, b, 0, 'FINAL', phase, [], { ...ev, criteriaBlock: ev.criteriaBlock + '\n\n(Rubric paraphrased; same meaning.)' })
-    out.paraphrase = { flipped: win(par) !== win(base), band: bandOf(base.margin, par.margin) }
-  }
-  if (altModel) {
-    const alt = await playMatch(a, b, 0, 'FINAL', phase, [], { ...ev, agentOptions: { ...ev.agentOptions, model: altModel } })
-    out.alt_model = { flipped: win(alt) !== win(base), band: bandOf(base.margin, alt.margin) }
-  }
-  return out
-}
-// Assemble the run status + assurance card from the conformance verdict (U12), the fresh-probe drift
-// report (U23), the champion perturbation outcomes (runPerturbations), and run/envelope metadata. Pure —
-// no agent calls; the card is handed to qualify.writeCard (orchestrator-side) for atomic persistence.
-function qualifyRun(rawInput) {
-  // The gate must SELF-DEFEND: a non-object input (incl. null) is not a run — it is insufficient evidence.
-  const input = (rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput)) ? rawInput : {}
-  const _v = v => (v === undefined ? null : v)
-  const isObj = x => !!x && typeof x === 'object' && !Array.isArray(x)
-  const arr = x => (Array.isArray(x) ? x : [])
-  const malformedArr = x => x != null && !Array.isArray(x)   // present but NOT an array ⇒ malformed ⇒ fail closed, never coerce to "no failure"
-  // FAIL CLOSED on absence AND on malformed shape: a MISSING conformance is insufficient evidence (never
-  // default to {verdict:'PASS'}), and a failure signal arriving as the WRONG TYPE (a bare string where an
-  // array is required) must NOT silently coerce to []/"no failure". QUALIFIED requires POSITIVE proof on
-  // every channel the card names — conformance PASS, the floor actually scored (RE-DERIVED from the counts,
-  // not the producer's `untested` flag), fresh probes actually run + passed, no author veto, and ≥1
-  // judge-side perturbation run with a recognized band. Every non-QUALIFIED branch derives its reason.
-  const conformance = isObj(input.conformance) ? input.conformance : null
-  const probes = isObj(input.probes) ? input.probes : {}
-  const pert = isObj(input.perturbations) ? input.perturbations : {}
-  const env = isObj(input.envelope) ? input.envelope : {}
-  const taste = isObj(input.taste) ? input.taste : {}
-  const crossesBand = p => p && p !== 'not_run' && p.flipped && p.band === 'across'
-  const decide = () => {
-    // (0) conformance must be a well-formed object naming a verdict; a wrong-typed failure signal is malformed.
-    if (!conformance || typeof conformance.verdict !== 'string') return [RUN_STATUS.HUMAN, 'insufficient_evidence:no_conformance']
-    if (malformedArr(conformance.mandatory_failed) || malformedArr(conformance.failed_families) || malformedArr(probes.drift) || malformedArr(taste.author_vetoes))
-      return [RUN_STATUS.HUMAN, 'insufficient_evidence:malformed_evidence']
-    const drift = arr(probes.drift)
-    // (1) BLOCKED DOMINATES — a named mandatory failure OR a live persona-drift fabrication breach, FIRST,
-    // so the strongest signal is never masked by a later insufficiency check.
-    if (conformance.verdict === 'BLOCKED' || arr(conformance.mandatory_failed).length || arr(conformance.failed_families).length)
-      return [RUN_STATUS.BLOCKED, 'mandatory_obligation_failed']
-    if (drift.some(d => d && d.type === 'persona_drift')) return [RUN_STATUS.BLOCKED, 'fresh_probe_fabrication_breach']
-    // (2) ALLOWLIST: only an explicit PASS proceeds — any other string ('pass'/'OK'/typo/'') fails closed.
-    if (conformance.verdict !== 'PASS') return [RUN_STATUS.HUMAN, 'insufficient_evidence:unrecognized_verdict']
-    // (3) the floor must be POSITIVELY scored — re-derive from the counts (don't trust `untested`): a must-DQ
-    // AND a must-PASS anchor must each have scored ≥1, else the noncompensatory floor is vacuous (the P0).
-    const fl = conformance.floor
-    if (!isObj(fl) || !(Number(fl.scored_must_dq) > 0) || !(Number(fl.scored_must_pass) > 0) || fl.untested)
-      return [RUN_STATUS.HUMAN, 'insufficient_evidence:floor_untested']
-    if (arr(conformance.unscored_families).length) return [RUN_STATUS.HUMAN, 'insufficient_evidence:mandatory_family_abstained']
-    if (!(Number(conformance.passed) > 0)) return [RUN_STATUS.HUMAN, 'insufficient_evidence:floor_scored_nothing']
-    if (input.evidence_sufficient === false) return [RUN_STATUS.HUMAN, 'insufficient_evidence']
-    // (4) fresh probes must have actually RUN (total>0) and all passed — an empty/absent probe phase is
-    // insufficient evidence, not a pass (the default shape {passed:0,drift:[]} must NOT certify).
-    if (!(Number.isFinite(probes.total) && probes.total > 0)) return [RUN_STATUS.HUMAN, 'insufficient_evidence:fresh_probes_not_run']
-    if (drift.length || Number(probes.passed) < probes.total) return [RUN_STATUS.HUMAN, 'fresh_probe_drift']
-    // (5) the author is the principal — a non-empty veto (or explicit disagreement) decides the champion.
-    if (input.author_disagreement === true || arr(taste.author_vetoes).length) return [RUN_STATUS.HUMAN, 'material_author_disagreement']
-    // (6) at least one judge-side perturbation must have RUN; an unrecognized band can't be classified.
-    if (!JUDGE_PERTURBATIONS.some(k => pert[k] && pert[k] !== 'not_run')) return [RUN_STATUS.HUMAN, 'insufficient_evidence:perturbations_not_run']
-    if (JUDGE_PERTURBATIONS.some(k => { const p = pert[k]; return p && p !== 'not_run' && p.flipped && p.band !== 'within' && p.band !== 'across' }))
-      return [RUN_STATUS.HUMAN, 'insufficient_evidence:unrecognized_perturbation_band']
-    if (JUDGE_PERTURBATIONS.some(k => crossesBand(pert[k]))) return [RUN_STATUS.UNSTABLE, 'champion_flips_across_band']
-    return [RUN_STATUS.QUALIFIED, 'conformance_probes_perturbations_passed']
-  }
-  const [run_status, status_reason] = decide()
-  // The DIR positive controls (I>O, T>B, …) are scored by nothing yet — so a PASS certifies the truth gate,
-  // NOT taste-direction. Make that a first-class blind spot so QUALIFIED can't be misread as "tasteful".
-  const known_blind_spots = [...arr(input.known_blind_spots)]
-  if (conformance && Number(conformance.directional_not_scored) > 0) known_blind_spots.push('taste_direction_positive_controls_unscored')
-  return {
-    packet_id: input.packet_id, run_id: input.run_id, run_status, status_reason,
-    operating_envelope: {
-      packet_completeness: _v(env.packet_completeness), packet_provenance: _v(env.packet_provenance),
-      field_diversity: _v(env.field_diversity), generator_identity: _v(env.generator_identity),
-      evaluator_config_id: _v(env.evaluator_config_id), gate_false_dq_behavior: _v(env.gate_false_dq_behavior),
-      pair_order_stability: pert.mirrored_order || 'not_run', paraphrase_stability: pert.paraphrase || 'not_run',
-      preference_cycles: _v(env.preference_cycles),
-      bracket_seed_sensitivity: pert.bracket_reseed || 'not_run',   // reseed flips live HERE, never in run_status
-      alt_model: pert.alt_model || 'not_run',                       // absent ⇒ 'not_run', NOT silent stability
-      escalation: _v(env.escalation),
-    },
-    conformance: { passed: _v(conformance && conformance.passed), failed_families: (conformance && conformance.failed_families) || [], abstained: (conformance && conformance.abstained) || [], floor: (conformance && conformance.floor) || null, directional_not_scored: _v(conformance && conformance.directional_not_scored) },
-    fresh_probes: { passed: _v(probes.passed), total: _v(probes.total), drift: probes.drift || [] },
-    adversarial_audit: 'not_run',   // first-class: QUALIFIED_FOR_THIS_RUN is NOT "robust against gaming" (U12b deferred)
-    taste: { agreement_with_named_adjudicators: _v(taste.agreement_with_named_adjudicators), author_vetoes: taste.author_vetoes || [] },
-    known_blind_spots,
-    anchor_bank_version: _v(input.anchor_bank_version), judge_models: input.judge_models || [],
-    perturbation_count: JUDGE_PERTURBATIONS.filter(k => pert[k] && pert[k] !== 'not_run').length,   // cost legibility
-    expires_on: { model_or_prompt_change: true },
-    top_set: null,   // inert forward-compat until the deferred robust-top-set unit lands (Scope Boundaries)
-  }
 }
 
 // ─────────────────────────────────────────────────────── BRACKET HELPERS (see brackets.md)
@@ -1271,11 +844,10 @@ async function deriveSections(design, BASE, SPEC) {
     const results = await parallel(todo.map(({ s, X, Y, idx }) => () => {
       const flip = idx % 2 === 1, [A, B] = flip ? [Y, X] : [X, Y]
       // The slot judge IS a judge surface (it narrows the field before the bracket), so it reads the
-      // certified EVALUATOR end-to-end: criteriaBlock, model/options, AND seed schema — same contract
-      // as lensPrompt/seedPrompt. (The qualifier runs before generation, so EVALUATOR is already
-      // certified here.) Byte-identical at default (ev.criteriaBlock === SPEC === CRITERIA_BLOCK). Slot
-      // GENERATION (slotGenPrompt) keeps SPEC — that is the real generation-vs-certified-criteria fork
-      // left to U12, since generation is not a judge surface.
+      // EVALUATOR end-to-end: criteriaBlock, model/options, AND seed schema — same contract as
+      // lensPrompt/seedPrompt. Byte-identical at default (ev.criteriaBlock === SPEC === CRITERIA_BLOCK).
+      // Slot GENERATION (slotGenPrompt) keeps SPEC — generation is not a judge surface, so it reads the
+      // raw spec, not the judge config.
       return agent(slotJudgePrompt(s, A, B, BASE, EVALUATOR.criteriaBlock), judgeOpts(EVALUATOR, 'seed', `slotjudge:${s.slot}:${A.label}>${B.label}`, 'Generate'))
         .then(v => v && ({ slot: s.slot, winnerId: v.winner === 'X' ? A.id : B.id, loserId: v.winner === 'X' ? B.id : A.id }))
     }))
@@ -1338,11 +910,8 @@ const decided = []  // every decided head-to-head, for Elo
 
 const BASE = `FILL: the base artifact being varied (essay, brief, spec, design, prompt...).`
 // GENERATION criteria. Bound to CRITERIA_BLOCK (the operator's brief), NOT EVALUATOR.criteriaBlock.
-// At default these are identical. ⚠️ U12 DECISION (deferred): once the qualifier reassigns
-// EVALUATOR.criteriaBlock to a CERTIFIED judging rubric, decide whether generation should track it
-// (so candidates are generated for the same target they're judged by) or keep the operator brief
-// (candidates = faithful distillations of the user's stated criteria, judged by the certified rubric).
-// This is a real design fork, not a bug — left to U12 because the answer depends on the certification model.
+// At default these are identical. (If a future change lets the judge rubric diverge from the operator
+// brief, decide whether generation should track the rubric or keep the brief — generation reads SPEC.)
 const SPEC = CRITERIA_BLOCK
 const flatGenPrompt = (name, brief) => `Produce a distinct VARIANT of the artifact below. ANGLE: ${name}: ${brief}.
 Realize the angle fully; keep what the brief says must stay true. Constraints / criteria:
