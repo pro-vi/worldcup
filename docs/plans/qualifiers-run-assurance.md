@@ -1,7 +1,7 @@
 ---
 title: Qualifiers — run-scoped assurance for the decision system (supersedes the "certification" framing)
 type: feat
-status: active
+status: completed
 date: 2026-06-21
 origin: PLAN_3.md (design lineage) + GPT-Pro extended ontology consult, archived at .inbox/2026-06-21_gpt-pro-ontology-consult-qualifiers.md (the 0.87–0.98 confidence figures cited below trace there)
 supersedes: docs/plans/qualifiers-anchors-certification.md (deleted in 59e810d; "certification" is the rejected frame — see Architecture Decision)
