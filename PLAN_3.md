@@ -1,7 +1,7 @@
 ---
 title: 预选赛 / Qualifiers — certify the evaluator (and axes) before the draw
 type: feat
-status: build-ready   # /agentify + code-review hardened, /provision-validated (2026-06-20); build order U19→U20→U21→U11… — see Build order
+status: partially-reverted   # U19/U20 shipped + KEPT; the qualifier/anchor-bank (U11/U12/U21/U12b + ledgerLookup) reverted in PR #9 — see tombstone below
 date: 2026-06-18
 origin: standalone design dialogue (worldcup) — Idea 2 of the realtime-view + qualifiers exploration
 plan: PLAN_3
@@ -9,6 +9,16 @@ depends_on: PLAN_1, PLAN_2
 ---
 
 # 预选赛 / Qualifiers — certify the evaluator (and axes) before the draw
+
+> **⚰️ PARTIALLY REVERTED (2026-06-22).** **Shipped and KEPT** (wired into the default run): U19
+> `EVALUATOR_CONFIG`, U20 `SOURCE_PACKET`/`renderLedger` (the structured rubric). **REVERTED** (removed
+> wholesale in PR #9): the qualifier / anchor-bank work — U20 `ledgerLookup`, U21 `anchorbank.js`, and
+> U11/U12/U12b (`buildAnchors` / conformance / probes / run-status `qualifyRun`). The confirmed use case
+> is run-to-a-winner with an **auto-sourced judge** — there is no config-selection loop to qualify, so the
+> qualifier platform was speculative infra. See `docs/plans/qualifiers-run-assurance.md` (status: reverted)
+> for the full reasoning (held-out partition went vestigial; assure-the-decision-not-the-judge; the
+> credibility halo). **Do not re-propose the qualifier** without a concrete near-term need to choose
+> between ≥2 judge configs. Everything below is the historical spec of the reverted work.
 
 > **预选赛** = the qualification rounds that decide *who enters* the World Cup. Here the
 > entrants are decided by two inputs UPSTREAM of the tournament and currently the **least**

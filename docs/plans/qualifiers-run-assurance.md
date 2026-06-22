@@ -1,7 +1,7 @@
 ---
 title: Qualifiers — run-scoped assurance for the decision system (supersedes the "certification" framing)
 type: feat
-status: completed
+status: reverted
 date: 2026-06-21
 origin: PLAN_3.md (design lineage) + GPT-Pro extended ontology consult, archived at .inbox/2026-06-21_gpt-pro-ontology-consult-qualifiers.md (the 0.87–0.98 confidence figures cited below trace there)
 supersedes: docs/plans/qualifiers-anchors-certification.md (deleted in 59e810d; "certification" is the rejected frame — see Architecture Decision)
@@ -9,6 +9,21 @@ branch: feat/qualifiers-anchors-certification
 ---
 
 # Qualifiers — run-scoped assurance for the decision system
+
+> **⚰️ REVERTED (2026-06-22) — implemented, merged (#8), then removed wholesale.** The qualifier
+> subsystem (`buildAnchors`/`qualifyConformance`/`buildProbes`/`qualifyRun` + `anchorbank.js`/`qualify.js`
+> + probes `p3`–`p8`) was deleted. Why, in order of force: (1) **the use case is run-to-a-winner with an
+> auto-sourced judge** — there is no config-selection loop to qualify, so the platform was speculative
+> infra; (2) after the P0 fix the **held-out family-partition governed nothing scored** — it went
+> vestigial the moment the ontology flipped from certification to falsifier/spec-test, and it *caused*
+> the worst bug (it routed the mandatory fabrication floor out of the scored set ~80% of the time);
+> (3) **assure the decision, not the judge** (GPT-Pro consult, 2026-06-22) — a control is assurance only
+> if it's on the decision path with an enforcement consequence; a judge-quality "assurance card" is
+> telemetry, not a gate; (4) the strongest cost of inert opt-in code is the **credibility halo** — the
+> dangerous future change is the one-line wire-in that treats safety-shaped stale code as validated.
+> **Kept (already wired into the default run):** U19 `EVALUATOR_CONFIG`, U20 `SOURCE_PACKET`/`renderLedger`.
+> The real-time fabrication **gate** (`screenAll`, fail-closed) still defends every run. Do not re-propose
+> this without a concrete near-term need to choose between ≥2 judge configs. Git preserves the implementation.
 
 > **Supersedes `docs/plans/qualifiers-anchors-certification.md`.** A GPT-Pro extended second-opinion
 > (0.87–0.98 confidence per claim) challenged the *ontology* of that plan. Verdict: *"the engineering
