@@ -203,6 +203,12 @@ head-to-head pairwise verdicts. Scalar axis scores exist only as diagnostics.
 Seat jurors with different jobs; each is ruthless on its one axis and blind to the
 others. Diversity kills shared failure modes; replicas only reduce noise.
 
+> **The set below is the PROSE profile's lens doctrine** — the fullest, sharpest prose seats
+> (`fidelity` · `taste` · `anti-gaming` · `argument` · `cold-reader`). The shipped **engine default is
+> domain-general** — `substance` · `fit` · `craft` · `integrity` (+ `coherence`) — a leaner set that
+> applies to any artifact. A profile swaps in its own seats (`references/profiles/`); these are prose's.
+> Treat the names below as that profile's vocabulary, not the engine's.
+
 - **fidelity** — protects the author. Suspicious of any entry that makes the author
   sound more wounded / heroic / certain / technical / profound than the source supports.
   Which entry improves the piece without stealing authorship or saying something untrue.
@@ -242,8 +248,9 @@ one profile, not the shape of the tool.
 > engine ships no prose-specific lens or category; the user's profile / voice skill adds them.
 
 - **Prose / voice** (essays, copy, posts): gate = the fabrication gate above (preflight +
-  3-judge fact-ledger check). Lenses = the general set + prose's `voice`/`taste`; the prose
-  fabrication subtypes (`FALSE_AUTHORIAL_EXPERIENCE`, `FAKE_AUTHORITY_SIGNAL`) specialize `FABRICATION`.
+  3-judge fact-ledger check). Lenses = the prose seats from §5 (`fidelity`, `taste`, `anti-gaming`,
+  `argument`, `cold-reader`); the prose fabrication subtypes (`FALSE_AUTHORIAL_EXPERIENCE`,
+  `FAKE_AUTHORITY_SIGNAL`) specialize `FABRICATION`.
   - *Critique / response sub-mode* (the field critiques or responds to a named external
     work): the packet adds a TARGET section built from that work's fetched source, and the
     gate adds MISREPRESENTS_TARGET. A dedicated target-fidelity lens (distinct from

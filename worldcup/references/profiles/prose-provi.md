@@ -39,24 +39,33 @@ const BANS = {
 ## Profile override (EvaluatorConfig)
 The engine ships **domain-general** lenses (`substance` · `fit` · `craft` · `integrity`) and categories
 (`FABRICATION`, `CONTRADICTS_SOURCE`, `GENRE_BREACH`, `HOUSE_STYLE_HARD_BAN`, `PLAGIARISTIC_OR_NON_RESPONSIVE`).
-This prose profile **adds** the prose-specific bits back. Apply it as a COMPLETE EvaluatorConfig override —
-`validateEvaluatorConfig` enforces three consistency rules, so you must **spread** the general sets and
-**rebuild the flaw schema**, not just list the additions (a partial override throws on assignment):
+This prose profile **replaces** the general lens seats with the **prose lens doctrine from `judging.md` §5**
+(`fidelity` · `taste` · `anti-gaming` · `argument` · `cold-reader` — see §5 for the full descriptions) and
+adds the prose fabrication subtypes. Apply it as a COMPLETE EvaluatorConfig override — `validateEvaluatorConfig`
+enforces three consistency rules (every seated lens defined, every category family-mapped, flaw enum ===
+`['NONE', ...categories]`), so you must set a `tiebreakLens` that exists, map every category, and **rebuild
+the flaw schema** (a partial override throws on assignment):
 
 ```js
 const proseCategories = [...HARD_DQ_CATEGORIES, 'FALSE_AUTHORIAL_EXPERIENCE', 'FAKE_AUTHORITY_SIGNAL']
 EVALUATOR = { ...EVALUATOR,
-  lenses:   { ...LENSES,                      // SPREAD the general lenses — don't replace them, or the
-              voice: 'Does this sound like the author actually wrote it, or like a machine performing the author. Flag voice tells, performed vulnerability, imitation over authorship.',
-              taste: 'You are a discerning editor who has read ten thousand of these. Fresh or formulaic. Earned or performed. Would you publish it.' },
-  panelFor: () => ['voice', 'substance', 'taste', 'integrity'],   // every seated lens must exist in lenses
+  lenses: {   // the prose seats (judging.md §5) — full descriptions there; condensed mandates here
+    fidelity:      'Protect the author: suspicious of any entry that makes them sound more wounded / certain / profound than the source supports. Improve the piece without stealing authorship or saying something untrue.',
+    taste:         'A discerning editor. Pressure behind the sentences, not decoration. A sentence earns its place only if cutting it makes the piece less true, clear, or alive.',
+    'anti-gaming': 'The skeptic. Name the most tempting surface signal (maybe-fabricated detail, emphasis-theater, lived-in detail not in the ledger) and decide if it is earned; pick the entry that survives stripping fake vividness/vulnerability.',
+    argument:      'Stops pretty prose beating better thought. Does the thinking move; does each paragraph change understanding; does the ending follow rather than inflate?',
+    'cold-reader': 'An intelligent reader with no obligation to be impressed. Which would you finish, remember, and send to one thoughtful friend — no reward for fake intimacy or LLM polish.',
+  },
+  panelFor: stakes => ({ R32: ['fidelity', 'taste', 'anti-gaming'], R16: ['fidelity', 'taste', 'anti-gaming'],
+    QF: ['fidelity', 'taste', 'anti-gaming', 'argument', 'cold-reader'],
+    SF: ['fidelity', 'taste', 'anti-gaming', 'argument', 'cold-reader'],
+    FINAL: ['fidelity', 'taste', 'anti-gaming', 'argument', 'cold-reader'] }[stakes] || ['fidelity', 'taste', 'anti-gaming']),
+  tiebreakLens: 'anti-gaming',                                     // must be one of the seated prose lenses
   hardDqCategories: proseCategories,                              // the prose fabrication SUBTYPES
   dqFamily: { ...DQ_FAMILY,                                       // SPREAD — every category needs a family
               FALSE_AUTHORIAL_EXPERIENCE: 'fabrication', FAKE_AUTHORITY_SIGNAL: 'fabrication' },
   schemas:  { ...EVALUATOR.schemas, flaw: makeFlawSchema(proseCategories) },  // REBUILD — enum must equal ['NONE', ...categories]
 }
 ```
-`integrity` (general, kept) carries the honest-vs-manufactured-specificity judgment; the prose subtypes
-let three screeners who all see a fabrication name it more precisely while still landing in one family.
-(The three rules — every seated lens defined, every category family-mapped, flaw enum === `['NONE', ...categories]`
-— are exactly what `validateEvaluatorConfig` checks; that's why the spreads + `makeFlawSchema` are required.)
+`anti-gaming`/`fidelity` carry the honest-vs-manufactured-specificity judgment for prose; the fabrication
+subtypes let three screeners who all see a fabrication name it more precisely while still landing in one family.

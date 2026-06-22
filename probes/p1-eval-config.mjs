@@ -211,8 +211,9 @@ ok('no prose-only words in the default lens descriptions', !/\b(essay|nonfiction
 // EvaluatorConfig — it's a real example a user applies; a partial override (no rebuilt flaw schema) fails closed.
 const proseCats = [...M.HARD_DQ_CATEGORIES, 'FALSE_AUTHORIAL_EXPERIENCE', 'FAKE_AUTHORITY_SIGNAL']
 const proseProfile = { ...M.EVALUATOR,
-  lenses: { ...M.LENSES, voice: 'v', taste: 't' },
-  panelFor: () => ['voice', 'substance', 'taste', 'integrity'],
+  lenses: { fidelity: 'f', taste: 't', 'anti-gaming': 'a', argument: 'g', 'cold-reader': 'c' },  // judging.md §5
+  panelFor: () => ['fidelity', 'taste', 'anti-gaming', 'argument', 'cold-reader'],
+  tiebreakLens: 'anti-gaming',
   hardDqCategories: proseCats,
   dqFamily: { ...M.DQ_FAMILY, FALSE_AUTHORIAL_EXPERIENCE: 'fabrication', FAKE_AUTHORITY_SIGNAL: 'fabrication' },
   schemas: { ...M.EVALUATOR.schemas, flaw: M.makeFlawSchema(proseCats) } }
