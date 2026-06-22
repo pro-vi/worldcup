@@ -73,15 +73,16 @@ more technical / more experienced than the source supports; add fake specificity
 more marketable one.
 
 VOICE SPEC (deep traits, not a checklist): {how the author thinks, withholds, ends}.
-HOUSE-STYLE HARD BANS: {em dashes; banned vocab list; announced thesis; uplift closer}.
+HOUSE-STYLE HARD BANS (optional — the USER'S own, never engine defaults; e.g. {punctuation
+rules; a banned-vocab list; announced thesis}. Prefer lens penalties over gate kills for style tics).
 LENGTH: {min}-{max} words, preferred {range}.
 
 NON-NEGOTIABLE: the best essay is the best TRUTHFUL essay in the author's voice. A less
 vivid true essay beats a more vivid false one.
 ```
 
-For Provi prose, the incumbent is the real essay and the fact ledger is "only what the
-author actually lived." When the field is generated, the generator must be told the same
+For a personal-essay run, the incumbent is the author's real essay and the fact ledger is "only
+what the author actually lived." When the field is generated, the generator must be told the same
 NOT-ALLOWED list so it does not fabricate in the first place — but the gate still runs,
 because generators cheat.
 

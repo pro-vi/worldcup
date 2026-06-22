@@ -63,13 +63,14 @@ context; pick sane defaults for the rest and state them.
    - *Bring-your-own*: the user hands you the items. Skip generation; the field is given.
 3. **The criteria and domain profile**: what makes one entry better, and which judge
    profile runs. The judging structure is universal; the gate and lenses swap per domain
-   (see "references/judging.md", Domain profiles). Prose/voice (Provi "/provi-voice" spec;
-   fabrication gate; fidelity/taste/anti-gaming/argument/cold-reader lenses) is one
-   profile. Code (compiles / passes-tests gate; correctness/simplicity/clarity lenses),
-   design and copy (constraint gate; clarity/aesthetic/brand-fit lenses), names and
+   (see "references/judging.md", Domain profiles). Prose/voice (the user's own voice skill or
+   spec supplies the taste; fabrication gate; fidelity/taste/anti-gaming/argument/cold-reader
+   lenses) is one profile. Code (compiles / passes-tests gate; correctness/simplicity/clarity
+   lenses), design and copy (constraint gate; clarity/aesthetic/brand-fit lenses), names and
    taglines (collision/availability checks; memorability/fit/distinctiveness lenses) are
-   others. Get the rubric from the user in their words. Vague criteria produce a tasteless
-   judge, which is the whole failure mode.
+   others. **The engine ships taste-neutral** — get the rubric from the user in their words
+   (or from a voice skill they hand in); see "references/profiles/" for example profiles. Vague
+   criteria produce a tasteless judge, which is the whole failure mode.
 4. **Source packet (incumbent + fact ledger)**: the single most important input for
    any truth-bearing field. It bundles (a) the reference original the field must beat
    (the author's real essay, the live tagline), and (b) a fact ledger of what is
@@ -86,11 +87,13 @@ context; pick sane defaults for the rest and state them.
    characterization of the target is a claim to verify. This is target-truth, the companion to
    the author-truth ledger; without it a critique can pass the fabrication gate and still
    misrepresent the work it answers.
-5. **Hard disqualifiers**: things that auto-kill an entry regardless of appeal. For
-   Provi prose: em dashes, banned LLM vocab, announced thesis, and the big one,
-   fabricated specifics presented as lived fact. The cheap ones (em dashes, banned
-   vocab) run as a deterministic regex preflight before any agent; the rest go to a
-   3-judge fabrication gate.
+5. **Hard disqualifiers**: things that auto-kill an entry regardless of appeal. The
+   domain-general one is **fabricated specifics presented as lived fact** (a lie against the
+   fact ledger). The user may add their own **house-style** hard bans (e.g. a prose profile
+   might auto-kill em dashes or banned vocab) — but those are theirs to declare, never an engine
+   default, and style tics are usually better as lens penalties than gate kills. Cheap regex bans
+   (punctuation, word lists) run as a deterministic preflight before any agent; fabrication goes
+   to the 3-judge gate.
 6. **Cross-model jurors**: whether to bring frontier models in via agentify as
    panelists for the semis and final (see "references/judging.md", Cross-model
    panel). Default: offer it for the final four when the decision is close or the
@@ -104,8 +107,10 @@ context; pick sane defaults for the rest and state them.
    "references/coordinates.md" (coords, effects, the coordinate view). The bracket math
    is load-bearing; do not reconstruct it from memory.
 2. **Assemble the criteria block.** Write the taste spec, the disqualifiers, and the
-   incumbent into a single text block you will embed in every judge prompt. For
-   Provi prose, invoke "/provi-voice" and distill its hard rules into this block. For a
+   incumbent into a single text block you will embed in every judge prompt. **If the user
+   handed in a voice skill, invoke it and distill its hard rules into this block; otherwise use
+   their stated criteria in their own words.** Ship nothing domain-specific by default — the
+   engine has no taste of its own (see "references/profiles/" for example profiles to adapt). For a
    critique/response run, fetch the target first and put it in the template's dedicated
    `TARGET` field — NOT in the criteria text. The template threads TARGET into the criteria
    channel for you AND derives the MISREPRESENTS_TARGET gate enforcement from that field;

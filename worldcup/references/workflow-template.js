@@ -23,10 +23,10 @@ const GROUPS = FIELD === 48 ? 12 : 8
 const SOURCE = 'generate'      // 'generate' | 'given'
 const USE_INCUMBENT = true     // is there a reference original to beat? (enables the reference challenge)
 const SCREENERS = 3            // fabrication-gate judges per entry: 1 = MVP, 3 = maximal (DQ needs same-category majority)
-const BANS = {                 // FILL: deterministic preflight bans (cheap, run before any agent)
-  emDash: true,                // em dash is an auto-DQ for Provi prose
-  vocab: ['delve', 'harness', 'unlock', 'realm', 'seamless', 'ultimately', 'furthermore', 'profound', 'tapestry', 'testament'],
-}
+const BANS = {                 // FILL: deterministic preflight bans (cheap, run before any agent). EMPTY by
+  emDash: false,               // default — these are HOUSE-STYLE rules, not universal quality. Fill them from
+  vocab: [],                   // the user's voice profile, e.g. { emDash:true, vocab:['delve','tapestry',...] }.
+}                              // See references/profiles/ for an example. Style tics belong in lenses, not the gate.
 const LETTERS = 'ABCDEFGHIJKL'.split('')
 
 // ─── DESIGN — how candidates are created (see references/design-pass.md).
@@ -54,8 +54,9 @@ const DESIGN = {
 }
 
 // ──────────────────────────────────────────── (3) CRITERIA + INCUMBENT + TARGET (FILL)
-// The taste spec + hard disqualifiers, pasted into every juror prompt. For Provi
-// prose, distill the /provi-voice hard rules here. Be specific; vagueness = no taste.
+// The taste spec + hard disqualifiers, pasted into every juror prompt. Distill the invoking
+// user's voice skill / stated criteria here (see references/profiles/ for examples). Be specific;
+// vagueness = no taste. Ship NOTHING domain-specific by default — the engine is taste-neutral.
 //
 // CRITIQUE / RESPONSE RUNS: if the field critiques, responds to, or makes factual claims
 // about a NAMED EXTERNAL WORK, do not trust the draft's summary of that work. FETCH it
@@ -122,15 +123,14 @@ ${body}
 - NOT ALLOWED unless in the ledger: ${banned} concrete detail presented as lived fact. Manufactured specificity is a flaw, not a strength.`
 }
 
-const CRITERIA_BASE = `FILL: the source packet — rubric, fact ledger, disqualifiers.
-Example for Provi prose:
-- Voice: follow-the-thought, affirmative not question-led, cross-domain without
-  signposting, deflating close, varied sentence length, non-native texture is fine.
+const CRITERIA_BASE = `FILL: the rubric — what makes one entry better, in the USER'S words (distilled
+from their voice skill / stated criteria). Be specific; vague criteria = a tasteless judge.
+- TASTE: <the positive qualities a strong entry has — the user's, not the engine's>.
 ${renderLedger(SOURCE_PACKET)}
-- HARD DISQUALIFIERS: any em dash; banned LLM vocab (delve, harness, unlock,
-  navigate-metaphorical, realm, seamless, ultimately, furthermore, profound, ...);
-  an announced thesis; a swelling uplift closer; AND fabricated specifics presented
-  as lived fact. For a personal essay that is a lie and an automatic disqualification.
+- HARD DISQUALIFIERS (auto-kill, domain-general): fabricated specifics presented as lived fact
+  (a lie against the fact ledger), genre breach, non-responsiveness to the brief. Add the user's
+  own house-style hard bans ONLY if they truly want auto-kills — style tics (punctuation, word
+  choice) belong in the lenses (scored down), not the gate. See references/profiles/ for examples.
 - TASTE IS EARNEDNESS: concrete detail counts only if source-supported and necessary;
   rhythm only if it clarifies thought; an ending only if it lands without inflating.`
 
