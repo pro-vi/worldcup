@@ -132,8 +132,8 @@ ${renderLedger(SOURCE_PACKET)}
   (a lie against the fact ledger), genre breach, non-responsiveness to the brief. Add the user's
   own house-style hard bans ONLY if they truly want auto-kills — style tics (punctuation, word
   choice) belong in the lenses (scored down), not the gate. See references/profiles/ for examples.
-- TASTE IS EARNEDNESS: concrete detail counts only if source-supported and necessary;
-  rhythm only if it clarifies thought; an ending only if it lands without inflating.`
+- EARNEDNESS: every element earns its place or it's cut — concrete detail only if source-supported
+  and necessary; form, length, and flourish only if they serve the goal, never for their own sake.`
 
 // TARGET feeds the criteria/packet channel (reaches generation, seed, gate, and lenses via
 // CRITERIA_BLOCK), and the gate clause is CO-DERIVED from the same TARGET const, so the
@@ -169,7 +169,7 @@ const DQ_FAMILY = {
   HOUSE_STYLE_HARD_BAN: 'style', PLAGIARISTIC_OR_NON_RESPONSIVE: 'responsiveness',
 }
 
-const INCUMBENT = USE_INCUMBENT ? `FILL: the author's true original essay/artifact.` : ''
+const INCUMBENT = USE_INCUMBENT ? `FILL: the true original to beat — the reference artifact (essay, design, config, … whatever the field varies).` : ''
 const INCUMBENT_CLAUSE = USE_INCUMBENT ? `
 There is a REFERENCE ORIGINAL (the incumbent the field is trying to beat):
 ---
