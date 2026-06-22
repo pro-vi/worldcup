@@ -39,19 +39,24 @@ const BANS = {
 ## Profile override (EvaluatorConfig)
 The engine ships **domain-general** lenses (`substance` · `fit` · `craft` · `integrity`) and categories
 (`FABRICATION`, `CONTRADICTS_SOURCE`, `GENRE_BREACH`, `HOUSE_STYLE_HARD_BAN`, `PLAGIARISTIC_OR_NON_RESPONSIVE`).
-This prose profile **adds** the prose-specific bits back, as overrides you assign to `EVALUATOR`:
+This prose profile **adds** the prose-specific bits back. Apply it as a COMPLETE EvaluatorConfig override —
+`validateEvaluatorConfig` enforces three consistency rules, so you must **spread** the general sets and
+**rebuild the flaw schema**, not just list the additions (a partial override throws on assignment):
 
 ```js
-// Prose lenses (add to the general set):
-lenses: {
-  voice: 'Does this sound like the author actually wrote it, or like a machine performing the author. Flag voice tells, performed vulnerability, imitation over authorship.',
-  taste: 'You are a discerning editor who has read ten thousand of these. Fresh or formulaic. Earned or performed. Would you publish it.',
-},
-panelFor: stakes => ['voice', 'substance', 'taste', 'integrity'],  // seat voice + taste in the prose panel
-
-// Prose fabrication SUBTYPES (the general FABRICATION specialized for first-person nonfiction):
-hardDqCategories: [...HARD_DQ_CATEGORIES, 'FALSE_AUTHORIAL_EXPERIENCE', 'FAKE_AUTHORITY_SIGNAL'],
-dqFamily:         { FALSE_AUTHORIAL_EXPERIENCE: 'fabrication', FAKE_AUTHORITY_SIGNAL: 'fabrication' },
+const proseCategories = [...HARD_DQ_CATEGORIES, 'FALSE_AUTHORIAL_EXPERIENCE', 'FAKE_AUTHORITY_SIGNAL']
+EVALUATOR = { ...EVALUATOR,
+  lenses:   { ...LENSES,                      // SPREAD the general lenses — don't replace them, or the
+              voice: 'Does this sound like the author actually wrote it, or like a machine performing the author. Flag voice tells, performed vulnerability, imitation over authorship.',
+              taste: 'You are a discerning editor who has read ten thousand of these. Fresh or formulaic. Earned or performed. Would you publish it.' },
+  panelFor: () => ['voice', 'substance', 'taste', 'integrity'],   // every seated lens must exist in lenses
+  hardDqCategories: proseCategories,                              // the prose fabrication SUBTYPES
+  dqFamily: { ...DQ_FAMILY,                                       // SPREAD — every category needs a family
+              FALSE_AUTHORIAL_EXPERIENCE: 'fabrication', FAKE_AUTHORITY_SIGNAL: 'fabrication' },
+  schemas:  { ...EVALUATOR.schemas, flaw: makeFlawSchema(proseCategories) },  // REBUILD — enum must equal ['NONE', ...categories]
+}
 ```
 `integrity` (general, kept) carries the honest-vs-manufactured-specificity judgment; the prose subtypes
 let three screeners who all see a fabrication name it more precisely while still landing in one family.
+(The three rules — every seated lens defined, every category family-mapped, flaw enum === `['NONE', ...categories]`
+— are exactly what `validateEvaluatorConfig` checks; that's why the spreads + `makeFlawSchema` are required.)

@@ -207,6 +207,17 @@ ok('default DQ categories use general FABRICATION', M.HARD_DQ_CATEGORIES.include
 ok('default DQ categories drop prose subtypes', !M.HARD_DQ_CATEGORIES.includes('FALSE_AUTHORIAL_EXPERIENCE') && !M.HARD_DQ_CATEGORIES.includes('FAKE_AUTHORITY_SIGNAL'))
 ok('default panel seats only defined general lenses', ['R32', 'QF', 'FINAL'].every(s => M.EVALUATOR.panelFor(s).every(l => M.LENSES[l])))
 ok('no prose-only words in the default lens descriptions', !/\b(essay|nonfiction|author|prose)\b/i.test(Object.values(M.LENSES).join(' ')))
+// the documented prose PROFILE override (references/profiles/prose-provi.md) must produce a VALIDATING
+// EvaluatorConfig — it's a real example a user applies; a partial override (no rebuilt flaw schema) fails closed.
+const proseCats = [...M.HARD_DQ_CATEGORIES, 'FALSE_AUTHORIAL_EXPERIENCE', 'FAKE_AUTHORITY_SIGNAL']
+const proseProfile = { ...M.EVALUATOR,
+  lenses: { ...M.LENSES, voice: 'v', taste: 't' },
+  panelFor: () => ['voice', 'substance', 'taste', 'integrity'],
+  hardDqCategories: proseCats,
+  dqFamily: { ...M.DQ_FAMILY, FALSE_AUTHORIAL_EXPERIENCE: 'fabrication', FAKE_AUTHORITY_SIGNAL: 'fabrication' },
+  schemas: { ...M.EVALUATOR.schemas, flaw: M.makeFlawSchema(proseCats) } }
+ok('the documented prose profile override VALIDATES', M.validateEvaluatorConfig(proseProfile) === proseProfile)
+ok('a partial prose override (no rebuilt flaw schema) fails closed', throws(() => M.validateEvaluatorConfig({ ...proseProfile, schemas: M.EVALUATOR.schemas })))
 
 console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${pass} passed, ${fail} failed`)
 process.exit(fail === 0 ? 0 : 1)
