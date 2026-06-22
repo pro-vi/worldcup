@@ -848,50 +848,64 @@ async function runPerturbations(a, b, { ev = EVALUATOR, phase = 'perturb', altMo
 // Assemble the run status + assurance card from the conformance verdict (U12), the fresh-probe drift
 // report (U23), the champion perturbation outcomes (runPerturbations), and run/envelope metadata. Pure —
 // no agent calls; the card is handed to qualify.writeCard (orchestrator-side) for atomic persistence.
-function qualifyRun(input = {}) {
+function qualifyRun(rawInput) {
+  // The gate must SELF-DEFEND: a non-object input (incl. null) is not a run — it is insufficient evidence.
+  const input = (rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput)) ? rawInput : {}
   const _v = v => (v === undefined ? null : v)
-  // FAIL CLOSED: a MISSING conformance verdict is insufficient evidence, NOT a pass — never default to
-  // {verdict:'PASS'} (that "silently certifies" a run with zero evidence, the one thing the plan forbids).
-  const conformance = input.conformance || null
-  const probes = input.probes || { passed: 0, drift: [] }
-  const pert = input.perturbations || {}
-  const env = input.envelope || {}
-  const taste = input.taste || {}
-  const crossesBand = p => p && p !== 'not_run' && p.flipped && p.band === 'across'
-  // ALLOWLIST, not denylist: decide() must gate the QUALIFIED branch on EVERY piece of evidence the card
-  // collects — conformance verdict, the floor coverage, fresh-probe drift, author veto, and a recognized
-  // perturbation band. The prior denylist ("anything not BLOCKED qualifies") let drifting probes, a vetoed
-  // champion, an untested floor, and a malformed verdict all reach QUALIFIED with a hardcoded "passed"
-  // reason. Every non-QUALIFIED branch derives its reason from the actual evidence (no lying status_reason).
+  const isObj = x => !!x && typeof x === 'object' && !Array.isArray(x)
   const arr = x => (Array.isArray(x) ? x : [])
+  const malformedArr = x => x != null && !Array.isArray(x)   // present but NOT an array ⇒ malformed ⇒ fail closed, never coerce to "no failure"
+  // FAIL CLOSED on absence AND on malformed shape: a MISSING conformance is insufficient evidence (never
+  // default to {verdict:'PASS'}), and a failure signal arriving as the WRONG TYPE (a bare string where an
+  // array is required) must NOT silently coerce to []/"no failure". QUALIFIED requires POSITIVE proof on
+  // every channel the card names — conformance PASS, the floor actually scored (RE-DERIVED from the counts,
+  // not the producer's `untested` flag), fresh probes actually run + passed, no author veto, and ≥1
+  // judge-side perturbation run with a recognized band. Every non-QUALIFIED branch derives its reason.
+  const conformance = isObj(input.conformance) ? input.conformance : null
+  const probes = isObj(input.probes) ? input.probes : {}
+  const pert = isObj(input.perturbations) ? input.perturbations : {}
+  const env = isObj(input.envelope) ? input.envelope : {}
+  const taste = isObj(input.taste) ? input.taste : {}
+  const crossesBand = p => p && p !== 'not_run' && p.flipped && p.band === 'across'
   const decide = () => {
-    // (1) conformance must be a recognized verdict — absent/malformed is insufficient evidence, not a pass.
+    // (0) conformance must be a well-formed object naming a verdict; a wrong-typed failure signal is malformed.
     if (!conformance || typeof conformance.verdict !== 'string') return [RUN_STATUS.HUMAN, 'insufficient_evidence:no_conformance']
-    // (2) BLOCKED dominates — incl. a DESYNCED verdict whose failure arrays are non-empty (don't trust the string alone).
+    if (malformedArr(conformance.mandatory_failed) || malformedArr(conformance.failed_families) || malformedArr(probes.drift) || malformedArr(taste.author_vetoes))
+      return [RUN_STATUS.HUMAN, 'insufficient_evidence:malformed_evidence']
+    const drift = arr(probes.drift)
+    // (1) BLOCKED DOMINATES — a named mandatory failure OR a live persona-drift fabrication breach, FIRST,
+    // so the strongest signal is never masked by a later insufficiency check.
     if (conformance.verdict === 'BLOCKED' || arr(conformance.mandatory_failed).length || arr(conformance.failed_families).length)
       return [RUN_STATUS.BLOCKED, 'mandatory_obligation_failed']
-    // (3) only an explicit PASS may proceed — any other string ('pass'/'OK'/typo/future enum/'') fails closed.
+    if (drift.some(d => d && d.type === 'persona_drift')) return [RUN_STATUS.BLOCKED, 'fresh_probe_fabrication_breach']
+    // (2) ALLOWLIST: only an explicit PASS proceeds — any other string ('pass'/'OK'/typo/'') fails closed.
     if (conformance.verdict !== 'PASS') return [RUN_STATUS.HUMAN, 'insufficient_evidence:unrecognized_verdict']
-    // (4) the noncompensatory floor must have actually been SCORED: a must-DQ/must-PASS class that scored
-    // zero, or a mandatory family that entirely abstained, means the floor was never tested (the P0).
-    const floorUntested = (conformance.floor && conformance.floor.untested) || (arr(conformance.unscored_families).length ? 'mandatory_family_abstained' : null)
-    if (floorUntested) return [RUN_STATUS.HUMAN, 'insufficient_evidence:' + floorUntested]
+    // (3) the floor must be POSITIVELY scored — re-derive from the counts (don't trust `untested`): a must-DQ
+    // AND a must-PASS anchor must each have scored ≥1, else the noncompensatory floor is vacuous (the P0).
+    const fl = conformance.floor
+    if (!isObj(fl) || !(Number(fl.scored_must_dq) > 0) || !(Number(fl.scored_must_pass) > 0) || fl.untested)
+      return [RUN_STATUS.HUMAN, 'insufficient_evidence:floor_untested']
+    if (arr(conformance.unscored_families).length) return [RUN_STATUS.HUMAN, 'insufficient_evidence:mandatory_family_abstained']
     if (!(Number(conformance.passed) > 0)) return [RUN_STATUS.HUMAN, 'insufficient_evidence:floor_scored_nothing']
     if (input.evidence_sufficient === false) return [RUN_STATUS.HUMAN, 'insufficient_evidence']
-    // (5) fresh-probe DRIFT gates QUALIFIED (the plan defines QUALIFIED as "conformance + fresh probes
-    // passed"). A persona-drift miss is a live fabrication breach ⇒ BLOCKED; any other drift ⇒ HUMAN_REVIEW.
-    const drift = arr(probes.drift)
-    if (drift.some(d => d && d.type === 'persona_drift')) return [RUN_STATUS.BLOCKED, 'fresh_probe_fabrication_breach']
-    if (drift.length || (Number.isFinite(probes.total) && Number(probes.passed) < probes.total)) return [RUN_STATUS.HUMAN, 'fresh_probe_drift']
-    // (6) the author is the principal — a non-empty veto (or an explicit disagreement) decides the champion.
+    // (4) fresh probes must have actually RUN (total>0) and all passed — an empty/absent probe phase is
+    // insufficient evidence, not a pass (the default shape {passed:0,drift:[]} must NOT certify).
+    if (!(Number.isFinite(probes.total) && probes.total > 0)) return [RUN_STATUS.HUMAN, 'insufficient_evidence:fresh_probes_not_run']
+    if (drift.length || Number(probes.passed) < probes.total) return [RUN_STATUS.HUMAN, 'fresh_probe_drift']
+    // (5) the author is the principal — a non-empty veto (or explicit disagreement) decides the champion.
     if (input.author_disagreement === true || arr(taste.author_vetoes).length) return [RUN_STATUS.HUMAN, 'material_author_disagreement']
-    // (7) stability: a flip with an UNRECOGNIZED band can't be classified ⇒ fail closed, never silent-stable.
+    // (6) at least one judge-side perturbation must have RUN; an unrecognized band can't be classified.
+    if (!JUDGE_PERTURBATIONS.some(k => pert[k] && pert[k] !== 'not_run')) return [RUN_STATUS.HUMAN, 'insufficient_evidence:perturbations_not_run']
     if (JUDGE_PERTURBATIONS.some(k => { const p = pert[k]; return p && p !== 'not_run' && p.flipped && p.band !== 'within' && p.band !== 'across' }))
       return [RUN_STATUS.HUMAN, 'insufficient_evidence:unrecognized_perturbation_band']
     if (JUDGE_PERTURBATIONS.some(k => crossesBand(pert[k]))) return [RUN_STATUS.UNSTABLE, 'champion_flips_across_band']
     return [RUN_STATUS.QUALIFIED, 'conformance_probes_perturbations_passed']
   }
   const [run_status, status_reason] = decide()
+  // The DIR positive controls (I>O, T>B, …) are scored by nothing yet — so a PASS certifies the truth gate,
+  // NOT taste-direction. Make that a first-class blind spot so QUALIFIED can't be misread as "tasteful".
+  const known_blind_spots = [...arr(input.known_blind_spots)]
+  if (conformance && Number(conformance.directional_not_scored) > 0) known_blind_spots.push('taste_direction_positive_controls_unscored')
   return {
     packet_id: input.packet_id, run_id: input.run_id, run_status, status_reason,
     operating_envelope: {
@@ -904,11 +918,11 @@ function qualifyRun(input = {}) {
       alt_model: pert.alt_model || 'not_run',                       // absent ⇒ 'not_run', NOT silent stability
       escalation: _v(env.escalation),
     },
-    conformance: { passed: _v(conformance && conformance.passed), failed_families: (conformance && conformance.failed_families) || [], abstained: (conformance && conformance.abstained) || [], floor: (conformance && conformance.floor) || null },
-    fresh_probes: { passed: _v(probes.passed), drift: probes.drift || [] },
+    conformance: { passed: _v(conformance && conformance.passed), failed_families: (conformance && conformance.failed_families) || [], abstained: (conformance && conformance.abstained) || [], floor: (conformance && conformance.floor) || null, directional_not_scored: _v(conformance && conformance.directional_not_scored) },
+    fresh_probes: { passed: _v(probes.passed), total: _v(probes.total), drift: probes.drift || [] },
     adversarial_audit: 'not_run',   // first-class: QUALIFIED_FOR_THIS_RUN is NOT "robust against gaming" (U12b deferred)
     taste: { agreement_with_named_adjudicators: _v(taste.agreement_with_named_adjudicators), author_vetoes: taste.author_vetoes || [] },
-    known_blind_spots: input.known_blind_spots || [],
+    known_blind_spots,
     anchor_bank_version: _v(input.anchor_bank_version), judge_models: input.judge_models || [],
     perturbation_count: JUDGE_PERTURBATIONS.filter(k => pert[k] && pert[k] !== 'not_run').length,   // cost legibility
     expires_on: { model_or_prompt_change: true },

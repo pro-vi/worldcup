@@ -45,9 +45,11 @@ const M = new Function('ctl', mockHeader + prelude + footer)(ctl)
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log('  ok  ' + name) } else { fail++; console.log('  XX  ' + name) } }
 
-const PASS_CONF = { verdict: 'PASS', passed: 12, failed_families: [] }
-const BLOCK_CONF = { verdict: 'BLOCKED', passed: 8, failed_families: ['truth/integrity/MFT-fabrication'] }
-const CLEAN_PROBES = { passed: 7, drift: [] }
+// Fixtures mirror REAL pipeline output: conformance carries a scored floor; probes carry a `total`; at
+// least one judge-side perturbation ran. decide() now requires POSITIVE proof each channel ran.
+const PASS_CONF = { verdict: 'PASS', passed: 12, failed_families: [], mandatory_failed: [], floor: { scored_must_dq: 4, scored_must_pass: 6, untested: null }, unscored_families: [] }
+const BLOCK_CONF = { verdict: 'BLOCKED', passed: 8, failed_families: ['truth/integrity/MFT-fabrication'], floor: { scored_must_dq: 4, scored_must_pass: 6, untested: null } }
+const CLEAN_PROBES = { passed: 7, total: 7, drift: [] }
 const baseInput = {
   packet_id: 'deadbeefdeadbeef', run_id: 'run-01', conformance: PASS_CONF, probes: CLEAN_PROBES,
   evidence_sufficient: true, author_disagreement: false, anchor_bank_version: 'cafebabecafebabe',
@@ -128,6 +130,33 @@ ok('vetoed run reason is material_author_disagreement', M.qualifyRun({ ...baseIn
 // finding 4 — a flip with an UNRECOGNIZED/missing band can't be classified ⇒ fail closed (not silent-stable)
 ok('flipped with unknown band ⇒ HUMAN (not silent stability)', M.qualifyRun({ ...baseInput, perturbations: { mirrored_order: { flipped: true, band: 'wat' } } }).run_status === S.HUMAN)
 ok('flipped with missing band ⇒ HUMAN', M.qualifyRun({ ...baseInput, perturbations: { mirrored_order: { flipped: true } } }).run_status === S.HUMAN)
+
+// ── (f3) RE-REVIEW: positive-proof + type-strict + totality (decide() must self-defend) ───────────
+console.log('re-review: each channel must positively prove it RAN:')
+// the minimal-input fail-open: a bare PASS with no floor / no probes / no perturbations must NOT certify
+ok('bare {verdict:PASS,passed} (no floor/probes/perturbations) ⇒ HUMAN', M.qualifyRun({ packet_id: 'deadbeefdeadbeef', run_id: 'r', conformance: { verdict: 'PASS', passed: 5, failed_families: [] } }).run_status === S.HUMAN)
+// floor must be POSITIVELY scored — a floor reporting zero scored, even with untested:null, is vacuous
+ok('floor scored_must_dq:0 (untested:null) ⇒ HUMAN', M.qualifyRun({ ...baseInput, conformance: { ...PASS_CONF, floor: { scored_must_dq: 0, scored_must_pass: 6, untested: null } } }).run_status === S.HUMAN)
+ok('floor scored_must_pass:0 ⇒ HUMAN', M.qualifyRun({ ...baseInput, conformance: { ...PASS_CONF, floor: { scored_must_dq: 4, scored_must_pass: 0, untested: null } } }).run_status === S.HUMAN)
+ok('no floor object at all ⇒ HUMAN', M.qualifyRun({ ...baseInput, conformance: { verdict: 'PASS', passed: 5, failed_families: [] } }).run_status === S.HUMAN)
+// fresh probes must have RUN (a `total` > 0) — the default {passed:0,drift:[]} shape must not certify
+ok('probes without a total (phase never ran) ⇒ HUMAN', M.qualifyRun({ ...baseInput, probes: { passed: 0, drift: [] } }).run_status === S.HUMAN)
+ok('absent probes ⇒ HUMAN (fresh_probes_not_run)', M.qualifyRun({ ...baseInput, probes: undefined }).status_reason === 'insufficient_evidence:fresh_probes_not_run')
+// at least one judge-side perturbation must have run
+ok('no perturbation ran ⇒ HUMAN (perturbations_not_run)', M.qualifyRun({ ...baseInput, perturbations: { alt_model: 'not_run' } }).status_reason === 'insufficient_evidence:perturbations_not_run')
+// TYPE-STRICT: a wrong-typed failure signal must NOT coerce to "no failure"
+ok('string failed_families ⇒ NOT QUALIFIED', M.qualifyRun({ ...baseInput, conformance: { ...PASS_CONF, failed_families: 'truth/integrity/MFT-fabrication' } }).run_status !== S.QUALIFIED)
+ok('string drift "persona_drift" ⇒ NOT QUALIFIED', M.qualifyRun({ ...baseInput, probes: { passed: 0, total: 7, drift: 'persona_drift' } }).run_status !== S.QUALIFIED)
+ok('string author_vetoes ⇒ NOT QUALIFIED', M.qualifyRun({ ...baseInput, taste: { author_vetoes: 'champ' } }).run_status !== S.QUALIFIED)
+// TOTALITY: a non-object input (incl. null) maps to a state, never throws
+ok('qualifyRun(null) ⇒ HUMAN (no throw)', (() => { try { return M.qualifyRun(null).run_status === S.HUMAN } catch { return false } })())
+ok('qualifyRun(undefined) ⇒ HUMAN', M.qualifyRun(undefined).run_status === S.HUMAN)
+ok('qualifyRun(42) ⇒ HUMAN', M.qualifyRun(42).run_status === S.HUMAN)
+// BLOCKED DOMINANCE: a persona-drift breach wins over a co-occurring insufficiency, never masked to a softer state
+ok('persona_drift breach + evidence_sufficient:false ⇒ BLOCKED (dominance)', M.qualifyRun({ ...baseInput, evidence_sufficient: false, probes: { passed: 6, total: 7, drift: [{ type: 'persona_drift' }] } }).run_status === S.BLOCKED)
+// HONEST GAP: a directional-unscored conformance flags a first-class blind spot
+ok('directional_not_scored ⇒ taste blind spot recorded', M.qualifyRun({ ...baseInput, conformance: { ...PASS_CONF, directional_not_scored: 15 } }).known_blind_spots.includes('taste_direction_positive_controls_unscored'))
+ok('no directional gap ⇒ no spurious blind spot', !M.qualifyRun(baseInput).known_blind_spots.includes('taste_direction_positive_controls_unscored'))
 
 // ── (g) the happy path ───────────────────────────────────────────────────────────────────────────
 console.log('all-pass stable run:')
