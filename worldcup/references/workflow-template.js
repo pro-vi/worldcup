@@ -645,9 +645,10 @@ function buildAnchors({ incumbent = INCUMBENT, packet = SOURCE_PACKET, packetId 
   // (3) TRUTH MFT — UNKNOWN, hedged & non-load-bearing (gate must NOT DQ): the false-accusation guard.
   for (const span of HEDGED_ABSENT_SPANS)
     card({ construct: 'integrity', test_type: 'MFT', kind: 'truth', ...authorityFor(span, packet, 'unknown'), mutation: { span, operator: 'hedge_absent' }, expected: { gate: 'PASS', taste_comparison: null }, known_confounds: ['absent ≠ false'], family: 'truth/integrity/MFT-unknown' })
-  // (4) TRUTH INV — paraphrase/reorder invariance: the gate verdict must NOT change. One per construct.
+  // (4) TRUTH INV — paraphrase/reorder invariance: the gate verdict must NOT CHANGE (an invariance
+  // obligation, not a single PASS/DQ — gate:null so U12 defers it to U23's live two-presentation check).
   for (const c of constructs)
-    card({ construct: c, test_type: 'INV', kind: 'truth', authority_status: AUTHORITY.UNKNOWN, proof: null, mutation: { span: null, operator: 'paraphrase' }, expected: { gate: 'PASS', taste_comparison: { invariant: true } }, family: `truth/${c}/INV` })
+    card({ construct: c, test_type: 'INV', kind: 'truth', authority_status: AUTHORITY.UNKNOWN, proof: null, mutation: { span: null, operator: 'paraphrase' }, expected: { gate: null, taste_comparison: { invariant: true } }, family: `truth/${c}/INV` })
   // (5) TASTE DIR — a directional quality anchor for EVERY construct (a clear improvement should win).
   for (const c of constructs)
     card({ construct: c, test_type: 'DIR', kind: 'taste', authority_status: AUTHORITY.UNKNOWN, proof: null, mutation: { span: null, operator: 'compare' }, expected: { gate: null, taste_comparison: { direction: 'I>O', winner: 'improved', loser: 'baseline' } }, family: `taste/${c}/DIR` })
@@ -656,6 +657,58 @@ function buildAnchors({ incumbent = INCUMBENT, packet = SOURCE_PACKET, packetId 
     card({ construct: 'positive_control', test_type: 'DIR', kind: 'taste', authority_status: AUTHORITY.UNKNOWN, proof: null, mutation: { span: null, operator: 'compare' }, expected: { gate: null, taste_comparison: { direction: d.id, winner: d.winner, loser: d.loser } }, known_confounds: d.confounds, family: `taste/positive_control/${d.id}` })
   return cards
 }
+
+// ── U12 — conformance qualification (EXACT pass/fail; the noncompensatory spec-test GATE) ──────────
+// Scores a config (`ev`, the config under test) against the held-out corpus with EXACT pass/fail —
+// NO Wilson/Bernoulli/CI math anywhere (a curated obligation set is not a random sample; see
+// Architecture Decision #2). The load-bearing, deterministically-realizable obligations are the GATE
+// anchors (truth MFT): a planted FORBIDDEN fabrication MUST be DQ'd; an AUTHORIZED/UNKNOWN detail must
+// NOT be (a false accusation is just as fatal). Realization is a non-leaking splice — the planted span
+// IS the input, the judge must catch it, no answer key reaches the judge. DIRECTIONAL (DIR/INV) anchors
+// need live-generated comparison texts (an honest "improved vs baseline" pair can't be synthesized
+// deterministically without leaking the answer) — so they are DEFERRED to U23's fresh probes here, never
+// silently passed. Noncompensatory: ANY mandatory gate failure ⇒ BLOCKED (no averaging rescues it).
+const baseText = incumbent => (typeof incumbent === 'string' && incumbent.trim()) ? incumbent : 'A short honest passage in the author\'s own voice.'
+// Realize a gate anchor into ONE entry by splicing its span as a lived-fact sentence. Returns null when
+// the test can't be constructed (a must-DQ anchor with no span) ⇒ ABSTAIN, not a fabricated pass/fail.
+function realizeGate(a, incumbent) {
+  const span = a.mutation && a.mutation.span
+  if (a.expected && a.expected.gate === 'DQ' && !span) return null
+  return span ? `${baseText(incumbent)}\n\n${span}.` : baseText(incumbent)
+}
+// A gate anchor is a truth MFT anchor with a binary gate expectation — every one is MANDATORY (both the
+// must-DQ fabrications and the must-PASS authorized/unknown details: a false accusation is noncompensatory too).
+const isGateAnchor = a => a && a.kind === 'truth' && a.expected && (a.expected.gate === 'DQ' || a.expected.gate === 'PASS')
+async function qualifyConformance(corpus, { ev = EVALUATOR, incumbent = INCUMBENT, phase = 'qualify' } = {}) {
+  const items = Array.isArray(corpus) ? corpus : (corpus && corpus.items) || []
+  const gate = items.filter(isGateAnchor)
+  const deferred = items.filter(a => a && !isGateAnchor(a))   // DIR/INV directional — scored by U23 fresh probes
+  // Realize every scorable gate anchor; the unrealizable ones ABSTAIN (escalate), excluded from pass/total.
+  const realized = gate.map((a, i) => ({ a, md: realizeGate(a, incumbent), id: `gate${i}`, label: `gate${i}` }))
+  const abstained = realized.filter(r => r.md == null).map(r => r.a.family)
+  const scored = realized.filter(r => r.md != null)
+  const entries = scored.map(r => ({ id: r.id, label: r.label, markdown: r.md }))
+  if (entries.length) await screenAll(entries, phase, ev)   // the CONFIG UNDER TEST runs the real gate
+  const byId = new Map(entries.map(e => [e.id, e]))
+  const failedFamilies = new Set(), mandatoryFailed = new Set(), byConstruct = {}
+  let passed = 0
+  for (const r of scored) {
+    const v = byId.get(r.id).flaw || { disqualified: false }
+    const pass = (!!v.disqualified) === (r.a.expected.gate === 'DQ')   // exact: caught a fab iff it should, passed a clean iff it should
+    const bc = byConstruct[r.a.construct] || (byConstruct[r.a.construct] = { passed: 0, total: 0, failed: [] })
+    bc.total++
+    if (pass) { passed++; bc.passed++ }
+    else { failedFamilies.add(r.a.family); bc.failed.push(r.a.family); if (isGateAnchor(r.a)) mandatoryFailed.add(r.a.family) }
+  }
+  const verdict = mandatoryFailed.size ? 'BLOCKED' : 'PASS'   // noncompensatory: any mandatory gate failure dominates
+  return { verdict, passed, total: scored.length, failed_families: [...failedFamilies],
+    mandatory_failed: [...mandatoryFailed], abstained, deferred_to_probes: deferred.length, by_construct: byConstruct }
+}
+// Adopt a (default or qualified) config as THE module evaluator — every judge surface reads the module
+// `let EVALUATOR`, so this is what makes "the config we qualified is the config the tournament runs" true.
+// validateEvaluatorConfig FIRST (a hole-free config is the contract); it throws BEFORE reassigning, so a
+// rejected config never half-adopts. ONLY called under QUALIFY when conformance + probes both pass (U24).
+function adoptEvaluator(E) { validateEvaluatorConfig(E); EVALUATOR = E; return EVALUATOR }
 
 // ─────────────────────────────────────────────────────── BRACKET HELPERS (see brackets.md)
 function snakeGroups(teams, G) { // teams sorted best-first; keeps strongest apart
