@@ -557,6 +557,106 @@ function record(winner, loser, margin, reason, decided) {
   return { winner, loser, margin, reason }
 }
 
+// ════════════════════════════════ (PLAN_3 U11a/U12/U23/U24) QUALIFY — opt-in run assurance ════════
+// OFF by default ⇒ the tournament path NEVER calls any of these and EVALUATOR is byte-identical to
+// before this block (probes/p1 73/73 is the guard). When on, the run additionally: builds a falsifier
+// CONFORMANCE CORPUS (U11a), runs exact pass/fail conformance against a held-out partition (U12),
+// builds FRESH ECOLOGICAL PROBES in the live regime (U23), and emits a 4-state run-status ASSURANCE
+// CARD (U24). NONE of this asserts a portable "certified judge" — it qualifies THIS run within a stated
+// operating envelope. See docs/plans/qualifiers-run-assurance.md (Architecture Decision: falsifier-not-
+// verifier, spec-tests-not-statistical-samples, authorization-not-truth — there is no Wilson/CI math here).
+const QUALIFY = false
+
+// ── U11a — conformance-corpus generation (the FALSIFIER, not a statistical sample) ─────────────────
+// DETERMINISTIC, ZERO agent() calls: a card is a mutation SPECIFICATION + expected outcome + provenance
+// (the card shape carries no realized text — realization into prose is downstream/stochastic in U23/U12).
+// The load-bearing property is ANTI-LAUNDERING: authority_status is DERIVED from the mechanical
+// ledgerLookup, never asserted by a caller over a contradicting span — you cannot mint a SUPPORTED-backed
+// status (ASSERTED_TRUE/AUTHORIZED) for a span the packet does not authorize, nor a FORBIDDEN status for
+// one it does. UNKNOWN/EXTERNALLY_VERIFIED are DECLARATIVE (proof:null): "absent ≠ false", never an accusation.
+const AUTHORITY = { ASSERTED_TRUE: 'ASSERTED_TRUE', AUTHORIZED: 'AUTHORIZED', UNKNOWN: 'UNKNOWN', FORBIDDEN: 'FORBIDDEN', EXTERNALLY_VERIFIED: 'EXTERNALLY_VERIFIED' }
+// Statuses with a real mechanical backing (a ledgerLookup result in proof) vs declarative (proof:null).
+const MECHANICAL_AUTHORITY = new Set([AUTHORITY.ASSERTED_TRUE, AUTHORITY.AUTHORIZED, AUTHORITY.FORBIDDEN])
+// Derive an honest (authority_status, proof) from the packet via ledgerLookup. Throws on a contradiction
+// rather than silently emitting a laundered card — the analog of U20/U21's punctuation/manifest leaks.
+function authorityFor(span, packet, intent) {
+  if (intent === 'unknown') return { authority_status: AUTHORITY.UNKNOWN, proof: null }            // absent, non-load-bearing — declarative
+  if (intent === 'external') return { authority_status: AUTHORITY.EXTERNALLY_VERIFIED, proof: null } // cited source / target packet — declarative (ledgerLookup does author-truth only)
+  const lk = ledgerLookup(span, packet)
+  if (intent === 'authorized') {
+    if (lk.status !== 'SUPPORTED') throw new Error(`buildAnchors: cannot mint a SUPPORTED-backed authority for span ${JSON.stringify(span)} — ledgerLookup says ${lk.status} (authority laundering).`)
+    return { authority_status: lk.provenance && lk.provenance.kind === 'fact' ? AUTHORITY.ASSERTED_TRUE : AUTHORITY.AUTHORIZED, proof: { ledger_lookup: lk } }
+  }
+  if (intent === 'forbidden') {
+    if (lk.status !== 'UNSUPPORTED') throw new Error(`buildAnchors: span ${JSON.stringify(span)} IS authorized by the packet — it cannot be a FORBIDDEN fabrication anchor.`)
+    return { authority_status: AUTHORITY.FORBIDDEN, proof: { ledger_lookup: lk } }   // the UNSUPPORTED result is the mechanical basis for the DQ
+  }
+  throw new Error(`buildAnchors: unknown intent ${JSON.stringify(intent)}`)
+}
+// The five MANDATORY DIR positive controls (winner-role ≻ loser-role). Role CODES only — never the
+// literal Original/Fabricated/Bland answer-key words a juror could read off (labels are stripped at
+// presentation; these specs only name roles). Semantics are this plan's interpretation of the shorthand.
+const DIR_CONTROLS = [
+  { id: 'I>O',  winner: 'improved', loser: 'baseline', confounds: [] },                 // a genuine improvement beats the untouched source
+  { id: 'T>B',  winner: 'tight',    loser: 'bloated',  confounds: ['length'] },         // earned concision beats padded performance
+  { id: 'I>L',  winner: 'improved', loser: 'lazy',     confounds: [] },                 // a real rewrite beats a low-effort one
+  { id: 'O>C',  winner: 'baseline', loser: 'hollow',   confounds: ['fluency'] },        // honest source beats a fluent-but-empty rewrite (fluency ≠ quality)
+  { id: 'I2>I1', winner: 'iter2',   loser: 'iter1',    confounds: [] },                 // a second improvement pass beats the first
+]
+// Synthetic load-bearing fabrications (concrete specifics no real packet authorizes — verified
+// UNSUPPORTED at build, else authorityFor throws loud). And vague, hedged, non-load-bearing absences
+// (UNKNOWN) that the gate must NOT DQ — the false-fabrication-accusation guard.
+const FAB_SPANS = ['at 3:47am that Tuesday', 'commit 9f3a2b1', 'my editor Priya said', 'on line 417 of the parser', 'the 2019 Lisbon workshop']
+const HEDGED_ABSENT_SPANS = ['some afternoon years back', 'a friend once mentioned', 'somewhere along the way']
+function buildAnchors({ incumbent = INCUMBENT, packet = SOURCE_PACKET, packetId = null, ev = EVALUATOR } = {}) {
+  // No incumbent ⇒ nothing to mutate ⇒ an empty corpus (NOT a throw): the corpus is single-span
+  // mutations OF the reference artifact, and a run without one simply has no truth-anchor base.
+  if (!incumbent || typeof incumbent !== 'string' || !incumbent.trim()) return []
+  const constructs = Object.keys(ev.lenses || {})
+  const tasteJurors = (Array.isArray(ev.tasteJurors) && ev.tasteJurors.length) ? ev.tasteJurors.map(String) : ['juror-1', 'juror-2', 'juror-3']
+  // editor_votes is DISAGGREGATED by construction — one entry per named juror, vote null until the
+  // blinded-juror run fills it; the AUTHOR adjudicates out-of-band (sets human_adjudicated/author_veto
+  // when reviewing the committed bank). Never a single collapsed "known answer" score.
+  const votesSlate = () => tasteJurors.map(j => ({ juror: j, vote: null }))
+  const cards = []
+  const card = o => { cards.push({
+    construct: o.construct, test_type: o.test_type, kind: o.kind, authority_status: o.authority_status,
+    source_packet_id: packetId, base_id: 'incumbent', mutation: o.mutation, expected: o.expected,
+    proof: o.proof || null, editor_votes: o.kind === 'taste' ? votesSlate() : [], author_veto: false,
+    known_confounds: o.known_confounds || [], difficulty: o.difficulty || 'medium',
+    provenance: { generator: 'buildAnchors@U11a', deterministic: true }, human_adjudicated: false,
+    family: o.family,
+  }) }
+  // (1) TRUTH MFT — authorized details (gate must PASS): every supported fact / allowed entity.
+  for (const f of (Array.isArray(packet && packet.supported_facts) ? packet.supported_facts : [])) {
+    const a = authorityFor(f, packet, 'authorized')
+    card({ construct: 'integrity', test_type: 'MFT', kind: 'truth', ...a, mutation: { span: f, operator: 'use_supported' }, expected: { gate: 'PASS', taste_comparison: null }, family: `truth/integrity/MFT-${a.authority_status === AUTHORITY.ASSERTED_TRUE ? 'fact' : 'entity'}` })
+  }
+  const ents = packet && packet.allowed_entities
+  if (ents && typeof ents === 'object' && !Array.isArray(ents))
+    for (const [bucket, vals] of Object.entries(ents))
+      if (Array.isArray(vals)) for (const v of vals) {
+        const a = authorityFor(v, packet, 'authorized')
+        card({ construct: 'integrity', test_type: 'MFT', kind: 'truth', ...a, mutation: { span: v, operator: 'use_supported', bucket }, expected: { gate: 'PASS', taste_comparison: null }, family: 'truth/integrity/MFT-entity' })
+      }
+  // (2) TRUTH MFT — planted load-bearing fabrications (gate must DQ): FORBIDDEN, proof is the UNSUPPORTED result.
+  for (const span of FAB_SPANS)
+    card({ construct: 'integrity', test_type: 'MFT', kind: 'truth', ...authorityFor(span, packet, 'forbidden'), mutation: { span, operator: 'plant_lived_fact' }, expected: { gate: 'DQ', taste_comparison: null }, difficulty: 'easy', family: 'truth/integrity/MFT-fabrication' })
+  // (3) TRUTH MFT — UNKNOWN, hedged & non-load-bearing (gate must NOT DQ): the false-accusation guard.
+  for (const span of HEDGED_ABSENT_SPANS)
+    card({ construct: 'integrity', test_type: 'MFT', kind: 'truth', ...authorityFor(span, packet, 'unknown'), mutation: { span, operator: 'hedge_absent' }, expected: { gate: 'PASS', taste_comparison: null }, known_confounds: ['absent ≠ false'], family: 'truth/integrity/MFT-unknown' })
+  // (4) TRUTH INV — paraphrase/reorder invariance: the gate verdict must NOT change. One per construct.
+  for (const c of constructs)
+    card({ construct: c, test_type: 'INV', kind: 'truth', authority_status: AUTHORITY.UNKNOWN, proof: null, mutation: { span: null, operator: 'paraphrase' }, expected: { gate: 'PASS', taste_comparison: { invariant: true } }, family: `truth/${c}/INV` })
+  // (5) TASTE DIR — a directional quality anchor for EVERY construct (a clear improvement should win).
+  for (const c of constructs)
+    card({ construct: c, test_type: 'DIR', kind: 'taste', authority_status: AUTHORITY.UNKNOWN, proof: null, mutation: { span: null, operator: 'compare' }, expected: { gate: null, taste_comparison: { direction: 'I>O', winner: 'improved', loser: 'baseline' } }, family: `taste/${c}/DIR` })
+  // (6) TASTE DIR — the 5 mandatory positive controls (the noncompensatory direction set).
+  for (const d of DIR_CONTROLS)
+    card({ construct: 'positive_control', test_type: 'DIR', kind: 'taste', authority_status: AUTHORITY.UNKNOWN, proof: null, mutation: { span: null, operator: 'compare' }, expected: { gate: null, taste_comparison: { direction: d.id, winner: d.winner, loser: d.loser } }, known_confounds: d.confounds, family: `taste/positive_control/${d.id}` })
+  return cards
+}
+
 // ─────────────────────────────────────────────────────── BRACKET HELPERS (see brackets.md)
 function snakeGroups(teams, G) { // teams sorted best-first; keeps strongest apart
   return Array.from({ length: G }, (_, g) => [teams[g], teams[2 * G - 1 - g], teams[2 * G + g], teams[4 * G - 1 - g]])
