@@ -710,6 +710,86 @@ async function qualifyConformance(corpus, { ev = EVALUATOR, incumbent = INCUMBEN
 // rejected config never half-adopts. ONLY called under QUALIFY when conformance + probes both pass (U24).
 function adoptEvaluator(E) { validateEvaluatorConfig(E); EVALUATOR = E; return EVALUATOR }
 
+// ── U23 — fresh, run-scoped ecological probes (DRIFT detection, NOT the adversarial audit) ─────────
+// The structural upgrade the durable single-span corpus structurally cannot give: probes generated
+// INSIDE THE LIVE regime (this packet / context length / incumbent / generator), covering the multi-edit
+// interactions a single-span mutation misses — distributed persona-drift (unauthorized lived fact spread
+// across sentences, no single forgeable span), load-bearing omission, a genuine structural improvement,
+// earned/supported vividness, A/B order reversal, a harmless length/format change, and 1–2 judge-bait
+// smoke tests. They are RUN-SCOPED: regenerated every run and NEVER written to the durable bank (a probe
+// carries no `family`, so anchorbank can't even ingest one) — that is what keeps them un-gameable. This
+// detects DRIFT, NOT adaptive exploitation: judge_bait is a smoke test for obvious gaming, not the
+// freeze-rubric → red-team → 16–32-attempt exploit-rate audit (that is U12b, deferred; the card flags
+// adversarial_audit:'not_run'). Do not read U23's drift coverage as exploitation robustness.
+const PROBE_TYPES = [
+  { type: 'persona_drift',       kind: 'gate', construct: 'integrity', expected: { gate: 'DQ' } },     // distributed unauthorized lived fact — must be caught with no single span
+  { type: 'omission',            kind: 'dir',  construct: 'substance', expected: { winner: 'a' } },     // the complete piece beats one with a load-bearing omission
+  { type: 'structural_improve',  kind: 'dir',  construct: 'substance', expected: { winner: 'a' } },     // a genuine structural improvement should win
+  { type: 'supported_vividness', kind: 'dir',  construct: 'integrity', expected: { winner: 'a' } },     // earned, source-supported vividness should win
+  { type: 'ab_reversal',         kind: 'inv',  construct: 'overall',   expected: { invariant: true } }, // same pair, order reversed — verdict must not flip
+  { type: 'harmless_format',     kind: 'inv',  construct: 'overall',   expected: { invariant: true } }, // a harmless length/format change must not move the verdict
+  { type: 'judge_bait',          kind: 'dir',  construct: 'taste',     expected: { winner: 'a' } },      // honest beats an obvious gaming attempt (smoke test, not the audit)
+]
+const PROBE_GEN_SCHEMA = { type: 'object', additionalProperties: false, required: ['a'],
+  properties: { a: { type: 'string' }, b: { type: 'string' } } }
+const probeGenPrompt = (t, ctx, ev) => `Generate ONE fresh probe of type "${t.type}" in the LIVE regime, against this rubric. ${t.kind === 'gate' ? 'Return only "a": a passage that exhibits the failure to test.' : 'Return "a" (the entry that SHOULD prevail / be invariant) and "b" (its counterpart).'}
+
+CRITERIA:
+${ev.criteriaBlock}
+
+REFERENCE (live incumbent):
+---
+${ctx.incumbent}
+---
+Return JSON { a${t.kind === 'gate' ? '' : ', b'} }.`
+const defaultProbeGenerate = (ev, phase) => async (t, ctx) => {
+  const r = await agent(probeGenPrompt(t, ctx, ev), { ...ev.agentOptions, label: `gen:${t.type}`, phase, schema: PROBE_GEN_SCHEMA })
+  return { a: (r && r.a) || '', b: (r && r.b) || '' }
+}
+// Build the fresh probe set (content generated live; never persisted). `generate` is injectable for tests.
+async function buildProbes({ incumbent = INCUMBENT, packet = SOURCE_PACKET, ev = EVALUATOR, phase = 'probes', generate } = {}) {
+  const gen = generate || defaultProbeGenerate(ev, phase)
+  const probes = []
+  for (const t of PROBE_TYPES) {
+    const c = await gen(t, { incumbent, packet })
+    probes.push({ type: t.type, kind: t.kind, construct: t.construct, expected: t.expected,
+      a: (c && c.a) || '', b: (c && c.b) || '', run_scoped: true })   // run_scoped + no `family` ⇒ cannot enter the durable bank
+  }
+  return probes
+}
+// Judge the fresh probes THROUGH the live config and report DRIFT per probe (not validity). gate probes
+// screen; dir probes must pick `a`; inv probes must hold the verdict stable across reversed order.
+async function judgeProbes(probes, { ev = EVALUATOR, phase = 'probes' } = {}) {
+  const mkEntry = (id, md) => ({ id, label: id, markdown: md, rating: 1500 })
+  const drift = [], byType = {}
+  let passed = 0
+  for (const p of probes) {
+    let pass
+    if (p.kind === 'gate') {
+      const e = mkEntry('probe', p.a)
+      await screenAll([e], phase, ev)
+      pass = (!!(e.flaw && e.flaw.disqualified)) === (p.expected.gate === 'DQ')
+    } else if (p.kind === 'inv') {
+      const A = mkEntry('A', p.a), B = mkEntry('B', p.b)
+      // A/B reversal SWAPS which entry is presented first (the a/b arguments), not the internal orderIdx
+      // — playMatch already counterbalances orderIdx + breaks ties toward `a`, so an orderIdx flip cancels
+      // out and would hide real position bias. Swapping the arguments is the genuine order-reversal test.
+      const r1 = await playMatch(A, B, 0, 'FINAL', phase, [], ev)
+      const r2 = await playMatch(B, A, 0, 'FINAL', phase, [], ev)
+      pass = !!r1 && !!r2 && r1.winner.id === r2.winner.id   // a position-biased judge flips; a faithful one holds
+    } else {   // dir — the live config must pick `a` (the entry that should prevail)
+      const A = mkEntry('A', p.a), B = mkEntry('B', p.b)
+      const r = await playMatch(A, B, 0, 'FINAL', phase, [], ev)
+      pass = !!r && r.winner.id === 'A'
+    }
+    const bt = byType[p.type] || (byType[p.type] = { passed: 0, total: 0 }); bt.total++
+    if (pass) { passed++; bt.passed++ } else drift.push({ type: p.type, construct: p.construct })
+  }
+  // scope:'drift' + adversarial_audit:'not_run' are FIRST-CLASS — this is drift detection, and it does
+  // NOT stand in for the deferred adaptive-exploitation audit (U12b). Never reported as "robust".
+  return { scope: 'drift', adversarial_audit: 'not_run', passed, total: probes.length, drift, by_type: byType }
+}
+
 // ─────────────────────────────────────────────────────── BRACKET HELPERS (see brackets.md)
 function snakeGroups(teams, G) { // teams sorted best-first; keeps strongest apart
   return Array.from({ length: G }, (_, g) => [teams[g], teams[2 * G - 1 - g], teams[2 * G + g], teams[4 * G - 1 - g]])
