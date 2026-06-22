@@ -1,8 +1,10 @@
-# Profiles — the taste you plug into a taste-neutral engine
+# Profiles — the domain taste you plug into a domain-general engine
 
-The worldcup engine ships with **no taste of its own**. It has a taste-shaped socket: the criteria
-block (rubric + house bans), the gate, and the lens set. A **profile** fills that socket for one
-domain or one author's voice. Nothing in a profile is an engine default — you opt into it.
+The worldcup engine ships a **domain-general** default judge — general axes (`substance` · `fit` ·
+`craft` · `integrity`), general DQ categories, and **no domain-specific taste or house bans**. It has a
+taste-shaped socket: the criteria block (rubric + house bans), the gate, and the lens set. A **profile**
+fills that socket for one domain or one author's voice (e.g. prose swaps in `fidelity`/`taste`/`anti-gaming`/
+`argument`/`cold-reader` + a fabrication gate). Nothing in a profile is an engine default — you opt into it.
 
 ## How a run gets its taste (priority order)
 1. **The user hands in a voice skill** → invoke it and distill its rules into the criteria block.

@@ -109,8 +109,9 @@ context; pick sane defaults for the rest and state them.
 2. **Assemble the criteria block.** Write the taste spec, the disqualifiers, and the
    incumbent into a single text block you will embed in every judge prompt. **If the user
    handed in a voice skill, invoke it and distill its hard rules into this block; otherwise use
-   their stated criteria in their own words.** Ship nothing domain-specific by default — the
-   engine has no taste of its own (see "references/profiles/" for example profiles to adapt). For a
+   their stated criteria in their own words.** Ship nothing domain-specific by default — the engine
+   judges on general axes (substance / fit / craft / integrity) and the user's criteria fills in what
+   "good" means in their domain (see "references/profiles/" for example profiles to adapt). For a
    critique/response run, fetch the target first and put it in the template's dedicated
    `TARGET` field — NOT in the criteria text. The template threads TARGET into the criteria
    channel for you AND derives the MISREPRESENTS_TARGET gate enforcement from that field;
