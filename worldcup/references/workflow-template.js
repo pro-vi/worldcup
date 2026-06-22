@@ -337,7 +337,7 @@ function validateEvaluatorConfig(ev) {
     // Single source of truth: the prose jurors read MUST contain the ledger rendered from THIS packet,
     // or a config can have judges reading stale prose that no longer matches the structured packet.
     if (typeof ev.criteriaBlock === 'string' && !ev.criteriaBlock.includes(renderLedger(p)))
-      throw new Error('EVALUATOR.criteriaBlock must contain renderLedger(sourcePacket) — the prose jurors read and the mechanical ledger must be the same source (single source of truth).')
+      throw new Error('EVALUATOR.criteriaBlock must contain renderLedger(sourcePacket) — the prose jurors read and the rendered ledger must be the same source (single source of truth).')
   }
   return ev
 }

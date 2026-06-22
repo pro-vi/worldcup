@@ -95,11 +95,11 @@ inventing the author's life; target-truth guards against misrepresenting someone
 (Headless / no-operator runs: a phase-0 fetch agent using built-in WebFetch/WebSearch is the
 fallback, since interactively-authed MCP servers can be absent there.)
 
-### Structured form (the machine-readable twin) — PLAN_3 U20/P2
+### Structured form (the single source of truth) — U20
 
-The prose packet above is what the **judges read**; it is now **rendered from a structured object**
+The prose packet above is what the **judges read**; it is **rendered from a structured object**
 (`SOURCE_PACKET` in `workflow-template.js`) that is the **single source of truth**, so the prose a
-juror reads and the mechanical check below can never disagree:
+juror reads is always exactly the structured packet:
 
 ```
 SOURCE_PACKET = {
@@ -110,16 +110,12 @@ SOURCE_PACKET = {
 }
 ```
 
-Why structured, not just prose: a truth anchor (U11) claims a **mechanical** proof that a planted
-specific is unsupported, but checking a span against *prose* is itself prompt-parsing — not a proof.
-`ledgerLookup(span)` makes it real: a span is **SUPPORTED** iff a `supported_fact` contains it or it
-matches a member of an `allowed_entities` bucket, else **UNSUPPORTED**, with provenance and **no LLM
-call**. Matching is one-directional on entities (an allowed `Parser.ts` does **not** excuse
-`line 417 of Parser.ts`), so a fabrication that merely embeds a real entity is still caught. The
-**default packet is the unfilled template**: it renders today's prose ledger byte-for-byte and every
-concrete span reads UNSUPPORTED (nothing is declared true yet), so the qualifier is fully opt-in —
-a run with no packet is unchanged. Fill the structured packet (not the prose) and the judge prompts
-re-render from it automatically.
+Why structured, not just prose: filling one structured object keeps the rubric coherent — the judge
+prompts re-render from it automatically, so the fact ledger can't drift between where it's authored and
+where the judges read it. The **default packet is the unfilled template**: it renders today's prose
+ledger byte-for-byte, so a run with no packet is unchanged. Fabrication is caught at runtime by the
+**LLM screener panel** (the fabrication gate, §2/§3) reading this ledger — there is no separate
+mechanical/no-LLM fact-check; the screeners' same-family majority is what disqualifies a fabricated specific.
 
 ## 2. Deterministic preflight (cheap, runs before any agent)
 
