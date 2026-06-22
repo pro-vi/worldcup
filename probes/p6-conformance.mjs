@@ -106,6 +106,12 @@ const rAbstain = await M.qualifyConformance([malformed], { incumbent })
 ok('unrealizable anchor is ABSTAINED', rAbstain.abstained.includes('truth/integrity/MFT-broken'))
 ok('abstained anchor is not scored (total 0)', rAbstain.total === 0)
 ok('abstain ⇒ not BLOCKED on its own', rAbstain.verdict === 'PASS')
+// /invariance F2: an ENTIRELY-abstained mandatory family is surfaced as unscored (so the run can't pass
+// the floor vacuously) — but a family that also scored ≥1 anchor is NOT flagged unscored.
+ok('an entirely-abstained mandatory family is reported as unscored', rAbstain.unscored_families.includes('truth/integrity/MFT-broken'))
+const mixed = [malformed, { ...malformed, mutation: { span: 'on line 999 of nowhere', operator: 'plant_lived_fact' } }]
+const rMixed = await M.qualifyConformance(mixed, { incumbent })   // same family: one abstains, one scores
+ok('a family that scored ≥1 anchor is NOT flagged unscored', !rMixed.unscored_families.includes('truth/integrity/MFT-broken'))
 
 // ── (f) DIR/INV deferred to fresh probes, never silently passed ───────────────────────────────
 console.log('directional anchors deferred (not silently passed):')

@@ -87,8 +87,24 @@ ok('perturbation_count excludes not_run perturbations', M.qualifyRun(baseInput).
 
 // ── (f) HUMAN_REVIEW_REQUIRED ────────────────────────────────────────────────────────────────────
 console.log('HUMAN_REVIEW_REQUIRED:')
-ok('material author/editor disagreement ⇒ HUMAN_REVIEW_REQUIRED', M.qualifyRun({ ...baseInput, author_disagreement: true }).run_status === S.HUMAN)
-ok('insufficient evidence ⇒ HUMAN_REVIEW_REQUIRED', M.qualifyRun({ ...baseInput, evidence_sufficient: false }).run_status === S.HUMAN)
+const disag = M.qualifyRun({ ...baseInput, author_disagreement: true })
+const insuff = M.qualifyRun({ ...baseInput, evidence_sufficient: false })
+ok('material author/editor disagreement ⇒ HUMAN_REVIEW_REQUIRED', disag.run_status === S.HUMAN)
+ok('insufficient evidence ⇒ HUMAN_REVIEW_REQUIRED', insuff.run_status === S.HUMAN)
+// /failure-mode axis 7: the two HUMAN causes have different remedies — the card must distinguish them
+ok('disagreement vs insufficiency carry DISTINCT status_reason', disag.status_reason !== insuff.status_reason)
+ok('disagreement reason names the value disagreement', /disagreement/.test(disag.status_reason))
+ok('insufficiency reason names insufficient evidence', /insufficient/.test(insuff.status_reason))
+// /invariance F1 (Blocker): a run with NO conformance fails CLOSED to HUMAN_REVIEW, never QUALIFIED
+const noEvidence = M.qualifyRun({ packet_id: 'deadbeefdeadbeef', run_id: 'r' })
+ok('NO conformance ⇒ HUMAN_REVIEW (fail closed, not silent certify)', noEvidence.run_status === S.HUMAN)
+ok('no-conformance reason names the missing conformance', /no_conformance/.test(noEvidence.status_reason))
+ok('NO conformance + heavy drift still ⇒ HUMAN_REVIEW (never QUALIFIED)',
+  M.qualifyRun({ packet_id: 'deadbeefdeadbeef', run_id: 'r', probes: { passed: 0, drift: [{ type: 'persona_drift' }] } }).run_status === S.HUMAN)
+// /invariance F2: a mandatory family that ENTIRELY abstained is insufficient evidence ⇒ HUMAN_REVIEW
+ok('an entirely-unscored mandatory family ⇒ HUMAN_REVIEW',
+  M.qualifyRun({ ...baseInput, conformance: { verdict: 'PASS', passed: 0, failed_families: [], unscored_families: ['truth/integrity/MFT-fabrication'] } }).run_status === S.HUMAN)
+ok('a partially-abstained but scored floor still ⇒ QUALIFIED', M.qualifyRun({ ...baseInput, conformance: { ...PASS_CONF, abstained: ['x'], unscored_families: [] } }).run_status === S.QUALIFIED)
 
 // ── (g) the happy path ───────────────────────────────────────────────────────────────────────────
 console.log('all-pass stable run:')

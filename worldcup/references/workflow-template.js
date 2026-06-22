@@ -690,9 +690,10 @@ async function qualifyConformance(corpus, { ev = EVALUATOR, incumbent = INCUMBEN
   const entries = scored.map(r => ({ id: r.id, label: r.label, markdown: r.md }))
   if (entries.length) await screenAll(entries, phase, ev)   // the CONFIG UNDER TEST runs the real gate
   const byId = new Map(entries.map(e => [e.id, e]))
-  const failedFamilies = new Set(), mandatoryFailed = new Set(), byConstruct = {}
+  const failedFamilies = new Set(), mandatoryFailed = new Set(), scoredFamilies = new Set(), byConstruct = {}
   let passed = 0
   for (const r of scored) {
+    scoredFamilies.add(r.a.family)
     const v = byId.get(r.id).flaw || { disqualified: false }
     const pass = (!!v.disqualified) === (r.a.expected.gate === 'DQ')   // exact: caught a fab iff it should, passed a clean iff it should
     const bc = byConstruct[r.a.construct] || (byConstruct[r.a.construct] = { passed: 0, total: 0, failed: [] })
@@ -700,9 +701,13 @@ async function qualifyConformance(corpus, { ev = EVALUATOR, incumbent = INCUMBEN
     if (pass) { passed++; bc.passed++ }
     else { failedFamilies.add(r.a.family); bc.failed.push(r.a.family); if (isGateAnchor(r.a)) mandatoryFailed.add(r.a.family) }
   }
+  // A mandatory family that ONLY abstained (zero scored anchors) was never actually tested — surface it so
+  // the run gates to HUMAN_REVIEW rather than passing the floor vacuously. (A family that scored ≥1 anchor
+  // AND abstained another is fine — it was tested.)
+  const unscored_families = [...new Set(abstained)].filter(f => !scoredFamilies.has(f))
   const verdict = mandatoryFailed.size ? 'BLOCKED' : 'PASS'   // noncompensatory: any mandatory gate failure dominates
   return { verdict, passed, total: scored.length, failed_families: [...failedFamilies],
-    mandatory_failed: [...mandatoryFailed], abstained, deferred_to_probes: deferred.length, by_construct: byConstruct }
+    mandatory_failed: [...mandatoryFailed], abstained, unscored_families, deferred_to_probes: deferred.length, by_construct: byConstruct }
 }
 // Adopt a (default or qualified) config as THE module evaluator — every judge surface reads the module
 // `let EVALUATOR`, so this is what makes "the config we qualified is the config the tournament runs" true.
@@ -825,21 +830,31 @@ async function runPerturbations(a, b, { ev = EVALUATOR, phase = 'perturb', altMo
 // no agent calls; the card is handed to qualify.writeCard (orchestrator-side) for atomic persistence.
 function qualifyRun(input = {}) {
   const _v = v => (v === undefined ? null : v)
-  const conformance = input.conformance || { verdict: 'PASS', passed: 0, failed_families: [] }
+  // FAIL CLOSED: a MISSING conformance verdict is insufficient evidence, NOT a pass — never default to
+  // {verdict:'PASS'} (that "silently certifies" a run with zero evidence, the one thing the plan forbids).
+  const conformance = input.conformance || null
   const probes = input.probes || { passed: 0, drift: [] }
   const pert = input.perturbations || {}
   const env = input.envelope || {}
   const taste = input.taste || {}
   const crossesBand = p => p && p !== 'not_run' && p.flipped && p.band === 'across'
-  const run_status = (() => {
-    if (conformance.verdict === 'BLOCKED') return RUN_STATUS.BLOCKED          // a mandatory obligation failed — dominates everything
-    if (input.evidence_sufficient === false) return RUN_STATUS.HUMAN          // can't assess stability without evidence
-    if (JUDGE_PERTURBATIONS.some(k => crossesBand(pert[k]))) return RUN_STATUS.UNSTABLE   // champion flips ACROSS the band under a judge-side perturbation
-    if (input.author_disagreement === true) return RUN_STATUS.HUMAN           // material author/editor value disagreement
-    return RUN_STATUS.QUALIFIED
-  })()
+  // A mandatory gate family that produced NO scored anchor (entirely abstained) means the floor was never
+  // actually tested — that is insufficient evidence, not conformance. Such families gate to HUMAN_REVIEW.
+  const abstainedMandatory = (conformance && Array.isArray(conformance.unscored_families) && conformance.unscored_families.length) ? conformance.unscored_families : null
+  // run_status + the REASON it fired (review item: HUMAN_REVIEW has two causes with different remedies —
+  // a consumer must be able to tell "gather more evidence" from "resolve a value disagreement").
+  const decide = () => {
+    if (!conformance || typeof conformance.verdict !== 'string') return [RUN_STATUS.HUMAN, 'insufficient_evidence:no_conformance']
+    if (conformance.verdict === 'BLOCKED') return [RUN_STATUS.BLOCKED, 'mandatory_obligation_failed']   // dominates everything
+    if (input.evidence_sufficient === false) return [RUN_STATUS.HUMAN, 'insufficient_evidence']          // can't assess stability
+    if (abstainedMandatory) return [RUN_STATUS.HUMAN, 'insufficient_evidence:mandatory_family_abstained'] // floor never tested
+    if (JUDGE_PERTURBATIONS.some(k => crossesBand(pert[k]))) return [RUN_STATUS.UNSTABLE, 'champion_flips_across_band'] // judge-side perturbation
+    if (input.author_disagreement === true) return [RUN_STATUS.HUMAN, 'material_author_disagreement']    // a value disagreement, not an evidence gap
+    return [RUN_STATUS.QUALIFIED, 'conformance_and_probes_passed']
+  }
+  const [run_status, status_reason] = decide()
   return {
-    packet_id: input.packet_id, run_id: input.run_id, run_status,
+    packet_id: input.packet_id, run_id: input.run_id, run_status, status_reason,
     operating_envelope: {
       packet_completeness: _v(env.packet_completeness), packet_provenance: _v(env.packet_provenance),
       field_diversity: _v(env.field_diversity), generator_identity: _v(env.generator_identity),
@@ -850,7 +865,7 @@ function qualifyRun(input = {}) {
       alt_model: pert.alt_model || 'not_run',                       // absent ⇒ 'not_run', NOT silent stability
       escalation: _v(env.escalation),
     },
-    conformance: { passed: _v(conformance.passed), failed_families: conformance.failed_families || [] },
+    conformance: { passed: _v(conformance && conformance.passed), failed_families: (conformance && conformance.failed_families) || [], abstained: (conformance && conformance.abstained) || [] },
     fresh_probes: { passed: _v(probes.passed), drift: probes.drift || [] },
     adversarial_audit: 'not_run',   // first-class: QUALIFIED_FOR_THIS_RUN is NOT "robust against gaming" (U12b deferred)
     taste: { agreement_with_named_adjudicators: _v(taste.agreement_with_named_adjudicators), author_vetoes: taste.author_vetoes || [] },
