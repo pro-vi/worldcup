@@ -790,6 +790,78 @@ async function judgeProbes(probes, { ev = EVALUATOR, phase = 'probes' } = {}) {
   return { scope: 'drift', adversarial_audit: 'not_run', passed, total: probes.length, drift, by_type: byType }
 }
 
+// ── U24 — run envelope + 4-state run status + assurance card (the headline output) ─────────────────
+// A STATE MACHINE, not a score. Perturbations run on the CHAMPION (final pair) ONLY — O(perturbations),
+// not O(matches) — and UNSTABLE is a precise, narrow claim: the champion flips under a JUDGE-side
+// perturbation AND the flip crosses a MARGIN BAND (both directions were clear, not a near-tie). A flip
+// INSIDE the near-tie band is a close call, NOT UNSTABLE. Bracket-reseed is NOT a judge-side perturbation
+// (reseed flips are inherent knockout variance) — it is recorded in operating_envelope.bracket_seed_
+// sensitivity, never the headline status. alt-judge-model is OPTIONAL: absent ⇒ 'not_run' (NEVER read as
+// stability). UNSTABLE is a claim about the champion the author acts on, NOT about evaluator validity.
+const RUN_STATUS = { BLOCKED: 'BLOCKED', QUALIFIED: 'QUALIFIED_FOR_THIS_RUN', UNSTABLE: 'UNSTABLE', HUMAN: 'HUMAN_REVIEW_REQUIRED' }
+const JUDGE_PERTURBATIONS = ['mirrored_order', 'paraphrase', 'alt_model']   // bracket_reseed is deliberately NOT here
+// A flip is "across" the band only when BOTH directions were decisive/clear; any near-tie ('narrow') ⇒ "within".
+const bandOf = (m1, m2) => ([m1, m2].every(m => m === 'clear' || m === 'decisive') ? 'across' : 'within')
+// Champion-only judge-side perturbations (the cost-bounded set). mirrored_order swaps the entry arguments
+// (playMatch already counterbalances orderIdx); paraphrase re-judges under a paraphrased rubric; alt_model
+// re-judges under a second model IFF one is configured (else 'not_run' — not silent stability).
+async function runPerturbations(a, b, { ev = EVALUATOR, phase = 'perturb', altModel = null, paraphrase = true } = {}) {
+  const base = await playMatch(a, b, 0, 'FINAL', phase, [], ev)
+  const win = r => r && r.winner && r.winner.id
+  const mir = await playMatch(b, a, 0, 'FINAL', phase, [], ev)
+  const out = { mirrored_order: { flipped: win(mir) !== win(base), band: bandOf(base.margin, mir.margin) }, paraphrase: 'not_run', alt_model: 'not_run' }
+  if (paraphrase) {
+    const par = await playMatch(a, b, 0, 'FINAL', phase, [], { ...ev, criteriaBlock: ev.criteriaBlock + '\n\n(Rubric paraphrased; same meaning.)' })
+    out.paraphrase = { flipped: win(par) !== win(base), band: bandOf(base.margin, par.margin) }
+  }
+  if (altModel) {
+    const alt = await playMatch(a, b, 0, 'FINAL', phase, [], { ...ev, agentOptions: { ...ev.agentOptions, model: altModel } })
+    out.alt_model = { flipped: win(alt) !== win(base), band: bandOf(base.margin, alt.margin) }
+  }
+  return out
+}
+// Assemble the run status + assurance card from the conformance verdict (U12), the fresh-probe drift
+// report (U23), the champion perturbation outcomes (runPerturbations), and run/envelope metadata. Pure —
+// no agent calls; the card is handed to qualify.writeCard (orchestrator-side) for atomic persistence.
+function qualifyRun(input = {}) {
+  const _v = v => (v === undefined ? null : v)
+  const conformance = input.conformance || { verdict: 'PASS', passed: 0, failed_families: [] }
+  const probes = input.probes || { passed: 0, drift: [] }
+  const pert = input.perturbations || {}
+  const env = input.envelope || {}
+  const taste = input.taste || {}
+  const crossesBand = p => p && p !== 'not_run' && p.flipped && p.band === 'across'
+  const run_status = (() => {
+    if (conformance.verdict === 'BLOCKED') return RUN_STATUS.BLOCKED          // a mandatory obligation failed — dominates everything
+    if (input.evidence_sufficient === false) return RUN_STATUS.HUMAN          // can't assess stability without evidence
+    if (JUDGE_PERTURBATIONS.some(k => crossesBand(pert[k]))) return RUN_STATUS.UNSTABLE   // champion flips ACROSS the band under a judge-side perturbation
+    if (input.author_disagreement === true) return RUN_STATUS.HUMAN           // material author/editor value disagreement
+    return RUN_STATUS.QUALIFIED
+  })()
+  return {
+    packet_id: input.packet_id, run_id: input.run_id, run_status,
+    operating_envelope: {
+      packet_completeness: _v(env.packet_completeness), packet_provenance: _v(env.packet_provenance),
+      field_diversity: _v(env.field_diversity), generator_identity: _v(env.generator_identity),
+      evaluator_config_id: _v(env.evaluator_config_id), gate_false_dq_behavior: _v(env.gate_false_dq_behavior),
+      pair_order_stability: pert.mirrored_order || 'not_run', paraphrase_stability: pert.paraphrase || 'not_run',
+      preference_cycles: _v(env.preference_cycles),
+      bracket_seed_sensitivity: pert.bracket_reseed || 'not_run',   // reseed flips live HERE, never in run_status
+      alt_model: pert.alt_model || 'not_run',                       // absent ⇒ 'not_run', NOT silent stability
+      escalation: _v(env.escalation),
+    },
+    conformance: { passed: _v(conformance.passed), failed_families: conformance.failed_families || [] },
+    fresh_probes: { passed: _v(probes.passed), drift: probes.drift || [] },
+    adversarial_audit: 'not_run',   // first-class: QUALIFIED_FOR_THIS_RUN is NOT "robust against gaming" (U12b deferred)
+    taste: { agreement_with_named_adjudicators: _v(taste.agreement_with_named_adjudicators), author_vetoes: taste.author_vetoes || [] },
+    known_blind_spots: input.known_blind_spots || [],
+    anchor_bank_version: _v(input.anchor_bank_version), judge_models: input.judge_models || [],
+    perturbation_count: JUDGE_PERTURBATIONS.filter(k => pert[k] && pert[k] !== 'not_run').length,   // cost legibility
+    expires_on: { model_or_prompt_change: true },
+    top_set: null,   // inert forward-compat until the deferred robust-top-set unit lands (Scope Boundaries)
+  }
+}
+
 // ─────────────────────────────────────────────────────── BRACKET HELPERS (see brackets.md)
 function snakeGroups(teams, G) { // teams sorted best-first; keeps strongest apart
   return Array.from({ length: G }, (_, g) => [teams[g], teams[2 * G - 1 - g], teams[2 * G + g], teams[4 * G - 1 - g]])
