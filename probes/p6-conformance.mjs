@@ -94,6 +94,13 @@ ok('no "recall" key/value', !/recall/i.test(blob))
 ok('no "interval"/"ci"/"confidence_interval"', !/interval|confidence_interval|\bci\b/i.test(blob))
 ok('scorecard reports integer passed/total', Number.isInteger(rPass.passed) && Number.isInteger(rPass.total))
 ok('failed_families is an array of family strings', Array.isArray(rBlind.failed_families) && rBlind.failed_families.every(f => typeof f === 'string'))
+// P0/floor coverage: the scorecard reports whether BOTH a must-DQ and a must-PASS were actually scored
+ok('floor reports must-DQ + must-PASS scored, untested null', rPass.floor && rPass.floor.scored_must_dq > 0 && rPass.floor.scored_must_pass > 0 && rPass.floor.untested === null)
+ctl.judge = perfect
+const onlyPass = corpus.filter(c => c.kind === 'truth' && c.test_type === 'MFT' && c.expected.gate === 'PASS')
+ok('a floor with no must-DQ scored is flagged untested', (await M.qualifyConformance(onlyPass, { incumbent })).floor.untested === 'no_scored_must_dq')
+const onlyDQ = corpus.filter(c => c.kind === 'truth' && c.test_type === 'MFT' && c.expected.gate === 'DQ')
+ok('a floor with no must-PASS scored is flagged untested', (await M.qualifyConformance(onlyDQ, { incumbent })).floor.untested === 'no_scored_must_pass')
 
 // ── (e) ABSTAIN on an unrealizable anchor (not a fabricated pass/fail) ─────────────────────────
 console.log('ABSTAIN on an unrealizable anchor:')

@@ -36,23 +36,34 @@ function persistAnchors({ packet, items, provenance = {}, created = null, baseDi
 // by role: the run SCORES the held-out certification partition (which it did NOT author — the bank was
 // built once and committed), uses canary for cross-run drift, and may author dev/selection. anchorbank's
 // own tagged errors (corrupt/missing/tampered/forged-manifest) propagate with the file named.
+// A MANDATORY gate anchor is a truth MFT spec test (a planted fabrication that must DQ, or an authorized/
+// unknown detail that must PASS). These are SPEC TESTS, not a statistical sample — the plan's Architecture
+// Decision #2 — so they are NOT held out by family: a single must-DQ family hash-partitions OUT of the
+// certification partition ~80% of the time, leaving the noncompensatory floor vacuous. They are scored on
+// the FULL corpus EVERY run instead. (The card still names the bank version, so this is reproducible.)
+const isMandatoryGateAnchor = it => it && it.kind === 'truth' && it.expected && (it.expected.gate === 'DQ' || it.expected.gate === 'PASS')
 function loadCorpusForRun(bankFile, livePacket) {
   const bank = ab.readForPacket(bankFile, livePacket)   // throws (file-tagged) on corrupt/tampered/stale
   ab.assertCertifiable(bank)                             // throws on an empty certification partition
+  const items = Array.isArray(bank.items) ? bank.items : []
   return {
     bank, version: bank.version, packet_id: bank.packet_id,
     heldOut: { certification: ab.itemsInPartition(bank, 'certification'), canary: ab.itemsInPartition(bank, 'canary') },
     authored: { dev: ab.itemsInPartition(bank, 'dev'), selection: ab.itemsInPartition(bank, 'selection') },
+    mandatory: items.filter(isMandatoryGateAnchor),       // the spec-test floor — scored every run, not held out
     unadjudicated: ab.unadjudicated(bank),                // taste gold the author hasn't signed off (U12 policy)
   }
 }
 
-// Shape the held-out partition for the Workflow's `args.anchorBank` envelope (the Workflow cannot read
-// disk). Only JSON crosses the seam. `items` (certification) is what U12 scores; canary is for U24 drift.
+// Shape the scored set for the Workflow's `args.anchorBank` envelope (the Workflow cannot read disk). Only
+// JSON crosses the seam. `items` = the FULL mandatory gate floor (always) UNION the held-out certification
+// SAMPLE (the non-mandatory conformance draw), deduped by reference; canary is for U24 drift.
 function anchorBankArg(loaded) {
   if (!loaded || !loaded.heldOut) throw new Error('qualify: anchorBankArg needs a loadCorpusForRun result.')
-  return { version: loaded.version, packet_id: loaded.packet_id,
-    items: loaded.heldOut.certification, canary: loaded.heldOut.canary }
+  const seen = new Set(), items = []
+  for (const it of [...(loaded.mandatory || []), ...loaded.heldOut.certification])
+    if (!seen.has(it)) { seen.add(it); items.push(it) }
+  return { version: loaded.version, packet_id: loaded.packet_id, items, canary: loaded.heldOut.canary }
 }
 
 // Write the U24 run-assurance card to anchors/<packet_id>/assurance-v<run_id>.json — atomic temp+rename

@@ -106,9 +106,33 @@ ok('an entirely-unscored mandatory family ⇒ HUMAN_REVIEW',
   M.qualifyRun({ ...baseInput, conformance: { verdict: 'PASS', passed: 0, failed_families: [], unscored_families: ['truth/integrity/MFT-fabrication'] } }).run_status === S.HUMAN)
 ok('a partially-abstained but scored floor still ⇒ QUALIFIED', M.qualifyRun({ ...baseInput, conformance: { ...PASS_CONF, abstained: ['x'], unscored_families: [] } }).run_status === S.QUALIFIED)
 
+// ── (f2) ALLOWLIST: decide() gates QUALIFIED on ALL collected evidence (P0/P1 review) ─────────────
+console.log('fail-closed allowlist — every evidence channel gates:')
+// finding 3 — only an explicit PASS proceeds; any other verdict string fails closed (not QUALIFIED)
+for (const v of ['pass', 'OK', 'qualified', '', 'PASSS'])
+  ok(`unrecognized verdict ${JSON.stringify(v)} ⇒ HUMAN (not QUALIFIED)`, M.qualifyRun({ ...baseInput, conformance: { ...PASS_CONF, verdict: v } }).run_status === S.HUMAN)
+// finding 3 — a DESYNCED verdict (PASS but a non-empty failure array) ⇒ BLOCKED
+ok('verdict PASS + non-empty mandatory_failed ⇒ BLOCKED', M.qualifyRun({ ...baseInput, conformance: { ...PASS_CONF, mandatory_failed: ['truth/integrity/MFT-fabrication'] } }).run_status === S.BLOCKED)
+ok('verdict PASS + non-empty failed_families ⇒ BLOCKED', M.qualifyRun({ ...baseInput, conformance: { ...PASS_CONF, failed_families: ['x'] } }).run_status === S.BLOCKED)
+// finding 1 — an untested floor (must-DQ or must-PASS scored nothing) ⇒ HUMAN
+ok('conformance.floor.untested ⇒ HUMAN', M.qualifyRun({ ...baseInput, conformance: { ...PASS_CONF, floor: { untested: 'no_scored_must_dq' } } }).run_status === S.HUMAN)
+ok('passed:0 (floor scored nothing) ⇒ HUMAN', M.qualifyRun({ ...baseInput, conformance: { ...PASS_CONF, passed: 0 } }).run_status === S.HUMAN)
+// finding 2 — fresh-probe DRIFT gates status; a persona-drift miss is a live fabrication breach ⇒ BLOCKED
+ok('persona_drift in probes ⇒ BLOCKED (live fabrication breach)', M.qualifyRun({ ...baseInput, probes: { passed: 6, total: 7, drift: [{ type: 'persona_drift' }] } }).run_status === S.BLOCKED)
+ok('other drift ⇒ HUMAN (fresh_probe_drift)', M.qualifyRun({ ...baseInput, probes: { passed: 6, total: 7, drift: [{ type: 'ab_reversal' }] } }).run_status === S.HUMAN)
+ok('drift reason is fresh_probe_drift', M.qualifyRun({ ...baseInput, probes: { passed: 6, total: 7, drift: [{ type: 'omission' }] } }).status_reason === 'fresh_probe_drift')
+ok('passed < total (no drift list) still ⇒ HUMAN', M.qualifyRun({ ...baseInput, probes: { passed: 5, total: 7, drift: [] } }).run_status === S.HUMAN)
+// finding 5 — a non-empty author veto gates, even without the hand-set boolean
+ok('non-empty author_vetoes ⇒ HUMAN_REVIEW', M.qualifyRun({ ...baseInput, taste: { agreement_with_named_adjudicators: 0.0, author_vetoes: ['champ'] } }).run_status === S.HUMAN)
+ok('vetoed run reason is material_author_disagreement', M.qualifyRun({ ...baseInput, taste: { author_vetoes: ['champ'] } }).status_reason === 'material_author_disagreement')
+// finding 4 — a flip with an UNRECOGNIZED/missing band can't be classified ⇒ fail closed (not silent-stable)
+ok('flipped with unknown band ⇒ HUMAN (not silent stability)', M.qualifyRun({ ...baseInput, perturbations: { mirrored_order: { flipped: true, band: 'wat' } } }).run_status === S.HUMAN)
+ok('flipped with missing band ⇒ HUMAN', M.qualifyRun({ ...baseInput, perturbations: { mirrored_order: { flipped: true } } }).run_status === S.HUMAN)
+
 // ── (g) the happy path ───────────────────────────────────────────────────────────────────────────
 console.log('all-pass stable run:')
 ok('all pass + stable ⇒ QUALIFIED_FOR_THIS_RUN', M.qualifyRun(baseInput).run_status === S.QUALIFIED)
+ok('QUALIFIED reason names all three evidence channels', M.qualifyRun(baseInput).status_reason === 'conformance_probes_perturbations_passed')
 
 // ── (h) the card: full envelope, honest language ─────────────────────────────────────────────────
 console.log('assurance card shape + honest language:')

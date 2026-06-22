@@ -78,9 +78,24 @@ try {
   console.log('anchorBankArg (the args.anchorBank envelope):')
   const arg = q.anchorBankArg(loaded)
   ok('arg carries version + packet_id', arg.version === bank.version && arg.packet_id === bank.packet_id)
-  ok('arg.items is the scored certification partition', arg.items === loaded.heldOut.certification)
+  ok('arg.items contains the full certification partition', loaded.heldOut.certification.every(it => arg.items.includes(it)))
+  ok('arg.items has no extras when there is no mandatory floor', arg.items.length === loaded.heldOut.certification.length)   // these items carry no expected.gate
   ok('arg.canary is the canary partition', arg.canary === loaded.heldOut.canary)
   ok('arg is JSON-serializable (crosses the sandbox seam)', !throws(() => JSON.parse(JSON.stringify(arg))))
+
+  // ── P0 FIX: the mandatory gate floor is scored EVERY run, regardless of partition ───────────────
+  console.log('mandatory floor is always scored (not held out):')
+  const gateItems = Array.from({ length: 60 }, (_, i) => ({ id: 'g' + i, family: 'gate-' + (i % 12), kind: 'truth',
+    expected: { gate: i % 2 ? 'DQ' : 'PASS', taste_comparison: null }, mutation: { span: 's' + i } }))
+  const gb = q.persistAnchors({ packet: packetA, items: gateItems, baseDir: join(base, 'gate') })
+  const gLoaded = q.loadCorpusForRun(gb.file, packetA)
+  const gArg = q.anchorBankArg(gLoaded)
+  ok('loadCorpusForRun surfaces the full mandatory floor', gLoaded.mandatory.length === gateItems.length)
+  ok('every mandatory gate anchor is in the scored set', gateItems.every(it => gArg.items.some(x => x.id === it.id)))
+  // the 80% P0 case: a must-score family that hash-partitions OUTSIDE certification is STILL scored
+  const outsideCert = gateItems.filter(it => gLoaded.bank.manifest[String(it.family)] !== 'certification')
+  ok('a mandatory family OUTSIDE certification is still scored', outsideCert.length > 0 && outsideCert.every(it => gArg.items.some(x => x.id === it.id)))
+  ok('the scored set has no duplicate (mandatory ∩ certification deduped)', new Set(gArg.items).size === gArg.items.length)
 
   // ── (d) writeCard — atomic round-trip + path-component safety ──────────────────────────────────
   console.log('writeCard (atomic, path-safe):')
