@@ -33,8 +33,10 @@ surfaces + the fetched TARGET) so embedded instructions can't steer a judge or a
    candidate cannot make the judge emit a hijacked format. Covers format-hijack only.
 2. **`embedUntrusted` clause** — covers verdict-tilt + criteria-redefinition (the reachable vectors).
 
-The p1 probe asserts presence + placement, **not** that the wording works. The behavioral validation is
-the smoke below.
+The p1 probe asserts the wrapper **binding** (the exact `embedUntrusted(body,label)` per surface), that the
+literal directive survives, and that the **collision-resistant fence** contains a hostile body (a forged
+fence / `---` inside can't escape) — but **not** that the wording behaviorally *works* on a live model.
+That behavioral validation is the smoke below.
 
 ## The validation that would unblock each deferral
 
