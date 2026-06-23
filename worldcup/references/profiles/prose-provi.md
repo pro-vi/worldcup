@@ -44,7 +44,10 @@ This prose profile **replaces** the general lens seats with the **prose lens doc
 adds the prose fabrication subtypes. Apply it as a COMPLETE EvaluatorConfig override — `validateEvaluatorConfig`
 enforces three consistency rules (every seated lens defined, every category family-mapped, flaw enum ===
 `['NONE', ...categories]`), so you must set a `tiebreakLens` that exists, map every category, and **rebuild
-the flaw schema** (a partial override throws on assignment):
+the flaw schema**. (Assignment itself does NOT validate — the template re-runs `validateEvaluatorConfig(EVALUATOR)`
+at the start of the run, so a partial override fails closed *there*; to catch it sooner, call it yourself
+right after the override. A partial override that reached the gate unchecked would fail OPEN — a category with
+no matching flaw-schema enum can never be emitted, so that fabrication subtype silently never disqualifies.)
 
 ```js
 const proseCategories = [...HARD_DQ_CATEGORIES, 'FALSE_AUTHORIAL_EXPERIENCE', 'FAKE_AUTHORITY_SIGNAL']
@@ -55,11 +58,15 @@ EVALUATOR = { ...EVALUATOR,
     'anti-gaming': 'The skeptic. Name the most tempting surface signal (maybe-fabricated detail, emphasis-theater, lived-in detail not in the ledger) and decide if it is earned; pick the entry that survives stripping fake vividness/vulnerability.',
     argument:      'Stops pretty prose beating better thought. Does the thinking move; does each paragraph change understanding; does the ending follow rather than inflate?',
     'cold-reader': 'An intelligent reader with no obligation to be impressed. Which would you finish, remember, and send to one thoughtful friend — no reward for fake intimacy or LLM polish.',
+    coherence:     'Does the piece read as one continuous whole, or a stapled lineup of mismatched parts? Penalize tonal breaks and seams. (Seated only for the section / recombination route.)',
   },
-  panelFor: stakes => ({ R32: ['fidelity', 'taste', 'anti-gaming'], R16: ['fidelity', 'taste', 'anti-gaming'],
-    QF: ['fidelity', 'taste', 'anti-gaming', 'argument', 'cold-reader'],
-    SF: ['fidelity', 'taste', 'anti-gaming', 'argument', 'cold-reader'],
-    FINAL: ['fidelity', 'taste', 'anti-gaming', 'argument', 'cold-reader'] }[stakes] || ['fidelity', 'taste', 'anti-gaming']),
+  // mirror the engine: append the coherence seat for ASSEMBLED (kind:'sections') candidates, or a
+  // section-composed prose run loses the Frankenstein-seam check with no warning.
+  panelFor: stakes => { const base = ({ R32: ['fidelity', 'taste', 'anti-gaming'], R16: ['fidelity', 'taste', 'anti-gaming'],
+      QF: ['fidelity', 'taste', 'anti-gaming', 'argument', 'cold-reader'],
+      SF: ['fidelity', 'taste', 'anti-gaming', 'argument', 'cold-reader'],
+      FINAL: ['fidelity', 'taste', 'anti-gaming', 'argument', 'cold-reader'] }[stakes] || ['fidelity', 'taste', 'anti-gaming'])
+    return COHERENCE_ON ? [...base, 'coherence'] : base },
   tiebreakLens: 'anti-gaming',                                     // must be one of the seated prose lenses
   hardDqCategories: proseCategories,                              // the prose fabrication SUBTYPES
   dqFamily: { ...DQ_FAMILY,                                       // SPREAD — every category needs a family

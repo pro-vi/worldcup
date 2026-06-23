@@ -88,7 +88,7 @@ context; pick sane defaults for the rest and state them.
    the author-truth ledger; without it a critique can pass the fabrication gate and still
    misrepresent the work it answers.
 5. **Hard disqualifiers**: things that auto-kill an entry regardless of appeal. The
-   domain-general one is **fabricated specifics presented as lived fact** (a lie against the
+   domain-general one is **fabricated specifics presented as real** (a lie against the
    fact ledger). The user may add their own **house-style** hard bans (e.g. a prose profile
    might auto-kill em dashes or banned vocab) — but those are theirs to declare, never an engine
    default, and style tics are usually better as lens penalties than gate kills. Cheap regex bans
@@ -162,11 +162,12 @@ Full version in "references/judging.md". The non-negotiables:
   the noise). Knockout: best-of-3. Semis and final: best-of-5 with distinct lenses,
   optionally a cross-model juror. Vote counts scale with stakes.
 - **Diverse lenses, not replicas.** Panelists wear different hats — the general default set is
-  substance, fit, craft, integrity (a profile swaps in domain lenses, e.g. prose adds voice/taste,
-  code adds correctness/simplicity) — and each is told to be ruthless on its one axis. A vote
-  is the lens's verdict, not a generic "which is nicer."
-- **Truth is a gate, not a score.** A regex preflight kills the cheap violations (em
-  dashes, banned vocab) before any agent runs. Then a 3-judge fabrication gate, armed
+  substance, fit, craft, integrity (a profile swaps in domain lenses, e.g. prose →
+  fidelity/taste/anti-gaming/argument/cold-reader, code → correctness/simplicity) — and each is told
+  to be ruthless on its one axis. A vote is the lens's verdict, not a generic "which is nicer."
+- **Truth is a gate, not a score.** A regex preflight kills any cheap house-style violations a
+  *profile* declares (e.g. a prose profile's em dashes / banned vocab) before any agent runs — the
+  engine ships none by default. Then a 3-judge fabrication gate, armed
   with the fact ledger, disqualifies entries that invent specifics — DQ needs 2 of 3
   judges agreeing on the same violation family (overlapping fabrication subtypes count as
   one family), so one hallucinating judge cannot wrongly kill a clean entry, yet three

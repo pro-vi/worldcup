@@ -120,16 +120,23 @@ mechanical/no-LLM fact-check; the screeners' same-family majority is what disqua
 
 ## 2. Deterministic preflight (cheap, runs before any agent)
 
-Do not spend an LLM call to detect an em dash. Grep. This catches house-style violations
-mechanically and routes the rest to the fabrication gate.
+Do not spend an LLM call to detect an em dash. Grep. The bans are **profile-driven** — the engine ships
+none; a profile (e.g. prose) declares them. This catches house-style violations mechanically and routes
+the rest to the fabrication gate.
 
 ```js
-function preflight(text, bans) {
+function preflight(text, bans) {            // bans default {} (engine ships no house bans)
   const hard = [], soft = []
-  if (bans.emDash && text.includes('—')) hard.push('em dash')          // auto-DQ
-  for (const w of bans.vocab) if (new RegExp(`\\b${w}\\b`, 'i').test(text)) soft.push(`banned: ${w}`)
-  if (/\b(this essay|in this piece|what i want to explore)\b/i.test(text)) soft.push('announced thesis')
-  if (/\b(ultimately|in the end|at the end of the day|what it means to be)\b/i.test(text.slice(-600))) soft.push('uplift closer')
+  const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')   // vocab is a literal word list
+  if (bans.emDash && text.includes('—')) hard.push('em dash')          // auto-DQ (a profile opts in)
+  for (const w of (bans.vocab || [])) if (new RegExp(`\\b${esc(w)}\\b`, 'i').test(text)) soft.push(`banned: ${w}`)
+  // PHRASE flags are profile entries, not hardcoded heuristics — a prose profile supplies e.g.
+  //   { label:'announced thesis', re:'this essay|in this piece|what i want to explore' }
+  //   { label:'uplift closer',    re:'ultimately|in the end|what it means to be', tail:600 }
+  for (const p of (bans.softPatterns || [])) {
+    const n = Number(p.tail), seg = (Number.isFinite(n) && n > 0) ? text.slice(-n) : text
+    if (p.re && new RegExp(`\\b(${p.re})\\b`, 'i').test(seg)) soft.push(p.label)
+  }
   return { hardDQ: hard.length > 0, hard, soft }   // hard => disqualified before judging
 }
 ```
@@ -153,7 +160,11 @@ majority, labelling the entry with the most-cited subtype in that family. Each s
 every concrete detail not inherited from the source as
 SUPPORTED / REASONABLE_INFERENCE / UNSUPPORTED_MINOR / FABRICATED.
 
-Hard-DQ categories: FABRICATED_CONCRETE_DETAIL, FAKE_AUTHORITY_SIGNAL (fake quotes /
+Hard-DQ categories (the ENGINE default is the general set — `FABRICATION` · `CONTRADICTS_SOURCE` ·
+`GENRE_BREACH` · `HOUSE_STYLE_HARD_BAN` · `PLAGIARISTIC_OR_NON_RESPONSIVE`; the named fabrication
+subtypes below — `FABRICATED_CONCRETE_DETAIL`, `FAKE_AUTHORITY_SIGNAL`, `FALSE_AUTHORIAL_EXPERIENCE` —
+are the PROSE profile specializing `FABRICATION`, not engine defaults): FABRICATED_CONCRETE_DETAIL,
+FAKE_AUTHORITY_SIGNAL (fake quotes /
 logs / citations), FALSE_AUTHORIAL_EXPERIENCE (invented lived events/feelings),
 CONTRADICTS_SOURCE, MISREPRESENTS_TARGET (attributes to a critiqued external work claims /
 concessions / scope its real source does not support, or strawmans its scope — enforceable

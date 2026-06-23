@@ -403,17 +403,24 @@ Return JSON { winner:"X"|"Y", confidence }.`
 // Deterministic preflight: cheap regex gate, runs before any agent. Reads the ban policy from the
 // config (ev.bans), so the deterministic half of the gate lives in the config alongside the LLM half —
 // not an out-of-band global side-channel. Default ev = EVALUATOR (whose bans default to the module BANS).
+const RE_SCAN_CAP = 20000   // bound the input a preflight regex sees, so an operator's pathological pattern can't hang the run on long text
 function preflight(text, ev = EVALUATOR) {
   const bans = ev.bans || {}
   const hard = [], soft = []
+  // vocab is a LITERAL word list (operator-supplied) — ESCAPE it, or a normal term ('c++', 'c#', 'foo(')
+  // builds an invalid regex and crashes preflight (→ kills the tournament). Per-word guard for safety too.
+  const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   if (bans.emDash && text.includes('—')) hard.push('em dash')
-  for (const w of (bans.vocab || [])) if (new RegExp(`\\b${w}\\b`, 'i').test(text)) soft.push(`banned:${w}`)
-  // House-style PHRASE flags are PROFILE-driven (default none) — NOT baked into the engine, so the
-  // engine stays taste-neutral. Each entry: { label, re: 'alt|alt2' (word-bounded, case-insensitive),
-  // tail?: N } — tail tests only the last N chars (e.g. an "uplift closer" lives in the ending).
+  for (const w of (bans.vocab || [])) { try { if (new RegExp(`\\b${esc(w)}\\b`, 'i').test(text)) soft.push(`banned:${w}`) } catch { /* degenerate word; skip */ } }
+  // House-style PHRASE flags are PROFILE-driven (default none) — NOT baked into the engine. Each entry:
+  // { label, re: 'alt|alt2' (word-bounded, case-insensitive), tail?: N } — tail tests only the last N chars
+  // (an "uplift closer" lives in the ending). `re` IS an un-sandboxed operator regex; we cap the scanned
+  // segment (RE_SCAN_CAP) and coerce tail (NaN/0/negative ⇒ capped whole text, never a head-drop).
   for (const p of (bans.softPatterns || [])) {
-    try { if (p && p.re && new RegExp(`\\b(${p.re})\\b`, 'i').test(p.tail ? text.slice(-p.tail) : text)) soft.push(p.label || 'house-style') }
-    catch { /* a malformed profile pattern is skipped, never crashes a run */ }
+    try {
+      const n = Number(p && p.tail), seg = (Number.isFinite(n) && n > 0) ? text.slice(-n) : text.slice(0, RE_SCAN_CAP)
+      if (p && p.re && new RegExp(`\\b(${p.re})\\b`, 'i').test(seg)) soft.push(p.label || 'house-style')
+    } catch { /* a malformed profile pattern is skipped, never crashes a run */ }
   }
   return { hardDQ: hard.length > 0, hard, soft }
 }
@@ -947,6 +954,13 @@ async function deriveCandidates(design) {
 }
 
 let pool
+// RE-VALIDATE the LIVE judge config before the run uses it. The load-time check (where EVALUATOR is
+// defined) only saw the DEFAULT, BEFORE any operator override. An override placed below that definition
+// (the documented way to swap in a profile) would otherwise reach the gate UNVALIDATED — and a PARTIAL
+// override fails OPEN, not closed: e.g. extra hardDqCategories without a rebuilt flaw schema means
+// screeners can never emit the new category, so that fabrication subtype silently never disqualifies.
+// Object-spread assignment never validates on its own; this is the catch-all, wherever the override sits.
+validateEvaluatorConfig(EVALUATOR)
 if (SOURCE === 'generate') {
   const specs = await deriveCandidates(DESIGN)
   if (specs.length !== FIELD) return { error: `design produced ${specs.length} candidates, need FIELD=${FIELD}` }
