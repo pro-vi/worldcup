@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict'
-// worldcup — Tier-1 LIVE VIEW consumer (PLAN_4 U17).
+// worldcup — Tier-1 LIVE VIEW consumer.
 //
 // Renders a self-contained, auto-refreshing worldcup-live.html so you can watch group standings
 // form, eliminations land, and the bracket advance WHILE the background Workflow is still running.

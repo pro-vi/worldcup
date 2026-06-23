@@ -249,7 +249,7 @@ const panelFor = stakes => {
   return COHERENCE_ON ? [...base, 'coherence'] : base
 }
 
-// ─────────────────────────────────────── EVALUATOR_CONFIG (PLAN_3 U19/P1: the judge as one object)
+// ─────────────────────────────────────── EVALUATOR_CONFIG (the judge as one threaded object)
 // Every judge surface — the fabrication gate, the seed pre-pass, the lens panel, the panel policy,
 // the schemas, the agent model/options, the family-DQ vocabulary, and the vote aggregation — reads
 // from THIS object instead of scattered constants — one judge config, threaded everywhere. The DEFAULT
@@ -272,7 +272,7 @@ let EVALUATOR = {
   bans:             BANS,                // deterministic preflight policy (em dash, banned vocab) — part of the gate, in the config too
   schemas:          { flaw: FLAW_SCHEMA, lens: LENS_SCHEMA, seed: SEED_SCHEMA },
   agentOptions:     {},                  // merged into every judge agent() call (e.g. { model }); {} = inherit. NEVER overrides label/phase/schema (spread FIRST at call sites)
-  lensWeight:       () => 1,             // (lens) -> weight in the tally; ()=>1 is today's 1:1 (PLAN_3 U13 fills this in)
+  lensWeight:       () => 1,             // (lens) -> weight in the tally; ()=>1 is the default 1:1 (a custom config may override)
 }
 // Guarded weight read: a config's lensWeight is untrusted (could return undefined/NaN/negative/zero, OR
 // THROW — validateEvaluatorConfig only checks it's a function, never invokes it). Coerce non-finite/
@@ -514,7 +514,7 @@ function tally(votes, a, b, ev = EVALUATOR) {
   let av = 0, bv = 0
   // Per-lens weight from the config (lensW guards against undefined/NaN/negative). The default
   // lensWeight is ()=>1, so av/bv are integer vote counts identical to the unweighted tally
-  // (PLAN_3 U13 supplies real per-lens reliability weights).
+  // (a custom config may supply real per-lens reliability weights).
   votes.forEach(v => { const w = lensW(ev, v.lens); if (v.winner.id === a.id) av += w; else bv += w })
   if (av === bv) return null
   return av > bv ? a : b
