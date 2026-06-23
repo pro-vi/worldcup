@@ -112,10 +112,9 @@ Even with no live view attached, the producer's `log()` snapshots (group standin
 eliminations) stream in `/workflows`. The live view is Tier-1: the same information as a refreshing
 artifact. If the spine can't be resolved, fall back to Tier-0 — no run ever depends on the live view.
 
-## Tested
+## Guarantees
 
-`probes/live-view.mjs` (34 assertions, no harness dependency): tolerant parse of both framings
-(spine-journal beacon results + legacy raw/wrapped `WCEVENT`), non-beacon/started-event skipping,
-nested-beacon fidelity, fold idempotence, full render (groups/DQ/bracket/champion), skeleton-before-
-results, gate-only state, empty input. End-to-end: a growing `journal.jsonl` of beacon results renders
-empty→draw→groups→SF→champion live, and a real beacon-emitting probe's journal renders every section.
+Live-view tolerantly parses both framings (spine-journal beacon results + legacy raw/wrapped `WCEVENT`),
+skips non-beacon/started events, preserves nested-beacon fidelity, is fold-idempotent, renders fully
+(groups/DQ/bracket/champion), and handles skeleton-before-results, gate-only state, and empty input.
+End-to-end: a growing `journal.jsonl` of beacon results renders empty→draw→groups→SF→champion live.

@@ -254,7 +254,7 @@ const panelFor = stakes => {
 // the schemas, the agent model/options, the family-DQ vocabulary, and the vote aggregation — reads
 // from THIS object instead of scattered constants — one judge config, threaded everywhere. The DEFAULT
 // below references today's exact constants, so a run with the default EVALUATOR is byte-identical to
-// before this extraction (probe: probes/p1-eval-config.mjs). An operator who supplies custom judging
+// before this extraction. An operator who supplies custom judging
 // criteria sets these fields; otherwise the rubric is auto-sourced. Consumers default to the module
 // EVALUATOR but accept an explicit `ev` for testing and per-call overrides.
 let EVALUATOR = {

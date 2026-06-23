@@ -1,8 +1,0 @@
-{"type":"started","key":"v2:j1","agentId":"j1"}
-{"type":"result","key":"v2:j1","agentId":"j1","result":{"verdict":"X edges it on craft","winner":"X"}}
-{"type":"result","key":"v2:bg","agentId":"b0","result":{"__wc":"EVENT","ev":"gate","field":4,"disqualified":[{"label":"plain-hook","category":"HOUSE_STYLE_HARD_BAN"}]}}
-{"type":"started","key":"v2:bd","agentId":"b1"}
-{"type":"result","key":"v2:bd","agentId":"b1","result":{"__wc":"EVENT","ev":"draw","field":4,"groups":[{"group":"A","teams":[{"label":"cold-hook","seed":1},{"label":"warm-hook","seed":4}]},{"group":"B","teams":[{"label":"dota-mid","seed":2},{"label":"sc-rush","seed":3}]}]}}
-{"type":"result","key":"v2:bgr","agentId":"b2","result":{"__wc":"EVENT","ev":"groups","standings":[{"group":"A","table":[{"label":"cold-hook","pts":6},{"label":"warm-hook","pts":3}],"advanced":["cold-hook"]},{"group":"B","table":[{"label":"dota-mid","pts":6},{"label":"sc-rush","pts":0}],"advanced":["dota-mid"]}]}}
-{"type":"result","key":"v2:br","agentId":"b3","result":{"__wc":"EVENT","ev":"round","stakes":"SF","matches":[{"winner":"cold-hook","loser":"dota-mid","margin":"2-1"}],"eliminated":["dota-mid"]}}
-{"type":"result","key":"v2:bc","agentId":"b4","result":{"__wc":"EVENT","ev":"champion","label":"cold-hook","stakes":"FINAL"}}
