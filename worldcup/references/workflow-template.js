@@ -23,10 +23,11 @@ const GROUPS = FIELD === 48 ? 12 : 8
 const SOURCE = 'generate'      // 'generate' | 'given'
 const USE_INCUMBENT = true     // is there a reference original to beat? (enables the reference challenge)
 const SCREENERS = 3            // fabrication-gate judges per entry: 1 = MVP, 3 = maximal (DQ needs same-category majority)
-const BANS = {                 // FILL: deterministic preflight bans (cheap, run before any agent)
-  emDash: true,                // em dash is an auto-DQ for Provi prose
-  vocab: ['delve', 'harness', 'unlock', 'realm', 'seamless', 'ultimately', 'furthermore', 'profound', 'tapestry', 'testament'],
-}
+const BANS = {                 // FILL: deterministic preflight bans (cheap, run before any agent). EMPTY by
+  emDash: false,               // default — these are HOUSE-STYLE rules, not universal quality. Fill them from
+  vocab: [],                   // the user's voice profile, e.g. { emDash:true, vocab:['delve','tapestry',...] }.
+  softPatterns: [],            // profile phrase flags: [{ label, re:'alt|alt2', tail?:N }] — e.g. announced thesis / uplift closer.
+}                              // See references/profiles/ for an example. Style tics belong in lenses, not the gate.
 const LETTERS = 'ABCDEFGHIJKL'.split('')
 
 // ─── DESIGN — how candidates are created (see references/design-pass.md).
@@ -54,8 +55,9 @@ const DESIGN = {
 }
 
 // ──────────────────────────────────────────── (3) CRITERIA + INCUMBENT + TARGET (FILL)
-// The taste spec + hard disqualifiers, pasted into every juror prompt. For Provi
-// prose, distill the /provi-voice hard rules here. Be specific; vagueness = no taste.
+// The taste spec + hard disqualifiers, pasted into every juror prompt. Distill the invoking
+// user's voice skill / stated criteria here (see references/profiles/ for examples). Be specific;
+// vagueness = no taste. Ship NOTHING domain-specific by default — the engine is taste-neutral.
 //
 // CRITIQUE / RESPONSE RUNS: if the field critiques, responds to, or makes factual claims
 // about a NAMED EXTERNAL WORK, do not trust the draft's summary of that work. FETCH it
@@ -81,7 +83,7 @@ const FILL_LEDGER_PROSE =
 `- FACT LEDGER (what is actually true; everything concrete must trace here): FILL.
 - NOT ALLOWED unless in the ledger: invented line numbers, class/file names, stack
   traces, error messages, dates, names, places, quotes, scenes, or any concrete detail
-  presented as lived fact. Manufactured specificity is a flaw, not a strength.`
+  presented as real. Manufactured specificity is a flaw, not a strength.`
 // The structured fact ledger. supported_facts = concrete things that ARE true (variants may use
 // them); allowed_entities = the named specifics permitted, bucketed by kind; not_allowed = entity
 // classes barred unless they trace to the ledger; target = the structured twin of TARGET (target-truth
@@ -119,20 +121,19 @@ const renderLedger = (packet = SOURCE_PACKET) => {
   const banned = na.length ? `${na.join(', ')}, or any` : 'any'   // empty list ⇒ drop the leading enumeration
   return `- FACT LEDGER (what is actually true; everything concrete must trace here):
 ${body}
-- NOT ALLOWED unless in the ledger: ${banned} concrete detail presented as lived fact. Manufactured specificity is a flaw, not a strength.`
+- NOT ALLOWED unless in the ledger: ${banned} concrete detail presented as real. Manufactured specificity is a flaw, not a strength.`
 }
 
-const CRITERIA_BASE = `FILL: the source packet — rubric, fact ledger, disqualifiers.
-Example for Provi prose:
-- Voice: follow-the-thought, affirmative not question-led, cross-domain without
-  signposting, deflating close, varied sentence length, non-native texture is fine.
+const CRITERIA_BASE = `FILL: the rubric — what makes one entry better, in the USER'S words (distilled
+from their voice skill / stated criteria). Be specific; vague criteria = a tasteless judge.
+- TASTE: <the positive qualities a strong entry has — the user's, not the engine's>.
 ${renderLedger(SOURCE_PACKET)}
-- HARD DISQUALIFIERS: any em dash; banned LLM vocab (delve, harness, unlock,
-  navigate-metaphorical, realm, seamless, ultimately, furthermore, profound, ...);
-  an announced thesis; a swelling uplift closer; AND fabricated specifics presented
-  as lived fact. For a personal essay that is a lie and an automatic disqualification.
-- TASTE IS EARNEDNESS: concrete detail counts only if source-supported and necessary;
-  rhythm only if it clarifies thought; an ending only if it lands without inflating.`
+- HARD DISQUALIFIERS (auto-kill, domain-general): fabricated specifics presented as real
+  (a lie against the fact ledger), genre breach, non-responsiveness to the brief. Add the user's
+  own house-style hard bans ONLY if they truly want auto-kills — style tics (punctuation, word
+  choice) belong in the lenses (scored down), not the gate. See references/profiles/ for examples.
+- EARNEDNESS: every element earns its place or it's cut — concrete detail only if source-supported
+  and necessary; form, length, and flourish only if they serve the goal, never for their own sake.`
 
 // TARGET feeds the criteria/packet channel (reaches generation, seed, gate, and lenses via
 // CRITERIA_BLOCK), and the gate clause is CO-DERIVED from the same TARGET const, so the
@@ -151,24 +152,25 @@ if (!TARGET && (TARGET_BLOCK !== '' || targetGateClause !== '' || CRITERIA_BLOCK
 // prompt, and the tally. MISREPRESENTS_TARGET is present ONLY when a TARGET exists, so a
 // non-target run cannot offer it, cannot return it (schema forbids), and the tally ignores it
 // even if a screener invents it — inert by construction, not just by doctrine.
-const HARD_DQ_CATEGORIES = ['FABRICATED_CONCRETE_DETAIL', 'FAKE_AUTHORITY_SIGNAL',
-  'FALSE_AUTHORIAL_EXPERIENCE', 'CONTRADICTS_SOURCE',
+// Domain-GENERAL hard-DQ vocabulary (the engine ships no domain-specific categories — a profile may add
+// subtypes, e.g. prose adds FALSE_AUTHORIAL_EXPERIENCE; code adds FAKE_TEST_PASS). FABRICATION = invented
+// or faked specifics presented as real (false facts, fabricated results/data, claimed work not done).
+const HARD_DQ_CATEGORIES = ['FABRICATION', 'CONTRADICTS_SOURCE',
   ...(TARGET ? ['MISREPRESENTS_TARGET'] : []),
   'GENRE_BREACH', 'HOUSE_STYLE_HARD_BAN', 'PLAGIARISTIC_OR_NON_RESPONSIVE']
-// Violation FAMILIES for the gate tally. A real fabrication is usually several overlapping
-// subtypes at once (an invented first-person stack trace is FABRICATED_CONCRETE_DETAIL AND
-// FAKE_AUTHORITY_SIGNAL AND FALSE_AUTHORIAL_EXPERIENCE), so requiring the same SUBTYPE would let
-// three screeners who all correctly see fabrication — but name it differently — wrongly PASS it.
-// The overlapping fabrication subtypes share one family; distinct failure modes (genre, style,
-// responsiveness) stay separate so two unrelated hallucinations can't combine to DQ a clean entry.
+// Violation FAMILIES for the gate tally. A real fabrication is usually several overlapping subtypes at
+// once (a faked result is FABRICATION AND CONTRADICTS_SOURCE), so requiring the same SUBTYPE would let
+// three screeners who all correctly see fabrication — but name it differently — wrongly PASS it. The
+// overlapping fabrication subtypes share one family; distinct failure modes (genre, style, responsiveness)
+// stay separate so two unrelated hallucinations can't combine to DQ a clean entry. A profile that adds a
+// fabrication subtype maps it to 'fabrication' here so it joins the same-family majority.
 const DQ_FAMILY = {
-  FABRICATED_CONCRETE_DETAIL: 'fabrication', FAKE_AUTHORITY_SIGNAL: 'fabrication',
-  FALSE_AUTHORIAL_EXPERIENCE: 'fabrication', CONTRADICTS_SOURCE: 'fabrication',
+  FABRICATION: 'fabrication', CONTRADICTS_SOURCE: 'fabrication',
   MISREPRESENTS_TARGET: 'fabrication', GENRE_BREACH: 'genre',
   HOUSE_STYLE_HARD_BAN: 'style', PLAGIARISTIC_OR_NON_RESPONSIVE: 'responsiveness',
 }
 
-const INCUMBENT = USE_INCUMBENT ? `FILL: the author's true original essay/artifact.` : ''
+const INCUMBENT = USE_INCUMBENT ? `FILL: the true original to beat — the reference artifact (essay, design, config, … whatever the field varies).` : ''
 const INCUMBENT_CLAUSE = USE_INCUMBENT ? `
 There is a REFERENCE ORIGINAL (the incumbent the field is trying to beat):
 ---
@@ -203,12 +205,15 @@ const SEED_SCHEMA = { type: 'object', additionalProperties: false,
     confidence: { type: 'string', enum: ['toss-up', 'lean', 'strong'] } } }
 
 // ─────────────────────────────────────────────────────── LENSES
+// DOMAIN-GENERAL lens axes — they apply to any artifact (essay, code, design, tagline, plan, config).
+// The user's criteria fills in what "good" means in their domain; a profile may add/replace lenses (e.g.
+// prose adds 'voice'/'taste', code adds 'correctness'/'simplicity'). The engine ships no prose-specific lens.
 const LENSES = {
-  voice:     'Does this sound like the author actually wrote it, or like a machine performing the author. Flag voice tells, performed vulnerability, imitation over authorship.',
-  substance: 'Strip the style. Is there a real claim earned by real reasoning, or vibes and momentum. Does the argument advance and land.',
-  taste:     'You are a discerning editor who has read ten thousand of these. Fresh or formulaic. Earned or performed. Would you publish it.',
-  integrity: 'Is the concrete detail honest or manufactured. For nonfiction, does it buy vividness with invented fact. Penalize performed authenticity; reward earned, plausibly-true specifics and honest understatement.',
-  coherence: 'Does this read as one continuous piece, or a stapled lineup of mismatched parts? Penalize tonal breaks, a dropped throughline, and seams where one section\'s voice or stance clashes with the next. Reward a single argument carried across every section in one register — a team that plays together, not eleven soloists.',
+  substance: 'Strip the surface polish. Is there real quality underneath — sound reasoning, correct logic, a genuine idea — or confident-looking filler? Does it actually do the thing it is for, and do it well?',
+  fit:       'Does this serve the actual goal and the stated criteria, or drift to an adjacent thing that is easier to do well? Reward the entry that answers what was asked, in the form that was asked for.',
+  craft:     'You are an expert in this domain who has seen ten thousand of these. Is it well-made — sharp, economical, fresh not formulaic — or competent-but-generic? Would you ship it / publish it / merge it?',
+  integrity: 'Is it honest — no invented facts, fabricated specifics, faked or claimed-but-not-done results presented as real? Penalize manufactured credibility; reward what is verifiable, earned, and plausibly true.',
+  coherence: 'Does it read or work as one coherent whole, or a stapled lineup of mismatched parts? Penalize breaks in register/structure, a dropped throughline, and seams where one section clashes with the next. Reward a single intent carried across every part — a team that plays together, not eleven soloists.',
 }
 // Assembled (kind:'sections') candidates are stapled from independently-judged slots, so a
 // coherence juror rides in every panel to catch Frankenstein seams a whole-generated piece
@@ -216,11 +221,11 @@ const LENSES = {
 const COHERENCE_ON = DESIGN.kind === 'sections'
 const panelFor = stakes => {
   const base = {
-    R32: ['voice', 'substance', 'taste'], R16: ['voice', 'substance', 'taste'],
-    QF: ['voice', 'substance', 'taste', 'integrity'],
-    SF: ['voice', 'substance', 'taste', 'integrity'],
-    FINAL: ['voice', 'substance', 'taste', 'integrity'],
-  }[stakes] || ['voice', 'substance', 'taste']
+    R32: ['substance', 'fit', 'craft'], R16: ['substance', 'fit', 'craft'],
+    QF: ['substance', 'fit', 'craft', 'integrity'],
+    SF: ['substance', 'fit', 'craft', 'integrity'],
+    FINAL: ['substance', 'fit', 'craft', 'integrity'],
+  }[stakes] || ['substance', 'fit', 'craft']
   return COHERENCE_ON ? [...base, 'coherence'] : base
 }
 
@@ -349,7 +354,7 @@ const flawPrompt = (e, ev = EVALUATOR) => `You are screening ONE entry for FATAL
 CRITERIA AND HARD DISQUALIFIERS:
 ${ev.criteriaBlock}
 
-Disqualify (name the rule) only if the entry: presents invented specifics as lived fact (suspiciously perfect, load-bearing, almost certainly fabricated to manufacture authenticity — treat manufactured specificity as a flaw, not a strength), OR breaks a hard disqualifier above. Do not disqualify for being merely weak.${ev.targetGateClause}
+Disqualify (name the rule) only if the entry: presents invented or faked specifics as real — false facts, fabricated results or data, claimed work not actually done, or details that don't trace to the source (suspiciously perfect, load-bearing, almost certainly fabricated to manufacture credibility — treat manufactured specificity as a flaw, not a strength) — OR breaks a hard disqualifier above. Do not disqualify for being merely weak.${ev.targetGateClause}
 
 When you disqualify, name the single best-fitting hard-DQ category: ${ev.hardDqCategories.join(', ')}. Use NONE when not disqualifying.
 
@@ -398,13 +403,25 @@ Return JSON { winner:"X"|"Y", confidence }.`
 // Deterministic preflight: cheap regex gate, runs before any agent. Reads the ban policy from the
 // config (ev.bans), so the deterministic half of the gate lives in the config alongside the LLM half —
 // not an out-of-band global side-channel. Default ev = EVALUATOR (whose bans default to the module BANS).
+const RE_SCAN_CAP = 20000   // bound the input a preflight regex sees, so an operator's pathological pattern can't hang the run on long text
 function preflight(text, ev = EVALUATOR) {
   const bans = ev.bans || {}
   const hard = [], soft = []
+  // vocab is a LITERAL word list (operator-supplied) — ESCAPE it, or a normal term ('c++', 'c#', 'foo(')
+  // builds an invalid regex and crashes preflight (→ kills the tournament). Per-word guard for safety too.
+  const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   if (bans.emDash && text.includes('—')) hard.push('em dash')
-  for (const w of (bans.vocab || [])) if (new RegExp(`\\b${w}\\b`, 'i').test(text)) soft.push(`banned:${w}`)
-  if (/\b(this essay|in this piece|what i want to explore)\b/i.test(text)) soft.push('announced thesis')
-  if (/\b(ultimately|in the end|at the end of the day|what it means to be)\b/i.test(text.slice(-600))) soft.push('uplift closer')
+  for (const w of (bans.vocab || [])) { try { if (new RegExp(`\\b${esc(w)}\\b`, 'i').test(text)) soft.push(`banned:${w}`) } catch { /* degenerate word; skip */ } }
+  // House-style PHRASE flags are PROFILE-driven (default none) — NOT baked into the engine. Each entry:
+  // { label, re: 'alt|alt2' (word-bounded, case-insensitive), tail?: N } — tail tests only the last N chars
+  // (an "uplift closer" lives in the ending). `re` IS an un-sandboxed operator regex; we cap the scanned
+  // segment (RE_SCAN_CAP) and coerce tail (NaN/0/negative ⇒ capped whole text, never a head-drop).
+  for (const p of (bans.softPatterns || [])) {
+    try {
+      const n = Number(p && p.tail), seg = (Number.isFinite(n) && n > 0) ? text.slice(-n) : text.slice(0, RE_SCAN_CAP)
+      if (p && p.re && new RegExp(`\\b(${p.re})\\b`, 'i').test(seg)) soft.push(p.label || 'house-style')
+    } catch { /* a malformed profile pattern is skipped, never crashes a run */ }
+  }
   return { hardDQ: hard.length > 0, hard, soft }
 }
 // Fabrication gate: preflight, then SCREENERS independent judges; DQ needs majority.
@@ -937,6 +954,13 @@ async function deriveCandidates(design) {
 }
 
 let pool
+// RE-VALIDATE the LIVE judge config before the run uses it. The load-time check (where EVALUATOR is
+// defined) only saw the DEFAULT, BEFORE any operator override. An override placed below that definition
+// (the documented way to swap in a profile) would otherwise reach the gate UNVALIDATED — and a PARTIAL
+// override fails OPEN, not closed: e.g. extra hardDqCategories without a rebuilt flaw schema means
+// screeners can never emit the new category, so that fabrication subtype silently never disqualifies.
+// Object-spread assignment never validates on its own; this is the catch-all, wherever the override sits.
+validateEvaluatorConfig(EVALUATOR)
 if (SOURCE === 'generate') {
   const specs = await deriveCandidates(DESIGN)
   if (specs.length !== FIELD) return { error: `design produced ${specs.length} candidates, need FIELD=${FIELD}` }
@@ -1013,7 +1037,7 @@ await parallel(groupSpecs.map((m, idx) => () =>
   })))
 // NOTE: group matches use a single rotated juror for cost; override panelFor('R32') -> single
 // if you want strict 1-vote groups. Default template runs the 3-lens panel; for FIELD=48
-// or tight budgets, switch group matches to a single 'taste' juror.
+// or tight budgets, switch group matches to a single 'craft' juror.
 
 const adv = groups.map((g, gi) => { const s = standings(g, gi, groupResults); return { ...s, gi } })
 // Realtime group standings + who advanced (the user-requested "live group standings"). The

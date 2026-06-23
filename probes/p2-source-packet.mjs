@@ -48,7 +48,7 @@ const throws = fn => { try { fn(); return false } catch { return true } }
 const ORIG_LEDGER = `- FACT LEDGER (what is actually true; everything concrete must trace here): FILL.
 - NOT ALLOWED unless in the ledger: invented line numbers, class/file names, stack
   traces, error messages, dates, names, places, quotes, scenes, or any concrete detail
-  presented as lived fact. Manufactured specificity is a flaw, not a strength.`
+  presented as real. Manufactured specificity is a flaw, not a strength.`
 
 // ── (a) byte-identity: the unfilled default renders today's exact prose ──────────────────────
 console.log('byte-identity (default packet renders today\'s ledger):')

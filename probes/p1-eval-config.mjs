@@ -64,8 +64,8 @@ ok('lensWeight default returns 1',       M.EVALUATOR.lensWeight('voice') === 1)
 console.log('default prompts interpolate constants:')
 ok('flawPrompt has CRITERIA_BLOCK',  M.flawPrompt(E).includes(M.CRITERIA_BLOCK))
 ok('flawPrompt has DQ vocabulary',   M.flawPrompt(E).includes(M.HARD_DQ_CATEGORIES.join(', ')))
-ok('lensPrompt has lens text',       M.lensPrompt('voice', E, F).includes(M.LENSES.voice))
-ok('lensPrompt has CRITERIA_BLOCK',  M.lensPrompt('voice', E, F).includes(M.CRITERIA_BLOCK))
+ok('lensPrompt has lens text',       M.lensPrompt('substance', E, F).includes(M.LENSES.substance))
+ok('lensPrompt has CRITERIA_BLOCK',  M.lensPrompt('substance', E, F).includes(M.CRITERIA_BLOCK))
 ok('seedPrompt has CRITERIA_BLOCK',  M.seedPrompt(E, F).includes(M.CRITERIA_BLOCK))
 
 // ── (b) a MARKED config flows through every surface ────────────────────────────────────────
@@ -174,6 +174,51 @@ await M.screenAll([{ id: 4, label: 'D', markdown: 'plain default text' }], 'p')
 ok('default screeners == SCREENERS calls', captured.length === M.SCREENERS)
 ok('default gate uses module FLAW_SCHEMA',  captured[0].opts.schema === M.EVALUATOR.schemas.flaw)
 ok('default gate inherits model (no override)', captured[0].opts.model === undefined)
+
+// ── neutrality regression (PR #10 de-personalize): the ENGINE bakes in NO taste ───────────────
+// Default BANS is empty and preflight flags NOTHING on a text full of one author's house-style tics
+// (em dash, "ultimately", "this essay"). A future re-added default ban must fail here — and this pins
+// that the announced-thesis / uplift-closer heuristics are now PROFILE-driven, not hardcoded in preflight.
+console.log('engine is taste-neutral by default:')
+ok('default BANS.emDash is false',        M.BANS.emDash === false)
+ok('default BANS.vocab is empty',         Array.isArray(M.BANS.vocab) && M.BANS.vocab.length === 0)
+ok('default BANS.softPatterns is empty',  Array.isArray(M.BANS.softPatterns) && M.BANS.softPatterns.length === 0)
+const tics = 'In this essay I will show that — ultimately — what it means to be free.'
+const pf = M.preflight(tics)   // default EVALUATOR, neutral BANS
+ok('default preflight raises NO hard flag (em dash not baked in)', pf.hardDQ === false && pf.hard.length === 0)
+ok('default preflight raises NO soft flag (no vocab/announced-thesis/uplift baked in)', pf.soft.length === 0)
+// a PROFILE that opts in DOES flag — the heuristics are config-driven, not deleted
+const profileEv = { ...M.EVALUATOR, bans: { emDash: true, vocab: ['delve'], softPatterns: [
+  { label: 'announced thesis', re: 'this essay|in this piece' },
+  { label: 'uplift closer', re: 'ultimately|what it means to be', tail: 600 }] } }
+const pf2 = M.preflight('We delve in. ' + tics, profileEv)
+ok('opted-in profile flags em dash (hard)', pf2.hard.includes('em dash'))
+ok('opted-in profile flags vocab + phrase patterns (soft)',
+  pf2.soft.includes('banned:delve') && pf2.soft.includes('announced thesis') && pf2.soft.includes('uplift closer'))
+ok('a malformed profile softPattern is skipped, never fatal',
+  (() => { try { return M.preflight('x', { ...M.EVALUATOR, bans: { softPatterns: [{ label: 'bad', re: '(' }] } }).soft.length === 0 } catch { return false } })())
+
+// ── domain-general default judge (de-prose): no prose-specific lenses/categories baked in ──────
+console.log('default judge is domain-general (not prose-shaped):')
+const lensNames = Object.keys(M.LENSES)
+ok('default lenses are the general axes', ['substance', 'fit', 'craft', 'integrity'].every(l => lensNames.includes(l)))
+ok('default lenses drop prose-specific voice/taste', !lensNames.includes('voice') && !lensNames.includes('taste'))
+ok('default DQ categories use general FABRICATION', M.HARD_DQ_CATEGORIES.includes('FABRICATION'))
+ok('default DQ categories drop prose subtypes', !M.HARD_DQ_CATEGORIES.includes('FALSE_AUTHORIAL_EXPERIENCE') && !M.HARD_DQ_CATEGORIES.includes('FAKE_AUTHORITY_SIGNAL'))
+ok('default panel seats only defined general lenses', ['R32', 'QF', 'FINAL'].every(s => M.EVALUATOR.panelFor(s).every(l => M.LENSES[l])))
+ok('no prose-only words in the default lens descriptions', !/\b(essay|nonfiction|author|prose)\b/i.test(Object.values(M.LENSES).join(' ')))
+// the documented prose PROFILE override (references/profiles/prose-provi.md) must produce a VALIDATING
+// EvaluatorConfig — it's a real example a user applies; a partial override (no rebuilt flaw schema) fails closed.
+const proseCats = [...M.HARD_DQ_CATEGORIES, 'FALSE_AUTHORIAL_EXPERIENCE', 'FAKE_AUTHORITY_SIGNAL']
+const proseProfile = { ...M.EVALUATOR,
+  lenses: { fidelity: 'f', taste: 't', 'anti-gaming': 'a', argument: 'g', 'cold-reader': 'c' },  // judging.md §5
+  panelFor: () => ['fidelity', 'taste', 'anti-gaming', 'argument', 'cold-reader'],
+  tiebreakLens: 'anti-gaming',
+  hardDqCategories: proseCats,
+  dqFamily: { ...M.DQ_FAMILY, FALSE_AUTHORIAL_EXPERIENCE: 'fabrication', FAKE_AUTHORITY_SIGNAL: 'fabrication' },
+  schemas: { ...M.EVALUATOR.schemas, flaw: M.makeFlawSchema(proseCats) } }
+ok('the documented prose profile override VALIDATES', M.validateEvaluatorConfig(proseProfile) === proseProfile)
+ok('a partial prose override (no rebuilt flaw schema) fails closed', throws(() => M.validateEvaluatorConfig({ ...proseProfile, schemas: M.EVALUATOR.schemas })))
 
 console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${pass} passed, ${fail} failed`)
 process.exit(fail === 0 ? 0 : 1)
