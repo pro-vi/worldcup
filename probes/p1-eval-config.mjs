@@ -30,7 +30,7 @@ const agent = async (prompt, opts) => { __cap.push({ prompt, opts }); return { w
 const parallel = async (thunks) => Promise.all(thunks.map(f => f()));
 `
 const footer = `
-;return { EVALUATOR, flawPrompt, lensPrompt, seedPrompt, tally, marginOf, playMatch, screenAll,
+;return { EVALUATOR, flawPrompt, lensPrompt, seedPrompt, slotJudgePrompt, embedUntrusted, tally, marginOf, playMatch, screenAll,
   preflight, validateEvaluatorConfig, makeFlawSchema, lensW, judgeOpts, BANS,
   CRITERIA_BLOCK, INCUMBENT_CLAUSE, HARD_DQ_CATEGORIES, DQ_FAMILY, LENSES, FLAW_SCHEMA, LENS_SCHEMA, SEED_SCHEMA, SCREENERS };
 `
@@ -219,6 +219,39 @@ const proseProfile = { ...M.EVALUATOR,
   schemas: { ...M.EVALUATOR.schemas, flaw: M.makeFlawSchema(proseCats) } }
 ok('the documented prose profile override VALIDATES', M.validateEvaluatorConfig(proseProfile) === proseProfile)
 ok('a partial prose override (no rebuilt flaw schema) fails closed', throws(() => M.validateEvaluatorConfig({ ...proseProfile, schemas: M.EVALUATOR.schemas })))
+
+// ── untrusted-content isolation: every judge surface + TARGET wraps untrusted text via embedUntrusted, ──
+// clause BEFORE the content (PRESENCE + PLACEMENT parity — NOT behavioral injection-resistance; that is the
+// parked live 8-case smoke in docs/plans/judge-scope-and-deferred-evals.md). slotJudgePrompt is a presence
+// check (it takes BASE/SPEC, not ev). placement = the clause index must precede the candidate body's index.
+console.log('untrusted-content isolation (presence + placement parity):')
+const CLAUSE = 'UNTRUSTED content below'
+const before = (prompt, body) => prompt.includes(CLAUSE) && prompt.indexOf(CLAUSE) < prompt.indexOf(body)
+const Ux = { id: 9, label: 'UX', rating: 1500, markdown: 'XBODY_SENTINEL' }
+const Uy = { id: 10, label: 'UY', rating: 1500, markdown: 'YBODY_SENTINEL' }
+ok('embedUntrusted: clause present and BEFORE the wrapped text', before(M.embedUntrusted('TBODY_SENTINEL', 'L'), 'TBODY_SENTINEL'))
+ok('flawPrompt isolates the entry (clause before body)', before(M.flawPrompt({ markdown: 'EBODY_SENTINEL' }), 'EBODY_SENTINEL'))
+ok('lensPrompt isolates ENTRY X', before(M.lensPrompt('substance', Ux, Uy), 'XBODY_SENTINEL'))
+ok('lensPrompt isolates ENTRY Y', before(M.lensPrompt('substance', Ux, Uy), 'YBODY_SENTINEL'))
+ok('seedPrompt isolates ENTRY X', before(M.seedPrompt(Ux, Uy), 'XBODY_SENTINEL'))
+ok('seedPrompt isolates ENTRY Y', before(M.seedPrompt(Ux, Uy), 'YBODY_SENTINEL'))
+ok('slotJudgePrompt isolates CANDIDATE X', before(M.slotJudgePrompt({ slot: 'intro' }, Ux, Uy, 'BASE', M.CRITERIA_BLOCK), 'XBODY_SENTINEL'))
+ok('slotJudgePrompt isolates CANDIDATE Y', before(M.slotJudgePrompt({ slot: 'intro' }, Ux, Uy, 'BASE', M.CRITERIA_BLOCK), 'YBODY_SENTINEL'))
+// placement alone can't catch a DROPPED second wrap (X's clause still precedes the Y body); count proves
+// each entry is independently wrapped. Default criteriaBlock carries no clause, so the only clauses are the entries'.
+const clauseCount = p => p.split(CLAUSE).length - 1
+ok('pairwise prompts wrap BOTH entries (2 clauses each)',
+  clauseCount(M.lensPrompt('substance', Ux, Uy)) === 2 && clauseCount(M.seedPrompt(Ux, Uy)) === 2 &&
+  clauseCount(M.slotJudgePrompt({ slot: 'intro' }, Ux, Uy, 'BASE', M.CRITERIA_BLOCK)) === 2)
+ok('flawPrompt wraps exactly the one entry', clauseCount(M.flawPrompt({ markdown: 'EBODY_SENTINEL' })) === 1)
+// clause is task-NEUTRAL (reaches generation prompts via SPEC) — must carry no judge/verdict language
+ok('isolation clause is task-neutral (no judge/verdict words)', !/\b(judge|juror|verdict|vote|winner|lens)\b/i.test(M.embedUntrusted('x', 'L')))
+// TARGET is a load-time const, NOT config-injectable — source-replace TARGET_RAW with a sentinel and re-eval
+const TGT = 'SENTINEL_TARGET_XYZZY'
+const tgtSrc = src.replace("const TARGET_RAW = ''", `const TARGET_RAW = ${JSON.stringify(TGT)}`)
+const Mt = new Function('captured', mockHeader + tgtSrc.slice(0, tgtSrc.indexOf('\nlet pool')) + footer)([])
+ok('TARGET (source-replaced) is wrapped in criteriaBlock, clause before it', before(Mt.CRITERIA_BLOCK, TGT))
+ok('default (no TARGET) leaves criteriaBlock free of the clause', !M.CRITERIA_BLOCK.includes(CLAUSE))
 
 console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${pass} passed, ${fail} failed`)
 process.exit(fail === 0 ? 0 : 1)
