@@ -233,7 +233,7 @@ const LENSES = {
   fit:       'Does this serve the actual goal and the stated criteria, or drift to an adjacent thing that is easier to do well? Reward the entry that answers what was asked, in the form that was asked for.',
   craft:     'You are an expert in this domain who has seen ten thousand of these. Is it well-made — sharp, economical, fresh not formulaic — or competent-but-generic? Would you ship it / publish it / merge it?',
   integrity: 'Is it honest — no invented facts, fabricated specifics, faked or claimed-but-not-done results presented as real? Penalize manufactured credibility; reward what is verifiable, earned, and plausibly true.',
-  coherence: 'Does it read or work as one coherent whole, or a stapled lineup of mismatched parts? Penalize breaks in register/structure, a dropped throughline, and seams where one section clashes with the next. Reward a single intent carried across every part — a team that plays together, not eleven soloists.',
+  coherence: 'Does it read or work as one coherent whole, or a stapled lineup of mismatched parts? Penalize breaks in tone or structure, a dropped or inconsistent thread of intent, and seams where one part clashes with the next. Reward a single intent carried across every part — a team that plays together, not eleven soloists.',
 }
 // Assembled (kind:'sections') candidates are stapled from independently-judged slots, so a
 // coherence juror rides in every panel to catch Frankenstein seams a whole-generated piece
@@ -274,10 +274,11 @@ let EVALUATOR = {
   agentOptions:     {},                  // merged into every judge agent() call (e.g. { model }); {} = inherit. NEVER overrides label/phase/schema (spread FIRST at call sites)
   lensWeight:       () => 1,             // (lens) -> weight in the tally; ()=>1 is today's 1:1 (PLAN_3 U13 fills this in)
 }
-// Guarded weight read: a config's lensWeight is untrusted (could return undefined/NaN/negative/zero,
-// which would silently flip the tally or collapse an all-zero panel to the rating fallback). Coerce
-// anything non-finite or non-positive back to 1 — intentional lens removal is panelFor's job, not weight 0.
-const lensW = (ev, lens) => { const w = ev.lensWeight(lens); return (Number.isFinite(w) && w > 0) ? w : 1 }
+// Guarded weight read: a config's lensWeight is untrusted (could return undefined/NaN/negative/zero, OR
+// THROW — validateEvaluatorConfig only checks it's a function, never invokes it). Coerce non-finite/
+// non-positive back to 1, and a throw to 1 too — intentional lens removal is panelFor's job, not weight 0,
+// and a buggy operator weight (lookup miss, bad table) must degrade to the default tally, never crash the run.
+const lensW = (ev, lens) => { let w; try { w = ev.lensWeight(lens) } catch { return 1 } return (Number.isFinite(w) && w > 0) ? w : 1 }
 // Reserved-key-safe judge agent options. Spread the config's agentOptions FIRST so it can set model/
 // effort but can NEVER override the protected per-call fields (label, phase, schema). Centralized here
 // so the invariant lives in ONE place — every judge call site (gate, lens panel, tiebreak, seed
@@ -408,7 +409,9 @@ Return JSON { winner:"X"|"Y", confidence }.`
 // Deterministic preflight: cheap regex gate, runs before any agent. Reads the ban policy from the
 // config (ev.bans), so the deterministic half of the gate lives in the config alongside the LLM half —
 // not an out-of-band global side-channel. Default ev = EVALUATOR (whose bans default to the module BANS).
-const RE_SCAN_CAP = 20000   // bound the input a preflight regex sees, so an operator's pathological pattern can't hang the run on long text
+const RE_SCAN_CAP = 20000   // LENGTH bound on the segment a preflight regex sees — NOT a cost bound; a length cap
+// does not stop catastrophic backtracking (the sandbox has no regex timeout / RE2). The cost bound is REDOS:
+const REDOS = /[+*}]\s*\)\s*[+*{]/   // nested-quantifier ReDoS signature: (x+)+ , (x*)* , (x{2,})+ — refuse these
 function preflight(text, ev = EVALUATOR) {
   const bans = ev.bans || {}
   const hard = [], soft = []
@@ -420,8 +423,10 @@ function preflight(text, ev = EVALUATOR) {
   // House-style PHRASE flags are PROFILE-driven (default none) — NOT baked into the engine. Each entry:
   // { label, re: 'alt|alt2' (word-bounded, case-insensitive), tail?: N } — tail tests only the last N chars
   // (an "uplift closer" lives in the ending). `re` IS an un-sandboxed operator regex; we cap the scanned
-  // segment (RE_SCAN_CAP) and coerce tail (NaN/0/negative ⇒ capped whole text, never a head-drop).
+  // segment (RE_SCAN_CAP), coerce tail (NaN/0/negative ⇒ capped whole text, never a head-drop), and REFUSE a
+  // nested-quantifier pattern — skip it rather than let catastrophic backtracking hang the deterministic gate.
   for (const p of (bans.softPatterns || [])) {
+    if (p && typeof p.re === 'string' && REDOS.test(p.re)) continue   // pathological operator regex — skip, don't hang the run
     try {
       const n = Number(p && p.tail), seg = (Number.isFinite(n) && n > 0) ? text.slice(-n) : text.slice(0, RE_SCAN_CAP)
       if (p && p.re && new RegExp(`\\b(${p.re})\\b`, 'i').test(seg)) soft.push(p.label || 'house-style')
@@ -480,8 +485,12 @@ async function playMatch(a, b, orderIdx, stakes, phase, decided, ev = EVALUATOR)
   if (da && !db) return record(b, a, 'decisive', `opponent DQ'd: ${a.flaw.flaw}`, decided)
   if (db && !da) return record(a, b, 'decisive', `opponent DQ'd: ${b.flaw.flaw}`, decided)
 
-  // Stage 1 — lens panel (order flipped per lens index to debias)
-  const lenses = ev.panelFor(stakes)
+  // Stage 1 — lens panel (order flipped per lens index to debias). Filter to lenses the config actually
+  // DEFINES: validateEvaluatorConfig only sampled panelFor once per stakes, so a non-pure operator panelFor
+  // could return a lens absent from ev.lenses at runtime — unfiltered, that seats a 'YOUR LENS: X — undefined'
+  // ghost juror whose vote is counted. If the filter empties the panel, the tally falls through to the
+  // (validated) tiebreak lens and then the rating, so a clean entry is never decided by a ghost.
+  const lenses = ev.panelFor(stakes).filter(ln => ev.lenses[ln])
   const votes = (await parallel(lenses.map((lens, i) => () => {
     const flip = (orderIdx + i) % 2 === 1
     const [X, Y] = flip ? [b, a] : [a, b]

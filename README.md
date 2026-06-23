@@ -21,8 +21,8 @@ solutions all work.
   - `references/workflow-template.js` — the ultracode Workflow the skill authors and runs;
     encodes seeding, group→knockout, the judge pipeline, Elo + reference challenge, and the
     clickable mirror-bracket HTML report (`renderReportV2`).
-- `PLAN_1.md` — active plan: factorial generation + coordinate view (axes-first).
-- `PLAN_2.md` — latent plan: the section / recombination route + evolve mode (deferred).
+- `docs/adr/` — Architecture Decision Records (the durable decisions: single domain-general judge;
+  no per-run judge certification).
 
 ## Wiring (loopgen-style symlink)
 
@@ -33,12 +33,12 @@ the `references/*` files are read fresh on each run.
 
 ## Status / roadmap
 
-- **Shipped:** hand-authored flat `FLAVORS`, snake seeding, group→knockout, the
-  fabrication-gate judge, Elo + reference challenge, the clickable mirror-bracket report.
-- **Next (PLAN_1):** factorial generation — candidates become points in a coordinate
-  system — plus a coordinate view in the report and post-hoc axis-effects analysis.
-- **Later (PLAN_2):** the section / recombination route with a two-stage hybrid and a
-  coherence judge; a genetic evolve mode; an optimal-design solver for mixed radix.
+- **Shipped:** hand-authored flat `FLAVORS`; factorial/axes generation (candidates as points in a
+  coordinate system, with axis-effects analysis); the section / recombination route with a coherence
+  judge; snake seeding; group→knockout; the fabrication-gate judge; Elo + reference challenge; the
+  clickable mirror-bracket report.
+- **Deferred (out of scope):** a genetic evolve mode and an optimal-design solver for mixed-radix
+  fractions — see `references/design-pass.md`.
 
 ## The judge, in one line
 

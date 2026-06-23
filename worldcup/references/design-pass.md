@@ -9,7 +9,7 @@ generation is decoupled from the bracket.
 
 ```js
 const DESIGN = {
-  kind: 'flat',     // 'flat' | 'axes'   ('sections' reserved -> PLAN_2)
+  kind: 'flat',     // 'flat' | 'axes' | 'sections' (the recombination route)
   flavors: [ { name, brief }, ... ],          // kind:'flat'  (length === FIELD)
   mode: 'forced',                              // kind:'axes'  'forced' | 'dynamic'
   axes: [ { name, values: { label: 'fragment', ... } }, ... ],  // kind:'axes'
@@ -105,12 +105,12 @@ are flattened across slots (parallel, slowest-slot wall-clock) with a 3× retry 
 failures, but token cost grows quadratically in `count`, so keep `count` modest.
 
 Evolve mode (genetic crossover over lineups; opt-in, default off) and an optimal-design solver
-are deferred to PLAN_2 U9/U10.
+are deferred (out of scope).
 
-## What this does NOT do (PLAN_1 + section-route scope)
+## What this does NOT do (scope)
 
-- No evolve/genetic search over lineups, and no automatic slot detection — PLAN_2 U9 (the
-  run-author declares the slots).
-- Mixed-radix fractions get a flagged balanced subsample, not an optimal design — PLAN_2 U10.
+- No evolve/genetic search over lineups, and no automatic slot detection — the run-author declares
+  the slots.
+- Mixed-radix fractions get a flagged balanced subsample, not an optimal design (deferred).
 - `FIELD` stays the bracket size (32 or 48); `reconcile` always fits to it. Arbitrary
   dynamic sizes are not supported (the bracket math is fixed).
