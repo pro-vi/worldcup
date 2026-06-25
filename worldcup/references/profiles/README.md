@@ -24,7 +24,8 @@ fills that socket for one domain or one author's voice (e.g. prose swaps in `fid
   usually better as **lens penalties** than gate **kills** — a hard auto-DQ on a tic eliminates a
   better entry on a technicality. Use a hard ban only when you genuinely never want the thing.
 
-## Examples here
-- `prose-provi.md` — one author's (Provi's) personal-essay voice. It is **an example, not a
-  default** — its em-dash ban and AI-tell vocab list are that author's house style; a different
-  writer's profile differs. Copy and rewrite it for your own voice, or hand in your own voice skill.
+## Writing one
+No example profile ships here — taste is yours to bring. Copy the four-part shape above
+(taste spec · gate · lenses · optional house bans) into `references/profiles/<your-domain>.md`,
+or hand the skill your own voice skill (path 1) and let it distill the rules. Keep style tics as
+lens penalties, not gate kills, unless you genuinely never want the thing.

@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-23
-- **Deciders:** provi; two GPT Pro consults (endorsed the revert; a retrospective flagged the over-correction)
+- **Deciders:** maintainer; two GPT Pro consults (endorsed the revert; a retrospective flagged the over-correction)
 - **Supersedes:** the "qualifier / evaluator certification" frame (PLAN_3, reverted in PR #9)
 
 ## Context

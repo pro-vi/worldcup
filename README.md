@@ -21,6 +21,14 @@ solutions all work.
   - `references/workflow-template.js` — the ultracode Workflow the skill authors and runs;
     encodes seeding, group→knockout, the judge pipeline, Elo + reference challenge, and the
     clickable mirror-bracket HTML report (`renderReportV2`).
+  - `references/live-view.js` + `live-view.md` — the optional Tier-1 **live view**: a
+    self-contained, auto-refreshing HTML bracket that fills in *while* a run is still going (three
+    themes — `arena` / `concrete` / `2026` — plus a `--switcher`). The post-run report stays the
+    headline deliverable; this is the live companion.
+  - `references/profiles/` — optional domain/voice taste you plug into the domain-general judge.
+    The engine ships taste-neutral; bring your own (no example profile is bundled).
+  - `references/coordinates.md`, `references/design-pass.md` — candidate-generation reference
+    (factorial/axes; the deferred evolve + optimal-design notes).
 - `docs/adr/` — Architecture Decision Records (the durable decisions: single domain-general judge;
   no per-run judge certification).
 

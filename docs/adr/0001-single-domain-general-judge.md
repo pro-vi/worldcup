@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-23
-- **Deciders:** provi; GPT-5 Pro consults (proposed-then-retracted the profiles/veto)
+- **Deciders:** maintainer; GPT-5 Pro consults (proposed-then-retracted the profiles/veto)
 
 ## Context
 
