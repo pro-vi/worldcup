@@ -303,6 +303,9 @@ function validateEvaluatorConfig(ev) {
   if (typeof ev.panelFor !== 'function') throw new Error('EVALUATOR.panelFor must be a function.')
   if (typeof ev.lensWeight !== 'function') throw new Error('EVALUATOR.lensWeight must be a callable function (tally calls it every vote).')
   if (!ev.schemas || typeof ev.schemas !== 'object') throw new Error('EVALUATOR.schemas must be an object.')
+  // Back-compat: an operator override predating group draws may carry {flaw,lens,seed} only. Default lensDraw
+  // to the standard group schema (it's used solely when canDraw) so those configs still validate.
+  if (!ev.schemas.lensDraw) ev.schemas.lensDraw = LENS_DRAW_SCHEMA
   for (const k of ['flaw', 'lens', 'lensDraw', 'seed']) if (!ev.schemas[k] || typeof ev.schemas[k] !== 'object')
     throw new Error(`EVALUATOR.schemas.${k} must be present (a JSON schema) — the ${k} judge path needs it (e.g. playMatch reads schemas.lens, seeding reads schemas.seed).`)
   // lens + seed schemas must REQUIRE winner ∈ ['X','Y'], or the match/seed paths (which key on
@@ -1264,8 +1267,10 @@ function pathOf(champ) {
   const steps = []
   groupResults.forEach(r => {
     if (r.winner == null) {
-      if (r.a.id === champ.id) steps.push({ round: 'Group', verb: 'drew', opp: r.b.label, margin: r.margin, reason: r.reason })
-      else if (r.b.id === champ.id) steps.push({ round: 'Group', verb: 'drew', opp: r.a.label, margin: r.margin, reason: r.reason })
+      // draw steps carry beat:null (stable shape) so legacy consumers reading championPath[].beat don't break;
+      // verb/opp give the draw-aware detail. A null beat reads as "no one beaten" — correct for a draw.
+      if (r.a.id === champ.id) steps.push({ round: 'Group', verb: 'drew', opp: r.b.label, beat: null, margin: r.margin, reason: r.reason })
+      else if (r.b.id === champ.id) steps.push({ round: 'Group', verb: 'drew', opp: r.a.label, beat: null, margin: r.margin, reason: r.reason })
     } else if (r.winner.id === champ.id) {
       steps.push({ round: 'Group', verb: 'beat', opp: r.loser.label, beat: r.loser.label, margin: r.margin, reason: r.reason })
     }

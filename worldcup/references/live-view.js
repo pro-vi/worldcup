@@ -439,7 +439,10 @@ function renderArena(st) {
     return { stakes: r.stakes, done, total, status: done === total && total ? 'cmpl' : (playing || done > 0 ? 'live' : 'lock') }
   })
   const liveStage = (rail.find(r => r.status === 'live') || {}).stakes || (st.champion ? 'FINAL' : 'R16')
-  const groupRule = st.field === 48 ? 'top 2 + best thirds advance' : 'top two advance'
+  // robust to a missing/late draw beacon: the format is known from st.field OR proven by any group that
+  // advanced a third (advanced.length > 2), so a stale "top two" label can't show once thirds qualify.
+  const anyThird = st.groupOrder.some(G => (((st.groups[G] || {}).advanced) || []).length > 2)
+  const groupRule = (st.field === 48 || anyThird) ? 'top 2 + best thirds advance' : 'top two advance'
   const railHTML = rail.map(r => `<div class="stg ${r.status}"><span class="stgN">${he(r.stakes)}</span><span class="stgC">${r.status === 'lock' ? 'LOCK' : r.done + '/' + r.total}</span></div>`).join('')
   const dq = st.dq.length
     ? `<div class="gate"><div class="gateH"><span class="gx">&#9651;</span> Gate review &mdash; rejected <span class="gn">${st.dq.length}</span></div><div class="gateB">${st.dq.map(d => `<span class="dqi"><span class="dtag">${he(d.category || 'FLAW')}</span> ${he(d.label)}</span>`).join('')}</div></div>` : ''
