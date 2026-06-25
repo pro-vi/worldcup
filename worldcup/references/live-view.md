@@ -76,6 +76,8 @@ Workflow (`args.liveNonce`) and to the watcher (`--nonce`) so only this run's be
 NONCE=$(openssl rand -hex 8)
 # Workflow({ script: …, args: { liveNonce: NONCE } }) → "Transcript dir: …/subagents/workflows/wf_<runId>"
 node references/live-view.js --events "<transcript-dir>/journal.jsonl" --out worldcup-live.html --nonce "$NONCE" &
+# add --theme <name> to pick the look (default arena). themes: arena, concrete, 2026.
+# add --switcher to emit all three + a sticky switcher bar  (run with no --events to print the list)
 open worldcup-live.html   # auto-refreshes every 2s; the watcher self-exits when the bracket completes
 ```
 
@@ -101,8 +103,22 @@ node references/live-view.js --events <journal.jsonl> --out worldcup-live.html -
   without the (unguessable) nonce. Diagnosable: with no `--nonce` the watcher warns it's unauthenticated;
   if beacons are present but none match, it warns once (a typo'd/mismatched nonce, not "not started").
 - **Atomic writes:** temp-file + rename, so a watching browser never reads a half-written file.
-- **Self-contained:** inline CSS mirroring `renderReportV2`'s palette; zero external requests; live
-  snapshots carry `<meta http-equiv="refresh" content="2">`, the final render does not.
+- **Self-contained:** inline CSS, system fonts only, zero external requests; live snapshots carry
+  `<meta http-equiv="refresh" content="2">`, the final render does not.
+- **Themeable (3 curated looks):** `--theme` (or env `WORLDCUP_LIVE_THEME`) selects the visual language;
+  default `arena`. The shared bracket draws connectors as a computed **SVG overlay** (per-gap clip, path
+  elbows, junction dots — strokes can't protrude onto cards, junctions never gap) and animates only a
+  lamp/rail/sheen — never a whole card — so each 2s reload reads as the next broadcast frame, not a restart.
+  - `arena` *(default)* — console sports-game UI: steel base, ONE mint system colour (selected/live/active
+    route), gold reserved for EARNED outcomes; a progression-rail HUD, a SPECTATOR/AUTO-SIM strip, honest
+    group+rank seed tags, and an octagon champion item.
+  - `concrete` — brutalist concrete-and-ink match poster: heavy black borders, hard offset shadows, monospace,
+    an oversized Arial-Black headline, ONE safety-orange accent tracing the winner's road to a champion box.
+  - `2026` — the real FIFA World Cup 26™ identity: a giant spectrum "26" (pink→orange→yellow→teal→indigo unity
+    gradient) behind a clean WORLD CUP, on the parameterised scoreboard skeleton with magenta/cyan structure.
+- **Theme switcher (`--switcher`):** renders every theme to `<out>-<theme>.html` and makes `--out` a landing
+  page; each file carries a sticky top bar (pure HTML links, no JS) linking the others, so you can switch
+  looks mid-feed without stopping the watcher.
 - **Transient:** `worldcup-live.html` is the *live* artifact; the post-run `worldcup-report.html`
   (`renderReportV2`) remains the headline deliverable.
 
