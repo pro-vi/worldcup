@@ -8,8 +8,8 @@ Conventions:
   `rating` is the Bradley-Terry / seed score from the seeding pre-pass (see
   judging.md).
 - Group letters are index-based: group 0 = A, 1 = B, ...
-- No draws exist. A judged match always returns a winner, so group points are
-  multiples of 3 (win = 3).
+- Group-stage matches may draw. Knockout matches always return a winner via the
+  escalation path. Group points use 3/1/0 (win/draw/loss).
 
 ---
 
@@ -65,14 +65,27 @@ function roundRobin(group) {
 ## Shared: group standings
 
 Sort: points desc, then head-to-head winner, then seeding rating, then a stable
-fallback. `results` is the list of judged group matches with `{ winner, loser, gi }`.
+fallback. `results` is the list of judged group matches with `{ a, b, winner,
+loser, gi }`; draws have `winner=null`, `loser=null`, and `margin='draw'`.
 
 ```js
 function standings(group, gi, results) {
   const pts = new Map(group.map(t => [t.id, 0]))
   const beat = new Map(group.map(t => [t.id, new Set()]))
+  const w = new Map(group.map(t => [t.id, 0]))
+  const d = new Map(group.map(t => [t.id, 0]))
+  const l = new Map(group.map(t => [t.id, 0]))
   results.filter(r => r.gi === gi).forEach(r => {
+    if (r.winner == null) {
+      pts.set(r.a.id, pts.get(r.a.id) + 1)
+      pts.set(r.b.id, pts.get(r.b.id) + 1)
+      d.set(r.a.id, d.get(r.a.id) + 1)
+      d.set(r.b.id, d.get(r.b.id) + 1)
+      return
+    }
     pts.set(r.winner.id, pts.get(r.winner.id) + 3)
+    w.set(r.winner.id, w.get(r.winner.id) + 1)
+    l.set(r.loser.id, l.get(r.loser.id) + 1)
     beat.get(r.winner.id).add(r.loser.id)
   })
   const ranked = [...group].sort((p, q) => {
@@ -82,7 +95,7 @@ function standings(group, gi, results) {
     if (beat.get(q.id).has(p.id)) return 1
     return q.rating - p.rating                // seeding rating
   })
-  return { ranked, pts }
+  return { ranked, pts, w, d, l }
 }
 ```
 

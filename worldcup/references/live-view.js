@@ -280,12 +280,20 @@ const CONNECTORS = `
 .match{position:relative;display:flex;align-items:center;justify-content:center}
 .card{position:relative;width:100%}
 `
+const hasRecord = t => t && t.w != null && t.d != null && t.l != null
+const recordCell = t => hasRecord(t) ? `<td class="rec">${he(t.w)}-${he(t.d)}-${he(t.l)}</td>` : ''
+const groupRow = (t, adv, tickClass) => {
+  const rank = adv.indexOf(t.label)
+  const isAdv = rank !== -1
+  const third = rank === 2
+  return `<tr class="${isAdv ? `adv${third ? ' third' : ''}` : ''}"><td class="nm">${isAdv ? `<i class="${tickClass}${third ? ' third' : ''}"></i>` : ''}${he(t.label)}</td>${recordCell(t)}<td class="pt">${he(t.pts)}</td></tr>`
+}
 function groupsHTML(st, tickClass) {
   const adv = G => (st.groups[G] && st.groups[G].advanced) || []
   return st.groupOrder.map(G => {
     const g = st.groups[G]
     const rows = g.table
-      ? g.table.map(t => { const a = adv(G).includes(t.label); return `<tr class="${a ? 'adv' : ''}"><td class="nm">${a ? `<i class="${tickClass}"></i>` : ''}${he(t.label)}</td><td class="pt">${he(t.pts)}</td></tr>` }).join('')
+      ? g.table.map(t => groupRow(t, adv(G), tickClass)).join('')
       : (g.teams || []).map(t => `<tr class="pend"><td class="nm">${he(t.label)}</td><td class="pt">&middot;</td></tr>`).join('')
     return `<div class="bug"><div class="bugL">${he(G)}</div><table>${rows}</table></div>`
   }).join('')
@@ -346,9 +354,12 @@ ${CONNECTORS}
 .bug table{width:100%;border-collapse:collapse;font-size:12px}
 .bug td{padding:3px 0}
 .bug td.nm{color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:96px}
+.bug td.rec{text-align:right;color:var(--mut);font-size:10px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 6px 0 4px}
 .bug td.pt{text-align:right;font-weight:800;color:var(--txt);font-variant-numeric:tabular-nums}
 .bug tr.adv td.nm{color:var(--txt);font-weight:700}
 .bug tr.adv td.nm .tk{display:inline-block;width:7px;height:7px;border-radius:2px;background:var(--adv);margin-right:5px;vertical-align:middle}
+.bug tr.adv td.nm .tk.third{width:auto;height:auto;min-width:12px;padding:0 3px;border:1px solid var(--adv);background:transparent;color:var(--adv);font-size:8px;font-weight:900;font-style:normal;line-height:1.1;text-align:center}
+.bug tr.adv td.nm .tk.third::before{content:'3'}
 .bug tr.pend td{color:var(--tbd)}
 .ticker{margin-top:26px;border-radius:6px;overflow:hidden;box-shadow:inset 0 0 0 1px var(--dqSoft);background:var(--dqBg)}
 .tkH{background:var(--dq);color:var(--dqInk);font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px}
@@ -428,6 +439,7 @@ function renderArena(st) {
     return { stakes: r.stakes, done, total, status: done === total && total ? 'cmpl' : (playing || done > 0 ? 'live' : 'lock') }
   })
   const liveStage = (rail.find(r => r.status === 'live') || {}).stakes || (st.champion ? 'FINAL' : 'R16')
+  const groupRule = st.field === 48 ? 'top 2 + best thirds advance' : 'top two advance'
   const railHTML = rail.map(r => `<div class="stg ${r.status}"><span class="stgN">${he(r.stakes)}</span><span class="stgC">${r.status === 'lock' ? 'LOCK' : r.done + '/' + r.total}</span></div>`).join('')
   const dq = st.dq.length
     ? `<div class="gate"><div class="gateH"><span class="gx">&#9651;</span> Gate review &mdash; rejected <span class="gn">${st.dq.length}</span></div><div class="gateB">${st.dq.map(d => `<span class="dqi"><span class="dtag">${he(d.category || 'FLAW')}</span> ${he(d.label)}</span>`).join('')}</div></div>` : ''
@@ -526,6 +538,7 @@ ${bsvg.css}
 .bug table{width:100%;border-collapse:collapse;font-size:12px}
 .bug td{padding:3px 0}
 .bug td.nm{color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px}
+.bug td.rec{text-align:right;color:var(--mut);font-size:10px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 6px 0 4px}
 .bug td.pt{text-align:right;font-weight:900;color:var(--txt);font-variant-numeric:tabular-nums}
 /* advancing indicator: a mint tint across the qualified rows (a horizontal "qualification zone", no left rail) + the Q chip */
 .bug tr.adv td{background:rgba(55,240,192,.08)}
@@ -533,6 +546,8 @@ ${bsvg.css}
 .bug tr.adv td.pt{color:var(--ui)}
 .bug tr.adv td.nm .tk{display:inline-block;font-size:7px;font-weight:900;letter-spacing:.05em;color:#04140f;background:var(--ui);border-radius:2px;padding:1px 4px;margin-right:6px;vertical-align:middle}
 .bug tr.adv td.nm .tk::before{content:'Q'}
+.bug tr.adv td.nm .tk.third{color:var(--ui);background:transparent;box-shadow:inset 0 0 0 1px var(--ui);font-style:normal}
+.bug tr.adv td.nm .tk.third::before{content:'3'}
 .bug tr.pend td{color:#3a4450}
 .gate{margin-top:26px;background:var(--s0);box-shadow:inset 0 0 0 1px var(--line),inset 0 2px 0 var(--dq);border-radius:3px}
 .gateH{font-size:10px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;color:var(--dq);padding:8px 12px 4px;display:flex;align-items:center;gap:7px}
@@ -548,7 +563,7 @@ ${bsvg.css}
 <div class="hud"><span class="hudSeg spec"><span>Spectator</span></span><span class="hudSeg ${live ? 'liveSeg' : 'doneSeg'}"><span>${live ? '<span class="d"></span>Live' : '&#10003; Final'}</span></span><span class="hudSeg stage"><span>${live ? he(liveStage) : 'Champion'}</span></span><span class="hudSeg"><span>Auto 02s</span></span></div>
 </header>
 ${bsvg.html}
-<div class="sec"><b>Group stage</b> &middot; top two advance</div>
+  <div class="sec"><b>Group stage</b> &middot; ${groupRule}</div>
 <div class="groups">${groupsArena(st) || '<div style="color:var(--mut)">draw pending&hellip;</div>'}</div>
 ${dq}
 </div></body></html>`
@@ -559,7 +574,7 @@ function groupsArena(st) {
   return st.groupOrder.map(G => {
     const g = st.groups[G]
     const rows = g.table
-      ? g.table.map(t => { const a = adv(G).includes(t.label); return `<tr class="${a ? 'adv' : ''}"><td class="nm">${a ? '<i class="tk"></i>' : ''}${he(t.label)}</td><td class="pt">${he(t.pts)}</td></tr>` }).join('')
+      ? g.table.map(t => groupRow(t, adv(G), 'tk')).join('')
       : (g.teams || []).map(t => `<tr class="pend"><td class="nm">${he(t.label)}</td><td class="pt">&middot;</td></tr>`).join('')
     return `<div class="bug"><div class="bugT"><span class="bugL">${he(G)}</span><span class="bugLab">Group</span></div><table>${rows}</table></div>`
   }).join('')
@@ -622,9 +637,12 @@ ${CONNECTORS}
 .bug table{width:100%;border-collapse:collapse;font-size:11.5px}
 .bug td{padding:2px 0}
 .bug td.nm{text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:96px;color:var(--mut)}
+.bug td.rec{text-align:right;color:var(--mut);font-size:9.5px;font-weight:900;font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 6px 0 4px}
 .bug td.pt{text-align:right;font-weight:900;font-variant-numeric:tabular-nums}
 .bug tr.adv td.nm{color:var(--ink);font-weight:700}
 .bug tr.adv td.nm .tk{display:inline-block;width:7px;height:7px;background:var(--accent);margin-right:5px;vertical-align:middle}
+.bug tr.adv td.nm .tk.third{width:auto;height:auto;min-width:12px;padding:0 2px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-size:8px;font-weight:900;font-style:normal;line-height:1.1;text-align:center}
+.bug tr.adv td.nm .tk.third::before{content:'3'}
 .bug tr.pend td{color:var(--mut);opacity:.5}
 .ticker{margin-top:28px;border:2px solid var(--ink)}
 .tkH{background:var(--accent);color:var(--ink);font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-bottom:2px solid var(--ink)}

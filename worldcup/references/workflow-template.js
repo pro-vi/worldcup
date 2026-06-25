@@ -219,6 +219,10 @@ const LENS_SCHEMA = { type: 'object', additionalProperties: false,
   required: ['winner', 'reason'],
   properties: { winner: { type: 'string', enum: ['X', 'Y'] },
     margin: { type: 'string', enum: ['narrow', 'clear', 'decisive'] }, reason: { type: 'string' } } }
+const LENS_DRAW_SCHEMA = { type: 'object', additionalProperties: false,
+  required: ['winner', 'reason'],
+  properties: { winner: { type: 'string', enum: ['X', 'Y', 'DRAW'] },
+    margin: { type: 'string', enum: ['narrow', 'clear', 'decisive', 'draw'] }, reason: { type: 'string' } } }
 const SEED_SCHEMA = { type: 'object', additionalProperties: false,
   required: ['winner'],
   properties: { winner: { type: 'string', enum: ['X', 'Y'] },
@@ -270,7 +274,7 @@ let EVALUATOR = {
   tiebreakLens:     'integrity',         // the extra juror seated on an even split (was hardcoded)
   screeners:        SCREENERS,           // independent fabrication-gate judges per entry
   bans:             BANS,                // deterministic preflight policy (em dash, banned vocab) — part of the gate, in the config too
-  schemas:          { flaw: FLAW_SCHEMA, lens: LENS_SCHEMA, seed: SEED_SCHEMA },
+  schemas:          { flaw: FLAW_SCHEMA, lens: LENS_SCHEMA, lensDraw: LENS_DRAW_SCHEMA, seed: SEED_SCHEMA },
   agentOptions:     {},                  // merged into every judge agent() call (e.g. { model }); {} = inherit. NEVER overrides label/phase/schema (spread FIRST at call sites)
   lensWeight:       () => 1,             // (lens) -> weight in the tally; ()=>1 is the default 1:1 (a custom config may override)
 }
@@ -299,7 +303,7 @@ function validateEvaluatorConfig(ev) {
   if (typeof ev.panelFor !== 'function') throw new Error('EVALUATOR.panelFor must be a function.')
   if (typeof ev.lensWeight !== 'function') throw new Error('EVALUATOR.lensWeight must be a callable function (tally calls it every vote).')
   if (!ev.schemas || typeof ev.schemas !== 'object') throw new Error('EVALUATOR.schemas must be an object.')
-  for (const k of ['flaw', 'lens', 'seed']) if (!ev.schemas[k] || typeof ev.schemas[k] !== 'object')
+  for (const k of ['flaw', 'lens', 'lensDraw', 'seed']) if (!ev.schemas[k] || typeof ev.schemas[k] !== 'object')
     throw new Error(`EVALUATOR.schemas.${k} must be present (a JSON schema) — the ${k} judge path needs it (e.g. playMatch reads schemas.lens, seeding reads schemas.seed).`)
   // lens + seed schemas must REQUIRE winner ∈ ['X','Y'], or the match/seed paths (which key on
   // v.winner==='X') silently miscount an out-of-enum or missing winner from a custom schema.
@@ -307,6 +311,11 @@ function validateEvaluatorConfig(ev) {
     const s = ev.schemas[k], we = s.properties && s.properties.winner && s.properties.winner.enum
     if (!Array.isArray(s.required) || !s.required.includes('winner') || !Array.isArray(we) || we.length !== 2 || !we.includes('X') || !we.includes('Y'))
       throw new Error(`EVALUATOR.schemas.${k} must require winner ∈ ['X','Y'] — the ${k} judge path keys on v.winner==='X', so an unconstrained winner silently miscounts.`)
+  }
+  {
+    const s = ev.schemas.lensDraw, we = s.properties && s.properties.winner && s.properties.winner.enum
+    if (!Array.isArray(s.required) || !s.required.includes('winner') || !Array.isArray(we) || we.length !== 3 || !we.includes('X') || !we.includes('Y') || !we.includes('DRAW'))
+      throw new Error(`EVALUATOR.schemas.lensDraw must require winner ∈ ['X','Y','DRAW'] — group draws use this schema, while knockout keeps schemas.lens binary.`)
   }
   const cats = ev.hardDqCategories
   // (a) screeners must be a positive integer, or the gate schedules no judges and fabrication passes.
@@ -382,7 +391,7 @@ When you disqualify, name the single best-fitting hard-DQ category: ${ev.hardDqC
 ${embedUntrusted(e.markdown, 'ENTRY')}
 Return JSON { disqualified, category, flaw, confidence, note }. Default disqualified=false and category="NONE" unless you can name the specific rule broken.`
 
-const lensPrompt = (lens, X, Y, ev = EVALUATOR) => `Two entries compete head to head. Pick the better. No ties — choose and give a margin. You wear ONE lens and judge on it ruthlessly; ignore other axes.
+const lensPrompt = (lens, X, Y, ev = EVALUATOR, canDraw = false) => `Two entries compete head to head. ${canDraw ? 'In the group stage, if the two are genuinely indistinguishable through this lens, you may call DRAW. Do not use DRAW as a shrug; choose X or Y when one is better through the lens.' : 'Pick the better. No ties — choose and give a margin.'} You wear ONE lens and judge on it ruthlessly; ignore other axes.
 
 YOUR LENS: ${lens} — ${ev.lenses[lens]}
 
@@ -394,7 +403,7 @@ Do NOT reward length, density, or more concrete detail for its own sake. A short
 
 ${embedUntrusted(X.markdown, 'ENTRY X')}
 ${embedUntrusted(Y.markdown, 'ENTRY Y')}
-Return JSON { winner:"X"|"Y", margin, reason (two sentences, the deciding factor through your lens) }.`
+Return JSON { winner:${canDraw ? '"X"|"Y"|"DRAW"' : '"X"|"Y"'}, margin, reason (two sentences, the deciding factor through your lens) }.`
 
 const seedPrompt = (X, Y, ev = EVALUATOR) => `Quick calibrated comparison for seeding. Which entry is stronger overall against the criteria. Choose; no ties.
 
@@ -479,43 +488,65 @@ async function screenAll(entries, phase, ev = EVALUATOR) {
 }
 
 // One head-to-head. orderIdx parity flips X/Y to cancel position bias.
+const DRAW = 'draw'
+const voteWinner = (raw, flip, a, b) =>
+  raw === 'X' ? (flip ? b : a) : raw === 'Y' ? (flip ? a : b) : raw === 'DRAW' ? DRAW : null
 async function playMatch(a, b, orderIdx, stakes, phase, decided, ev = EVALUATOR) {
   // Stage 0 — fatal-flaw veto (uses cached screens)
   const da = a.flaw?.disqualified, db = b.flaw?.disqualified
-  if (da && !db) return record(b, a, 'decisive', `opponent DQ'd: ${a.flaw.flaw}`, decided)
-  if (db && !da) return record(a, b, 'decisive', `opponent DQ'd: ${b.flaw.flaw}`, decided)
+  if (da && !db) return record(b, a, 'decisive', `opponent DQ'd: ${a.flaw.flaw}`, decided, a, b)
+  if (db && !da) return record(a, b, 'decisive', `opponent DQ'd: ${b.flaw.flaw}`, decided, a, b)
 
   // Stage 1 — lens panel (order flipped per lens index to debias). Filter to lenses the config actually
   // DEFINES: validateEvaluatorConfig only sampled panelFor once per stakes, so a non-pure operator panelFor
   // could return a lens absent from ev.lenses at runtime — unfiltered, that seats a 'YOUR LENS: X — undefined'
   // ghost juror whose vote is counted. If the filter empties the panel, the tally falls through to the
   // (validated) tiebreak lens and then the rating, so a clean entry is never decided by a ghost.
+  const canDraw = phase === 'Groups'
+  const lensSchema = canDraw ? 'lensDraw' : 'lens'
   const lenses = ev.panelFor(stakes).filter(ln => ev.lenses[ln])
   const votes = (await parallel(lenses.map((lens, i) => () => {
     const flip = (orderIdx + i) % 2 === 1
     const [X, Y] = flip ? [b, a] : [a, b]
-    return agent(lensPrompt(lens, X, Y, ev), judgeOpts(ev, 'lens', `${stakes}:${lens}:${a.label}>${b.label}`, phase))
-      .then(v => v && ({ lens, winner: v.winner === 'X' ? (flip ? b : a) : (flip ? a : b), margin: v.margin, reason: v.reason }))
+    return agent(lensPrompt(lens, X, Y, ev, canDraw), judgeOpts(ev, lensSchema, `${stakes}:${lens}:${a.label}>${b.label}`, phase))
+      .then(v => {
+        if (!v) return null
+        const winner = voteWinner(v.winner, flip, a, b)
+        return winner ? { lens, winner, margin: v.margin, reason: v.reason } : null
+      })
   }))).filter(Boolean)
 
   // Stage 2 — majority. Stage 3 — break/escalate ties.
-  let winner = tally(votes, a, b, ev)
+  let winner = tally(votes, a, b, ev, canDraw)
+  if (winner === DRAW) return drawRecord(a, b, (votes.find(v => v.winner === DRAW) || {}).reason || 'no strict majority in group panel')
   if (!winner) { // even split: seat one more juror (the configured tiebreak lens)
-    const extra = await agent(lensPrompt(ev.tiebreakLens, a, b, ev), judgeOpts(ev, 'lens', `${stakes}:tiebreak:${a.label}`, phase))
+    const extra = await agent(lensPrompt(ev.tiebreakLens, a, b, ev, false), judgeOpts(ev, 'lens', `${stakes}:tiebreak:${a.label}`, phase))
     if (extra) votes.push({ lens: ev.tiebreakLens, winner: extra.winner === 'X' ? a : b, margin: extra.margin, reason: extra.reason })
     winner = tally(votes, a, b, ev) || (a.rating >= b.rating ? a : b)
   }
   const loser = winner.id === a.id ? b : a
-  const reason = (votes.find(v => v.winner.id === winner.id) || {}).reason || 'panel majority'
+  const reason = (votes.find(v => v.winner !== DRAW && v.winner.id === winner.id) || {}).reason || 'panel majority'
   const margin = marginOf(votes, winner, ev)
-  return record(winner, loser, margin, reason, decided)
+  return record(winner, loser, margin, reason, decided, a, b)
 }
-function tally(votes, a, b, ev = EVALUATOR) {
-  let av = 0, bv = 0
+function tally(votes, a, b, ev = EVALUATOR, canDraw = false) {
+  let av = 0, bv = 0, total = 0
   // Per-lens weight from the config (lensW guards against undefined/NaN/negative). The default
   // lensWeight is ()=>1, so av/bv are integer vote counts identical to the unweighted tally
   // (a custom config may supply real per-lens reliability weights).
-  votes.forEach(v => { const w = lensW(ev, v.lens); if (v.winner.id === a.id) av += w; else bv += w })
+  votes.forEach(v => {
+    const w = lensW(ev, v.lens)
+    total += w
+    if (v.winner === DRAW) return
+    if (v.winner.id === a.id) av += w
+    else if (v.winner.id === b.id) bv += w
+  })
+  if (canDraw) {
+    if (total === 0) return null
+    if (av > total / 2) return a
+    if (bv > total / 2) return b
+    return DRAW
+  }
   if (av === bv) return null
   return av > bv ? a : b
 }
@@ -526,12 +557,15 @@ function tally(votes, a, b, ev = EVALUATOR) {
 // by winner share, or make the threshold configurable) so labels don't depend on weight scale.
 function marginOf(votes, w, ev = EVALUATOR) {
   const total = votes.reduce((s, v) => s + lensW(ev, v.lens), 0)
-  const for_ = votes.filter(v => v.winner.id === w.id).reduce((s, v) => s + lensW(ev, v.lens), 0)
+  const for_ = votes.filter(v => v.winner !== DRAW && v.winner.id === w.id).reduce((s, v) => s + lensW(ev, v.lens), 0)
   return for_ === total ? 'decisive' : (for_ - (total - for_) >= 2 ? 'clear' : 'narrow')
 }
-function record(winner, loser, margin, reason, decided) {
+function record(winner, loser, margin, reason, decided, a = winner, b = loser) {
   decided.push({ winnerId: winner.id, loserId: loser.id })
-  return { winner, loser, margin, reason }
+  return { a, b, winner, loser, margin, reason }
+}
+function drawRecord(a, b, reason) {
+  return { a, b, winner: null, loser: null, margin: DRAW, reason }
 }
 
 // ─────────────────────────────────────────────────────── BRACKET HELPERS (see brackets.md)
@@ -545,10 +579,20 @@ function roundRobin(group) {
 }
 function standings(group, gi, results) {
   const pts = new Map(group.map(t => [t.id, 0])), beat = new Map(group.map(t => [t.id, new Set()]))
-  results.filter(r => r.gi === gi).forEach(r => { pts.set(r.winner.id, pts.get(r.winner.id) + 3); beat.get(r.winner.id).add(r.loser.id) })
+  const w = new Map(group.map(t => [t.id, 0])), d = new Map(group.map(t => [t.id, 0])), l = new Map(group.map(t => [t.id, 0]))
+  results.filter(r => r.gi === gi).forEach(r => {
+    if (r.winner == null) {
+      pts.set(r.a.id, pts.get(r.a.id) + 1); pts.set(r.b.id, pts.get(r.b.id) + 1)
+      d.set(r.a.id, d.get(r.a.id) + 1); d.set(r.b.id, d.get(r.b.id) + 1)
+      return
+    }
+    pts.set(r.winner.id, pts.get(r.winner.id) + 3)
+    w.set(r.winner.id, w.get(r.winner.id) + 1); l.set(r.loser.id, l.get(r.loser.id) + 1)
+    beat.get(r.winner.id).add(r.loser.id)
+  })
   const ranked = [...group].sort((p, q) =>
     (pts.get(q.id) - pts.get(p.id)) || (beat.get(p.id).has(q.id) ? -1 : beat.get(q.id).has(p.id) ? 1 : q.rating - p.rating))
-  return { ranked, pts }
+  return { ranked, pts, w, d, l }
 }
 function nextRoundPairs(winners) { const p = []; for (let i = 0; i < winners.length; i += 2) p.push([winners[i], winners[i + 1]]); return p }
 function seedSlotOrder(n) { let s = [1, 2]; while (s.length < n) { const sum = s.length * 2 + 1, x = []; for (const v of s) { x.push(v); x.push(sum - v) } s = x } return s }
@@ -595,7 +639,7 @@ const EVENT_SCHEMAS = {
   draw: bkObj({ __wc: bkStr, ev: bkStr, field: bkNum, groups: bkArr(bkObj({ group: bkStr, teams: bkArr(bkObj({ label: bkStr, seed: bkNum })) })) }),
   bracket: bkObj({ __wc: bkStr, ev: bkStr, rounds: bkArr(bkObj({ stakes: bkStr, matches: bkArr(bkObj({ slot: bkNum, a: bkNullStr, b: bkNullStr })) })) }),
   gate: bkObj({ __wc: bkStr, ev: bkStr, field: bkNum, disqualified: bkArr(bkObj({ label: bkStr, category: bkStr })) }),
-  groups: bkObj({ __wc: bkStr, ev: bkStr, standings: bkArr(bkObj({ group: bkStr, table: bkArr(bkObj({ label: bkStr, pts: bkNum })), advanced: bkArr(bkStr) })) }),
+  groups: bkObj({ __wc: bkStr, ev: bkStr, standings: bkArr(bkObj({ group: bkStr, table: bkArr(bkObj({ label: bkStr, pts: bkNum, w: bkNum, d: bkNum, l: bkNum })), advanced: bkArr(bkStr) })) }),
   round: bkObj({ __wc: bkStr, ev: bkStr, stakes: bkStr, matches: bkArr(bkObj({ winner: bkStr, loser: bkStr, margin: bkEither })), eliminated: bkArr(bkStr) }),
   match: bkObj({ __wc: bkStr, ev: bkStr, stakes: bkStr, slot: bkNum, winner: bkStr, loser: bkStr, margin: bkEither }),
   champion: bkObj({ __wc: bkStr, ev: bkStr, label: bkStr, stakes: bkStr }),
@@ -614,11 +658,20 @@ const emit = ev => {
   } catch (e) { /* a beacon must NEVER break a run */ }
 }
 // Compact monospace standings for the free Tier-0 watch-in-/workflows view (no artifact needed).
-// 'Q' marks a qualifier (top 2), '.' an eliminated team. ASCII only so it survives any log sink.
-function standingsBlock(groups, adv) {
+// 'Q' marks a qualifier, '.' an eliminated team. ASCII only so it survives any log sink.
+const groupTable = a => a.ranked.map(t => ({ label: t.label, pts: a.pts.get(t.id), w: a.w.get(t.id), d: a.d.get(t.id), l: a.l.get(t.id) }))
+const advancedTeams = (a, bestThirdIds = new Set()) => {
+  const out = a.ranked.slice(0, 2)
+  const third = a.ranked[2]
+  if (third && bestThirdIds.has(third.id)) out.push(third)
+  return out
+}
+const advancedLabels = (a, bestThirdIds = new Set()) => advancedTeams(a, bestThirdIds).map(t => t.label)
+function standingsBlock(groups, adv, bestThirdIds = new Set()) {
   return groups.map((g, gi) => {
+    const qualified = new Set(advancedTeams(adv[gi], bestThirdIds).map(t => t.id))
     const rows = adv[gi].ranked.map((t, i) =>
-      `  ${i < 2 ? 'Q' : '.'} ${String(adv[gi].pts.get(t.id)).padStart(2)}pt  ${t.label}`).join('\n')
+      `  ${qualified.has(t.id) ? 'Q' : '.'} ${String(adv[gi].pts.get(t.id)).padStart(2)}pt ${adv[gi].w.get(t.id)}-${adv[gi].d.get(t.id)}-${adv[gi].l.get(t.id)}  ${t.label}`).join('\n')
     return `Group ${LETTERS[gi]}\n${rows}`
   }).join('\n')
 }
@@ -1035,7 +1088,7 @@ groups.forEach((g, gi) => roundRobin(g).forEach(([x, y]) => groupSpecs.push({ gi
 // concurrency cap), so emit a couple of partial-standings snapshots before the final — the group stage
 // fills in rather than jumping from the draw straight to the final table.
 const groupResults = []
-const partialStandings = () => groups.map((g, gi) => { const s = standings(g, gi, groupResults); return { group: LETTERS[gi], table: s.ranked.map(t => ({ label: t.label, pts: s.pts.get(t.id) })), advanced: [] } })
+const partialStandings = () => groups.map((g, gi) => { const s = standings(g, gi, groupResults); return { group: LETTERS[gi], table: groupTable(s), advanced: [] } })
 const gMarks = new Set([Math.round(groupSpecs.length / 3), Math.round(2 * groupSpecs.length / 3)].filter(n => n > 0 && n < groupSpecs.length))
 let gDone = 0
 await parallel(groupSpecs.map((m, idx) => () =>
@@ -1048,21 +1101,20 @@ await parallel(groupSpecs.map((m, idx) => () =>
 // or tight budgets, switch group matches to a single 'craft' juror.
 
 const adv = groups.map((g, gi) => { const s = standings(g, gi, groupResults); return { ...s, gi } })
-// Realtime group standings + who advanced (the user-requested "live group standings"). The
-// log() line is the free Tier-0 view; the WCEVENT carries the structured table for Tier-1.
-log('Group standings:\n' + standingsBlock(groups, adv))
-emit({ ev: 'groups', standings: adv.map((a, gi) => ({ group: LETTERS[gi], table: a.ranked.map(t => ({ label: t.label, pts: a.pts.get(t.id) })), advanced: a.ranked.slice(0, 2).map(t => t.label) })) })
-let qualifiers
-if (FIELD === 32) {
-  qualifiers = null // 32 uses fixed crossings below, not a seeded R32
-} else {
+let qualifiers = null, bestThirdIds = new Set()
+if (FIELD !== 32) {
   const winners = adv.map(a => a.ranked[0]), runners = adv.map(a => a.ranked[1])
   const thirds = adv.map(a => a.ranked[2])
   const ptsById = new Map(); adv.forEach(a => a.ranked.forEach(t => ptsById.set(t.id, a.pts.get(t.id))))
   const bestThirds = [...thirds].sort((p, q) => (ptsById.get(q.id) - ptsById.get(p.id)) || (q.rating - p.rating)).slice(0, 8)
+  bestThirdIds = new Set(bestThirds.map(t => t.id))
   const tier = arr => [...arr].sort((p, q) => (ptsById.get(q.id) - ptsById.get(p.id)) || (q.rating - p.rating))
   qualifiers = [...tier(winners), ...tier(runners), ...tier(bestThirds)] // 32 ranked
 }
+// Realtime group standings + who advanced (the user-requested "live group standings"). The
+// log() line is the free Tier-0 view; the WCEVENT carries the structured table for Tier-1.
+log('Group standings:\n' + standingsBlock(groups, adv, bestThirdIds))
+emit({ ev: 'groups', standings: adv.map((a, gi) => ({ group: LETTERS[gi], table: groupTable(a), advanced: advancedLabels(a, bestThirdIds) })) })
 log('Group stage done.')
 
 // ─────────────────────────────────────────────────────── KNOCKOUT
@@ -1210,8 +1262,15 @@ if (PLAYOFF && effects && !effects.predictedOptimum.inField && DESIGN.resolved &
 
 function pathOf(champ) {
   const steps = []
-  groupResults.filter(r => r.winner.id === champ.id).forEach(r => steps.push({ round: 'Group', beat: r.loser.label, margin: r.margin, reason: r.reason }))
-  for (const k of order) (history[k] || []).filter(r => r.winner.id === champ.id).forEach(r => steps.push({ round: k, beat: r.loser.label, margin: r.margin, reason: r.reason }))
+  groupResults.forEach(r => {
+    if (r.winner == null) {
+      if (r.a.id === champ.id) steps.push({ round: 'Group', verb: 'drew', opp: r.b.label, margin: r.margin, reason: r.reason })
+      else if (r.b.id === champ.id) steps.push({ round: 'Group', verb: 'drew', opp: r.a.label, margin: r.margin, reason: r.reason })
+    } else if (r.winner.id === champ.id) {
+      steps.push({ round: 'Group', verb: 'beat', opp: r.loser.label, beat: r.loser.label, margin: r.margin, reason: r.reason })
+    }
+  })
+  for (const k of order) (history[k] || []).filter(r => r.winner.id === champ.id).forEach(r => steps.push({ round: k, verb: 'beat', opp: r.loser.label, beat: r.loser.label, margin: r.margin, reason: r.reason }))
   return steps
 }
 
@@ -1230,10 +1289,11 @@ function renderReport() {
   }).join('')
   const groupCards = groups.map((g, gi) => {
     const a = adv[gi]
-    const rows = a.ranked.map((t, i) => `<tr class="${i < 2 ? 'adv' : ''}"><td>${esc(t.label)}</td><td class="pts">${a.pts.get(t.id)}</td></tr>`).join('')
+    const qualified = new Set(advancedTeams(a, bestThirdIds).map(t => t.id))
+    const rows = a.ranked.map(t => `<tr class="${qualified.has(t.id) ? 'adv' : ''}"><td>${esc(t.label)}</td><td class="pts">${a.pts.get(t.id)} (${a.w.get(t.id)}-${a.d.get(t.id)}-${a.l.get(t.id)})</td></tr>`).join('')
     return `<div class="grp"><h4>Group ${LETTERS[gi]}</h4><table>${rows}</table></div>`
   }).join('')
-  const pathRows = pathOf(champion).map(s => `<li><b>${esc(s.round)}</b> beat ${esc(s.beat)} <span class="mrg">(${esc(s.margin || '')})</span><div class="why">${esc(s.reason || '')}</div></li>`).join('')
+  const pathRows = pathOf(champion).map(s => `<li><b>${esc(s.round)}</b> ${esc(s.verb || 'beat')} ${esc(s.opp || s.beat)} <span class="mrg">(${esc(s.margin || '')})</span><div class="why">${esc(s.reason || '')}</div></li>`).join('')
   const ratingRows = globalRating.slice(0, 16).map(([id, r], i) => { const t = pool.find(x => x.id === id); return `<tr><td>${i + 1}</td><td>${esc(t ? t.label : id)}</td><td>${Math.round(r)}</td></tr>` }).join('')
   const dq = pool.filter(t => t.flaw && t.flaw.disqualified)
   const dqHtml = dq.length ? `<div class="card"><h3>Disqualified (${dq.length})</h3><ul>${dq.map(t => `<li>${esc(t.label)}: <b>${esc(t.flaw.category || '')}</b> ${esc(t.flaw.flaw)}</li>`).join('')}</ul></div>` : ''
@@ -1278,11 +1338,11 @@ ${dqHtml}
 function renderReportV2() {
   const ratingById = new Map(globalRating)
   const mlog = {}
-  const addLog = (round, w, l, margin, reason) => {
-    ;(mlog[w] = mlog[w] || []).push({ round, opp: l, won: true, margin, reason })
-    ;(mlog[l] = mlog[l] || []).push({ round, opp: w, won: false, margin, reason })
+  const addLog = (round, w, l, margin, reason, draw = false) => {
+    ;(mlog[w] = mlog[w] || []).push({ round, opp: l, won: draw ? null : true, margin, reason })
+    ;(mlog[l] = mlog[l] || []).push({ round, opp: w, won: draw ? null : false, margin, reason })
   }
-  groupResults.forEach(m => addLog('Group', m.winner.label, m.loser.label, m.margin, m.reason))
+  groupResults.forEach(m => m.winner == null ? addLog('Group', m.a.label, m.b.label, m.margin, m.reason, true) : addLog('Group', m.winner.label, m.loser.label, m.margin, m.reason))
   for (const k of order) (history[k] || []).forEach(m => addLog(k, m.winner.label, m.loser.label, m.margin, m.reason))
   if (referenceChallenge) addLog('Reference', referenceChallenge.championBeatOriginal ? champion.label : 'ORIGINAL', referenceChallenge.championBeatOriginal ? 'ORIGINAL' : champion.label, referenceChallenge.margin, referenceChallenge.reason)
   const DATA = {}
@@ -1298,7 +1358,11 @@ function renderReportV2() {
   const rightCols = preRounds.slice().reverse().map(k => colOf(history[k].slice(Math.ceil(history[k].length / 2)))).join('')
   const finalM = history[finalKey] && history[finalKey][0]
   const finalLine = finalM ? `${esc(finalM.winner.label)} def. ${esc(finalM.loser.label)} (${esc(finalM.margin)})` : ''
-  const groupCards = groups.map((g, gi) => { const a = adv[gi]; const rows = a.ranked.map((t, i) => `<tr class="${i < 2 ? 'adv' : ''}"><td>${entry(t.label)}</td><td class="pts">${a.pts.get(t.id)}</td></tr>`).join(''); return `<div class="grp"><h4>Group ${LETTERS[gi]}</h4><table>${rows}</table></div>` }).join('')
+  const groupCards = groups.map((g, gi) => {
+    const a = adv[gi], qualified = new Set(advancedTeams(a, bestThirdIds).map(t => t.id))
+    const rows = a.ranked.map(t => `<tr class="${qualified.has(t.id) ? 'adv' : ''}"><td>${entry(t.label)}</td><td class="pts">${a.pts.get(t.id)} (${a.w.get(t.id)}-${a.d.get(t.id)}-${a.l.get(t.id)})</td></tr>`).join('')
+    return `<div class="grp"><h4>Group ${LETTERS[gi]}</h4><table>${rows}</table></div>`
+  }).join('')
   const ratingRows = globalRating.map(([id, r], i) => { const t = pool.find(x => x.id === id); return `<tr><td>${i + 1}</td><td>${entry(t ? t.label : String(id))}</td><td>${Math.round(r)}</td></tr>` }).join('')
   const dq = pool.filter(t => t.flaw && t.flaw.disqualified)
   const dqHtml = dq.length ? `<div class="panel"><h3>Disqualified at the gate (${dq.length})</h3><ul>${dq.map(t => `<li>${entry(t.label)}: <b>${esc(t.flaw.category || '')}</b> ${esc(t.flaw.flaw)}</li>`).join('')}</ul></div>` : `<div class="panel"><h3>Fabrication gate</h3><div class="muted">0 disqualified.</div></div>`
@@ -1396,7 +1460,7 @@ ul{margin:.2em 0;padding-left:1.1em}
 .sheet h3{color:var(--gold);font-size:12px;text-transform:uppercase;letter-spacing:1px;margin:16px 0 6px}
 .dqtag{background:#b3261e;color:#fff;font-size:10px;padding:2px 7px;border-radius:10px}
 .mlog{list-style:none;padding:0}.mlog li{padding:5px 0;border-bottom:1px solid rgba(255,255,255,.08)}
-.mlog .w{color:var(--gold);font-weight:700}.mlog .l{color:#e58ab0}.why{color:#c2adbd;font-size:12px}
+.mlog .w{color:var(--gold);font-weight:700}.mlog .l{color:#e58ab0}.mlog .d{color:#9fc7ff;font-weight:700}.why{color:#c2adbd;font-size:12px}
 .essay p{margin:.55em 0;color:#ece0e9}.x{float:right;cursor:pointer;color:#cdb9c8;font-size:22px;line-height:1}
 .coord{margin-top:16px}
 .pc-wrap{overflow-x:auto}.pc-svg{width:100%;max-width:780px;height:auto;display:block;margin:0 auto}
@@ -1430,7 +1494,7 @@ function show(k){var d=DATA[k];if(!d)return;var h='<h2>'+he(k)+(d.dq?' <span cla
 h+='<div class="meta">seed #'+d.seed+' &middot; rating '+d.rating+(d.angle?(' &middot; '+he(d.angle)):'')+'</div>';
 if(d.coords&&Object.keys(d.coords).filter(function(k){return k!=='__rep';}).length)h+='<div class="meta">at '+Object.keys(d.coords).filter(function(k){return k!=='__rep';}).map(function(k){return he(k)+'='+he(d.coords[k]);}).join(', ')+'</div>';
 if(d.dq)h+='<div class="meta" style="color:#f3a">gate: '+(d.category?'<b>'+he(d.category)+'</b> ':'')+he(d.flaw)+'</div>';
-if(d.matches&&d.matches.length){h+='<h3>matches</h3><ul class="mlog">';d.matches.forEach(function(x){h+='<li><span class="'+(x.won?'w':'l')+'">'+(x.won?'beat':'lost to')+' '+he(x.opp)+'</span> <span class="why">&middot; '+he(x.round)+' &middot; '+he(x.margin||'')+'</span><div class="why">'+he(x.reason||'')+'</div></li>';});h+='</ul>';}
+if(d.matches&&d.matches.length){h+='<h3>matches</h3><ul class="mlog">';d.matches.forEach(function(x){var draw=x.won===null;h+='<li><span class="'+(draw?'d':(x.won?'w':'l'))+'">'+(draw?'drew':(x.won?'beat':'lost to'))+' '+he(x.opp)+'</span> <span class="why">&middot; '+he(x.round)+' &middot; '+he(x.margin||'')+'</span><div class="why">'+he(x.reason||'')+'</div></li>';});h+='</ul>';}
 h+='<h3>full text</h3><div class="essay">'+String(d.text||'').split(/\\n\\n+/).map(function(p){return '<p>'+he(p)+'</p>';}).join('')+'</div>';
 document.getElementById('mbody').innerHTML=h;document.getElementById('modal').classList.add('show');}
 function hide(){document.getElementById('modal').classList.remove('show');}
@@ -1462,7 +1526,16 @@ return {
   playoff,
   disqualified: pool.filter(t => t.flaw?.disqualified).map(t => ({ label: t.label, category: t.flaw.category || '', flaw: t.flaw.flaw })),
   graph: {
-    groups: groups.map((g, gi) => ({ group: LETTERS[gi], standings: adv[gi].ranked.map(t => ({ label: t.label, pts: adv[gi].pts.get(t.id) })), advanced: [adv[gi].ranked[0].label, adv[gi].ranked[1].label] })),
+    groups: groups.map((g, gi) => ({
+      group: LETTERS[gi],
+      standings: adv[gi].ranked.map(t => ({ label: t.label, pts: adv[gi].pts.get(t.id), w: adv[gi].w.get(t.id), d: adv[gi].d.get(t.id), l: adv[gi].l.get(t.id) })),
+      advanced: advancedLabels(adv[gi], bestThirdIds),
+      matches: groupResults.filter(m => m.gi === gi).map(m => ({
+        a: m.a.label, b: m.b.label,
+        winner: m.winner ? m.winner.label : null, loser: m.loser ? m.loser.label : null,
+        margin: m.margin, reason: m.reason,
+      })),
+    })),
     knockout: order.filter(k => history[k] && history[k].length).map(k => ({ round: k, matches: history[k].map(m => ({ winner: m.winner.label, loser: m.loser.label, margin: m.margin })) })),
   },
   reportHtml: renderReportV2(),

@@ -41,14 +41,14 @@ then `fold()` reduces them. This is the **only** thing the two halves must agree
 ```
 { ev:'gate',     field, disqualified:[{ label, category }] }                         // after the fabrication gate
 { ev:'draw',     field, groups:[{ group, teams:[{ label, seed }] }] }                // group draw + seeds
-{ ev:'groups',   standings:[{ group, table:[{ label, pts }], advanced:[label,…] }] } // group table — emitted partial→final (it builds up)
+{ ev:'groups',   standings:[{ group, table:[{ label, pts, w, d, l }], advanced:[label,…] }] } // group table — emitted partial→final (it builds up)
 { ev:'bracket',  rounds:[{ stakes, matches:[{ slot, a, b }] }] }                     // full KO tree (a/b null = TBD)
 { ev:'match',    stakes, slot, winner, loser, margin }                               // ONE knockout game (fills a single slot)
 { ev:'round',    stakes, matches:[{ winner, loser, margin }], eliminated:[label,…] } // KO round summary (backfills the slots)
 { ev:'champion', label, stakes }                                                     // final
 ```
 
-Granularity is **stepwise**, gated only by parallel play: `groups` is emitted at ~⅓ and ⅔ (points accumulate as matches resolve in waves) before the final table; each knockout game emits a `match` the moment it resolves, so the bracket fills **slot-by-slot** while siblings stay `● playing` (a trailing `round` event backfills the full set).
+Granularity is **stepwise**, gated only by parallel play: `groups` is emitted at ~⅓ and ⅔ (points and W-D-L accumulate as matches resolve in waves) before the final table; each knockout game emits a `match` the moment it resolves, so the bracket fills **slot-by-slot** while siblings stay `● playing` (a trailing `round` event backfills the full set). In 48-field runs, the final `groups.advanced` also includes each qualified best third-place team as the third entry for that group.
 
 The knockout view is a **full bracket tree**, not just completed columns: `bracket` paints every round +
 slot up front (round-1 matchups known, the rest TBD); each `round` result fills its winners and
