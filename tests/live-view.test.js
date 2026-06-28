@@ -53,6 +53,6 @@ test('arena copy derives best-third rule even when the draw event is missing', (
   assert.match(html, /C3/)
 })
 
-test('theme registry exposes only generic launch-safe theme names', () => {
-  assert.deepEqual(Object.keys(THEMES).sort(), ['arena', 'concrete', 'mosaic'])
+test('theme registry keeps the public 2026 theme key', () => {
+  assert.deepEqual(Object.keys(THEMES).sort(), ['2026', 'arena', 'concrete'])
 })

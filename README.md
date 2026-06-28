@@ -82,7 +82,7 @@ host and recorded against that contract before release.
     reference challenge, and the final HTML report.
   - `references/live-view.js` and `live-view.md` - optional live view: a
     dependency-free HTML bracket that updates while a run is still going. Themes:
-    `arena`, `concrete`, and `mosaic`.
+    `arena`, `concrete`, and `2026`.
   - `references/profiles/` - optional domain/voice taste you plug into the
     domain-general judge. The engine ships taste-neutral; bring your own profile.
   - `references/coordinates.md`, `references/design-pass.md` - candidate
