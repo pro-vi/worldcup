@@ -36,8 +36,9 @@ Positive:
 
 Negative:
 - No nuanced ranking-quality assurance — passing means "not obviously broken," never "certified."
-- **Current state: the canary is NOT yet built** (after the probes were removed, automated assurance is
-  zero). This ADR records the decided floor; building it is the open follow-up.
+- **Current state:** `canary/judge-canary.json` defines the six-case contract and
+  `scripts/judge-canary.js` validates the fixture plus recorded release results.
+  The actual judge run still happens through the skill host before release.
 
 ## The canary contract (the boundary that stops it regrowing into the qualifier)
 

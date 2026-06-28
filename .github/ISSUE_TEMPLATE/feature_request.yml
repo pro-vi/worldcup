@@ -1,0 +1,26 @@
+name: Feature request
+description: Propose an improvement to the tournament engine, docs, or live view.
+title: "[feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case
+      description: What task would this make possible or easier?
+    validations:
+      required: true
+  - type: textarea
+    id: current_path
+    attributes:
+      label: Current path
+      description: How would someone do this today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Suggested behavior or API, if you have one.
+    validations:
+      required: false

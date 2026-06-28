@@ -16,7 +16,8 @@ is no eval harness and no labeled data; every alternative judge design is argume
 Ship **one domain-general judge** ("General": lenses `substance` · `fit` · `craft` · `integrity`,
 + `coherence` for assembled artifacts; the deterministic fabrication gate; the reference-challenge).
 **Defer** the consume-mode taxonomy, the Operational/code/design profiles, and the noncompensable veto
-tier. Domain taste plugs in via a swappable profile (prose ships as the one example).
+tier. Domain taste plugs in via a swappable profile. Prose is documented as the
+sharpest example doctrine, but no profile file ships as an engine default.
 
 ## Rationale
 

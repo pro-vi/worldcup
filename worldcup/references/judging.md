@@ -217,7 +217,8 @@ others. Diversity kills shared failure modes; replicas only reduce noise.
 > **The set below is the PROSE profile's lens doctrine** — the fullest, sharpest prose seats
 > (`fidelity` · `taste` · `anti-gaming` · `argument` · `cold-reader`). The shipped **engine default is
 > domain-general** — `substance` · `fit` · `craft` · `integrity` (+ `coherence`) — a leaner set that
-> applies to any artifact. A profile swaps in its own seats (`references/profiles/`); these are prose's.
+> applies to any artifact. A profile swaps in its own seats (`references/profiles/` describes the shape);
+> these are prose's documented seats, not a bundled default profile file.
 > Treat the names below as that profile's vocabulary, not the engine's.
 
 - **fidelity** — protects the author. Suspicious of any entry that makes the author
@@ -255,7 +256,7 @@ one profile, not the shape of the tool.
 > `fit` · `craft` · `integrity` (+ `coherence` for assembled artifacts), and hard-DQ categories
 > `FABRICATION` · `CONTRADICTS_SOURCE` · `GENRE_BREACH` · `HOUSE_STYLE_HARD_BAN` ·
 > `PLAGIARISTIC_OR_NON_RESPONSIVE`. Everything below — and the prose lens/category names elsewhere
-> in this doc — is the **prose profile**, one example you swap in (see `references/profiles/`). The
+> in this doc — is the **prose profile doctrine**, shown as documentation rather than a bundled file. The
 > engine ships no prose-specific lens or category; the user's profile / voice skill adds them.
 
 - **Prose / voice** (essays, copy, posts): gate = the fabrication gate above (preflight +

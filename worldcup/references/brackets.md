@@ -104,13 +104,13 @@ function standings(group, gi, results) {
 ## 32-team format (classic)
 
 8 groups (A-H) of 4. 48 group matches. Top 2 of each group advance to a 16-team
-knockout. This uses the authentic FIFA crossing pattern (2014/2018/2022), which
+knockout. This uses the familiar international-tournament crossing pattern (2014/2018/2022), which
 keeps group winners apart and rewards finishing first.
 
 ```js
 const G32 = 8
 // advancers[gi] = { first, second } from standings()
-// Round of 16 — authentic crossings (gi: A=0,B=1,C=2,D=3,E=4,F=5,G=6,H=7)
+// Round of 16 — familiar real-tournament crossings (gi: A=0,B=1,C=2,D=3,E=4,F=5,G=6,H=7)
 function r16Pairs(adv) {
   const W = i => adv[i].first, R = i => adv[i].second
   return [
@@ -160,7 +160,7 @@ function bestThirds(thirds, ptsById) {
 
 ### Round of 32 — seeded bracket (the skill's implemented default)
 
-FIFA's official 2026 bracket assigns the 8 thirds to winner-slots via a fixed
+The official 2026 tournament bracket assigns the 8 thirds to winner-slots via a fixed
 495-row combination lookup keyed on *which* groups' thirds qualified. That table is
 arbitrary tournament-scheduling cruft, not a fairness principle, and it is brittle
 to reproduce. For finding the genuine best entry, a **standard seeded bracket** is
@@ -207,7 +207,7 @@ function r32Pairs(rankedQualifiers) {
 }
 ```
 
-If strict FIFA fidelity is wanted over this cleaner seeding, swap `r32Pairs` for the
+If strict real-tournament fidelity is wanted over this cleaner seeding, swap `r32Pairs` for the
 official 2026 crossing table; the rest of the chain (`nextRoundPairs`) is unchanged.
 The seeded bracket is the recommended default and what the workflow template ships
 with.
@@ -217,11 +217,11 @@ with.
 R32 (16 matches) -> R16 (8) -> QF (4) -> SF (2) -> Final (1) = 31 knockout matches,
 on top of 72 group matches.
 
-### Strict-fidelity option: the authentic FIFA 2026 bracket
+### Strict-fidelity option: the official 2026 bracket
 
 If you want the real 2026 crossings instead of the seeded bracket, here is the official
 structure (cross-model verified). The catch: winner/runner-up slots are fixed, but the
-8 best thirds are slotted by FIFA's **Annexe C 495-row lookup table**, keyed on which 4
+8 best thirds are slotted by an **Annexe C 495-row lookup table**, keyed on which 4
 of the 12 groups' thirds did NOT qualify (lexicographic combination index), NOT by the
 thirds' rank order. Same-group teams cannot meet in the R32.
 
@@ -253,7 +253,7 @@ function annexeCOption(qualifiedThirdGroups) { // Set of 8 letters
 R16 (M89-M96): `W74-W77, W73-W75, W76-W78, W79-W80, W83-W84, W81-W82, W86-W88, W85-W87`.
 QF (M97-M100): `W89-W90, W93-W94, W91-W92, W95-W96`. SF: `W97-W98, W99-W100`. Final: `W101-W102`.
 
-The full 495-row Annexe C table is not reproduced here (source it from FIFA regulations
+The full 495-row Annexe C table is not reproduced here (source it from the tournament regulations
 if needed). Because that table is scheduling cruft rather than a fairness principle, the
 **seeded bracket above is the skill's default** and is arguably better for finding the
 true best entry. Use this strict-fidelity option only when authentic-bracket cosmetics

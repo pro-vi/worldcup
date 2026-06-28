@@ -1,0 +1,68 @@
+'use strict'
+
+const fs = require('node:fs')
+const path = require('node:path')
+
+const root = path.resolve(__dirname, '..')
+const fixturePath = path.join(root, 'canary/judge-canary.json')
+
+function readJson(file) {
+  return JSON.parse(fs.readFileSync(file, 'utf8'))
+}
+
+function assert(cond, msg) {
+  if (!cond) throw new Error(msg)
+}
+
+function validateFixture(fixture) {
+  assert(fixture && fixture.version === 1, 'canary fixture must have version: 1')
+  assert(Array.isArray(fixture.cases), 'canary fixture must have cases[]')
+  assert(fixture.cases.length === 6, `canary fixture must define exactly 6 cases, got ${fixture.cases.length}`)
+  const ids = new Set()
+  for (const c of fixture.cases) {
+    assert(c && typeof c.id === 'string' && c.id, 'each canary case needs id')
+    assert(!ids.has(c.id), `duplicate canary id: ${c.id}`)
+    ids.add(c.id)
+    assert(typeof c.goal === 'string' && c.goal, `${c.id}: missing goal`)
+    assert(typeof c.setup === 'string' && c.setup, `${c.id}: missing setup`)
+    assert(typeof c.expected === 'string' && c.expected, `${c.id}: missing expected`)
+    assert(Array.isArray(c.accept) && c.accept.length > 0, `${c.id}: missing accept[]`)
+  }
+}
+
+function validateRecord(fixture, recordFile) {
+  const rec = readJson(recordFile)
+  const results = Array.isArray(rec) ? rec : rec.results
+  assert(Array.isArray(results), 'record must be an array or { results: [] }')
+  const byId = new Map(results.map(r => [r.id, r]))
+  for (const c of fixture.cases) {
+    const r = byId.get(c.id)
+    assert(r, `record missing result for ${c.id}`)
+    assert(r.pass === true, `${c.id}: pass must be true`)
+    assert(typeof r.evidence === 'string' && r.evidence.trim(), `${c.id}: evidence is required`)
+    if (r.outcome) assert(c.accept.includes(r.outcome), `${c.id}: outcome "${r.outcome}" not in accept list`)
+  }
+}
+
+function main(argv) {
+  const fixture = readJson(fixturePath)
+  validateFixture(fixture)
+
+  const recordIdx = argv.indexOf('--record')
+  if (recordIdx !== -1) {
+    const recordFile = argv[recordIdx + 1]
+    assert(recordFile, '--record requires a JSON file')
+    validateRecord(fixture, path.resolve(recordFile))
+    console.log(`judge canary record ok: ${fixture.cases.length} cases`)
+    return
+  }
+
+  console.log(`judge canary contract ok: ${fixture.cases.length} cases`)
+  for (const c of fixture.cases) console.log(`- ${c.id}: ${c.expected}`)
+  console.log('To validate a real release run, record results as JSON and run: node scripts/judge-canary.js --record <file>')
+}
+
+if (require.main === module) {
+  try { main(process.argv.slice(2)) }
+  catch (e) { console.error(`judge canary failed: ${e.message}`); process.exit(1) }
+}

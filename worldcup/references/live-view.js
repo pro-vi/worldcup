@@ -193,7 +193,7 @@ function statusLine(st) {
 
 // ── THEMES (3 curated looks). render(st, theme) emits one self-contained HTML snapshot; live snapshots carry
 // <meta refresh>, the final does not. Default 'arena' (override with --theme or WORLDCUP_LIVE_THEME).
-// ── SHARED bracket skeleton (used by the 2026 scoreboard + concrete). bracketHTML emits the columns + a
+// ── SHARED bracket skeleton (used by the mosaic scoreboard + concrete). bracketHTML emits the columns + a
 // computed SVG connector overlay (CONNECTORS) with clean, non-overlapping rails — clip per gap, path elbows,
 // junction dots — so the tree reads at any field size. (arena renders its own bracketSVG variant.)
 const STK = { R32: 'r32', R16: 'r16', QF: 'qf', SF: 'sf', FINAL: 'final' }
@@ -378,12 +378,10 @@ ${dq}
 </div></body></html>`
 }
 
-// World Cup year configs — authentic brand palettes, each filling the scoreboard var contract.
-// United 2026 (CAN·MEX·USA) — straight off the real FIFA World Cup 26™ identity: the giant "26" is the hero,
-// filled with the brand's multi-nation unity spectrum (pink→orange→yellow→teal→indigo); WORLD CUP rides on top.
-// The lone scoreboard config (a parameterised renderer kept for one brand — was a multi-year map, now inlined).
-const WC2026 = {
-    kicker: 'FIFA World Cup 26&trade; &middot; CAN &middot; MEX &middot; USA', year: '26', glyph: '&#127942;',
+// Mosaic scoreboard config — an original tournament poster palette that fills the scoreboard var contract.
+// It keeps the international-tournament energy without copying or naming an official event identity.
+const MOSAIC_SCOREBOARD = {
+    kicker: 'Open Bracket &middot; Mosaic', year: '26', glyph: '&#127942;',
     bodyBg: 'radial-gradient(125% 78% at 50% -12%,#1b1450 0,#0c1030 40%,var(--bg) 82%) fixed',
     vars: `--bg:#070912;--bg2:#0F1330;--card:#171c3e;--cardHi:#2c2f72;--cardDim:rgba(23,28,62,.55);--accent:#2BE3FF;--accentInk:#03121a;--txt:#F6F8FF;--mut:#98A1CE;--win:#FF2E8B;--winInk:#fff;--winSoft:rgba(255,46,139,.16);--winGlow:rgba(255,46,139,.42);--lose:#5A6298;--pend:#262c5e;--tbd:#3a4072;--adv:#2BE3FF;--hair:rgba(255,255,255,.08);--live:#FF2E8B;--liveSoft:rgba(255,46,139,.14);--dq:#FF8A3D;--dqInk:#1a0d08;--dqSoft:rgba(255,138,61,.3);--dqBg:#19110a;--bugL:#2c2f72;--yrwm:rgba(255,255,255,.05);--rail:#2c2f72;--rdone:#2BE3FF;--rglow:rgba(43,227,255,.45);--rwin:#FF2E8B;--rwinglow:rgba(255,46,139,.5)`,
     sig: `.yr{top:-30px;font-style:italic;letter-spacing:-.09em;opacity:.92;background:linear-gradient(118deg,#FF2E8B 4%,#FF7A2F 26%,#FFD23F 45%,#2BE3FF 68%,#7A6CFF 96%);-webkit-background-clip:text;background-clip:text;color:transparent}
@@ -654,7 +652,7 @@ ${CONNECTORS}
 @media(max-width:760px){.groups{grid-template-columns:repeat(2,1fr)}.meta{display:none}}
 </style></head><body>
 <header><div class="meta">${live ? '&#9679; LIVE FEED' : 'FINAL'}<br>${he(statusLine(st))}</div>
-<div class="kick">FIFA &middot; Live Tournament &middot; Concrete Cut</div>
+<div class="kick">Open Bracket &middot; Live Tournament &middot; Concrete Cut</div>
 <h1>W<span class="o">O</span>RLD CUP</h1>
 <div class="pill ${live ? 'live' : 'done'}">${live ? '<span class="dot"></span>LIVE' : '&#10003; CHAMPION &middot; ' + he(st.champion ? st.champion.label : '&mdash;')}</div></header>
 <div class="wrap">
@@ -666,9 +664,9 @@ ${dq}
 }
 
 // Theme registry + dispatcher. live-view's tick() calls render(st); the theme is chosen once at startup.
-// Three curated looks: arena (game-UI console), concrete (brutalist match poster), 2026 (real FIFA 26 brand).
+// Three curated looks: arena (game-UI console), concrete (brutalist match poster), mosaic (poster scoreboard).
 const THEMES = {
-  'arena': renderArena, 'concrete': renderConcrete, '2026': st => renderScoreboard(st, WC2026),
+  'arena': renderArena, 'concrete': renderConcrete, 'mosaic': st => renderScoreboard(st, MOSAIC_SCOREBOARD),
 }
 let LIVE_THEME = process.env.WORLDCUP_LIVE_THEME || 'arena'
 function render(st, theme) { return (THEMES[theme || LIVE_THEME] || renderArena)(st) }

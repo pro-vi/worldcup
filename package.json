@@ -1,0 +1,17 @@
+{
+  "name": "worldcup-skill",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Best-of-N selection engine wearing a World Cup-style tournament, packaged as an agent skill.",
+  "license": "MIT",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "check": "npm run check:syntax && npm test && npm run canary",
+    "check:syntax": "node --check worldcup/references/live-view.js && node scripts/check-workflow-template.js",
+    "test": "node --test tests/*.test.js",
+    "canary": "node scripts/judge-canary.js"
+  }
+}

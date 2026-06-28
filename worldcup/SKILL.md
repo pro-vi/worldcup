@@ -1,7 +1,7 @@
 ---
 name: worldcup
 description: >
-  A general best-of-N selection engine wearing a FIFA World Cup. Any time a task is
+  A general best-of-N selection engine wearing a World Cup-style tournament. Any time a task is
   "mass-produce many candidates and keep the single best" (or the user hands over a
   field of them), stage 32 teams (8 groups of 4) or 48 teams (12 groups, 2026 format)
   through a head-to-head round-robin group stage into a single-elimination knockout,
@@ -69,7 +69,7 @@ context; pick sane defaults for the rest and state them.
    lenses), design and copy (constraint gate; clarity/aesthetic/brand-fit lenses), names and
    taglines (collision/availability checks; memorability/fit/distinctiveness lenses) are
    others. **The engine ships taste-neutral** — get the rubric from the user in their words
-   (or from a voice skill they hand in); see "references/profiles/" for example profiles. Vague
+   (or from a voice skill they hand in); see "references/profiles/" for the profile shape. Vague
    criteria produce a tasteless judge, which is the whole failure mode.
 4. **Source packet (incumbent + fact ledger)**: the single most important input for
    any truth-bearing field. It bundles (a) the reference original the field must beat
@@ -111,7 +111,7 @@ context; pick sane defaults for the rest and state them.
    handed in a voice skill, invoke it and distill its hard rules into this block; otherwise use
    their stated criteria in their own words.** Ship nothing domain-specific by default — the engine
    judges on general axes (substance / fit / craft / integrity) and the user's criteria fills in what
-   "good" means in their domain (see "references/profiles/" for example profiles to adapt). For a
+   "good" means in their domain (see "references/profiles/" for the profile socket). For a
    critique/response run, fetch the target first and put it in the template's dedicated
    `TARGET` field — NOT in the criteria text. The template threads TARGET into the criteria
    channel for you AND derives the MISREPRESENTS_TARGET gate enforcement from that field;

@@ -76,7 +76,7 @@ Workflow (`args.liveNonce`) and to the watcher (`--nonce`) so only this run's be
 NONCE=$(openssl rand -hex 8)
 # Workflow({ script: …, args: { liveNonce: NONCE } }) → "Transcript dir: …/subagents/workflows/wf_<runId>"
 node references/live-view.js --events "<transcript-dir>/journal.jsonl" --out worldcup-live.html --nonce "$NONCE" &
-# add --theme <name> to pick the look (default arena). themes: arena, concrete, 2026.
+# add --theme <name> to pick the look (default arena). themes: arena, concrete, mosaic.
 # add --switcher to emit all three + a sticky switcher bar  (run with no --events to print the list)
 open worldcup-live.html   # auto-refreshes every 2s; the watcher self-exits when the bracket completes
 ```
@@ -114,8 +114,8 @@ node references/live-view.js --events <journal.jsonl> --out worldcup-live.html -
     group+rank seed tags, and an octagon champion item.
   - `concrete` — brutalist concrete-and-ink match poster: heavy black borders, hard offset shadows, monospace,
     an oversized Arial-Black headline, ONE safety-orange accent tracing the winner's road to a champion box.
-  - `2026` — the real FIFA World Cup 26™ identity: a giant spectrum "26" (pink→orange→yellow→teal→indigo unity
-    gradient) behind a clean WORLD CUP, on the parameterised scoreboard skeleton with magenta/cyan structure.
+  - `mosaic` — an original poster-scoreboard look: a giant spectrum "26" (pink→orange→yellow→teal→indigo)
+    behind a clean WORLD CUP header, on the parameterised scoreboard skeleton with magenta/cyan structure.
 - **Theme switcher (`--switcher`):** renders every theme to `<out>-<theme>.html` and makes `--out` a landing
   page; each file carries a sticky top bar (pure HTML links, no JS) linking the others, so you can switch
   looks mid-feed without stopping the watcher.

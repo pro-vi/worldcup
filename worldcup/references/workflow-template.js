@@ -27,7 +27,7 @@ const BANS = {                 // FILL: deterministic preflight bans (cheap, run
   emDash: false,               // default — these are HOUSE-STYLE rules, not universal quality. Fill them from
   vocab: [],                   // the user's voice profile, e.g. { emDash:true, vocab:['delve','tapestry',...] }.
   softPatterns: [],            // profile phrase flags: [{ label, re:'alt|alt2', tail?:N }] — e.g. announced thesis / uplift closer.
-}                              // See references/profiles/ for an example. Style tics belong in lenses, not the gate.
+}                              // See references/profiles/ for the profile shape. Style tics belong in lenses, not the gate.
 const LETTERS = 'ABCDEFGHIJKL'.split('')
 
 // ─── DESIGN — how candidates are created (see references/design-pass.md).
@@ -56,7 +56,7 @@ const DESIGN = {
 
 // ──────────────────────────────────────────── (3) CRITERIA + INCUMBENT + TARGET (FILL)
 // The taste spec + hard disqualifiers, pasted into every juror prompt. Distill the invoking
-// user's voice skill / stated criteria here (see references/profiles/ for examples). Be specific;
+// user's voice skill / stated criteria here (see references/profiles/ for the profile shape). Be specific;
 // vagueness = no taste. Ship NOTHING domain-specific by default — the engine is taste-neutral.
 //
 // CRITIQUE / RESPONSE RUNS: if the field critiques, responds to, or makes factual claims
@@ -131,7 +131,7 @@ ${renderLedger(SOURCE_PACKET)}
 - HARD DISQUALIFIERS (auto-kill, domain-general): fabricated specifics presented as real
   (a lie against the fact ledger), genre breach, non-responsiveness to the brief. Add the user's
   own house-style hard bans ONLY if they truly want auto-kills — style tics (punctuation, word
-  choice) belong in the lenses (scored down), not the gate. See references/profiles/ for examples.
+  choice) belong in the lenses (scored down), not the gate. See references/profiles/ for the profile shape.
 - EARNEDNESS: every element earns its place or it's cut — concrete detail only if source-supported
   and necessary; form, length, and flourish only if they serve the goal, never for their own sake.`
 
@@ -1338,7 +1338,7 @@ ${dqHtml}
 </div></body></html>`
 }
 
-// Centered mirror bracket (FIFA-style), clickable entries with info sheets. Generic over
+// Centered mirror bracket, clickable entries with info sheets. Generic over
 // field size: works for 32 (R16 start) and 48 (R32 start) by splitting each round in half.
 function renderReportV2() {
   const ratingById = new Map(globalRating)
