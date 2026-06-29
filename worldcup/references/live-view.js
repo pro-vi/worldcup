@@ -8,6 +8,12 @@
 //
 //   node live-view.js --events <path-to-journal.jsonl> --out worldcup-live.html [--once]
 //
+// FILE MODE (default) writes a static worldcup-live.html that self-refreshes via <meta refresh> — simple,
+// works anywhere, but a file:// page can only update by RELOADING, which white-flashes. SERVE MODE
+// (--serve) instead hosts the view on http://127.0.0.1 and updates IN PLACE (the page swaps in the new
+// bracket without navigating), so there is no reload and no blink. Node stdlib only; no dependency.
+//   node live-view.js --events <journal.jsonl> --nonce <token> --serve [--port N]
+//
 // THE SINK (U18 finding, 2026-06-20): a sandboxed Workflow's ONLY live-persisted egress is its
 // agents' results. The orchestrator's log() lands in workflows/wf_<runId>.json — written ONCE at the
 // end, not live. But subagents/workflows/<runId>/journal.jsonl streams one {type:"result",result:…}
@@ -163,6 +169,25 @@ function bracketTree(st) {
   return rounds
 }
 
+// Visual bracket only: before the real `bracket` event lands (i.e. all through the group stage) show a BLANK
+// skeleton of the right SHAPE rather than hiding the knockout area — a frame that's visibly waiting reads far
+// better than dead space, and gives the champion octagon something to sit at the end of. The shape is known
+// from the field (set by the very first event): 32 → R16/QF/SF/FINAL, 48 → R32/R16/QF/SF/FINAL. Every slot is
+// TBD until the draw/advancement fills it, and the shape matches the real bracket so there is no layout jump.
+// RENDERING ONLY: complete() and statusLine() keep using bracketTree() (the real tree), so completion/exit and
+// status are unchanged — a blank skeleton must never read as "in progress" or "done".
+function placeholderTree(field) {
+  const shape = field === 48
+    ? [['R32', 16], ['R16', 8], ['QF', 4], ['SF', 2], ['FINAL', 1]]
+    : [['R16', 8], ['QF', 4], ['SF', 2], ['FINAL', 1]]
+  return shape.map(([stakes, n]) => ({ stakes, matches: Array.from({ length: n }, () => ({ a: null, b: null, winner: null, margin: null, status: 'pending' })) }))
+}
+function viewTree(st) {
+  const t = bracketTree(st)
+  if (t && t.length) return t
+  return st.field ? placeholderTree(st.field) : null   // group stage: blank skeleton; truly unknown field: hidden (legacy)
+}
+
 // "complete" = champion crowned AND the bracket has no playing/pending match left. Refresh + exit must
 // key off THIS, not bare champion: the tiny champion beacon can land before heavier round/match beacons,
 // so champion alone ≠ done (else the view freezes on an incomplete bracket and stops polling).
@@ -227,7 +252,7 @@ function bracketConn(tree, W, G, H, yOff) {
   return `<defs>${defs}</defs>${groups}`
 }
 function bracketHTML(st, champGlyph, seedOf) {
-  const tree = bracketTree(st)
+  const tree = viewTree(st)   // blank skeleton during the group stage rather than a hidden knockout area
   const slot = (name, cls, mg) => `<div class="sl ${cls}">${seedOf && name != null ? `<span class="seed">${he(seedOf(name) || '')}</span>` : ''}<span class="snm">${name == null ? '&mdash;' : he(name)}</span>${mg ? `<span class="mg">${he(mg)}</span>` : ''}</div>`
   const inner = m => {
     if (m.status === 'pending') return slot(null, 'tbd') + slot(null, 'tbd')
@@ -320,6 +345,7 @@ header h1{position:relative;z-index:1;margin:3px 0 0;font-size:clamp(40px,7vw,66
 .pill.live .dot{width:9px;height:9px;border-radius:50%;background:var(--live);box-shadow:0 0 8px var(--live);animation:blink 1.6s steps(1) infinite}
 .pill.done{background:var(--win);color:var(--winInk)}
 @keyframes blink{0%,55%{opacity:1}56%,100%{opacity:.25}}
+@media(prefers-reduced-motion:reduce){.pill.live .dot,.lamp{animation:none}}
 .wrap{max-width:1340px;margin:0 auto;padding:6px 18px 44px}
 ${CONNECTORS}
 .rh{font-size:11px;font-weight:900;letter-spacing:.18em;text-transform:uppercase;color:var(--accentInk);background:var(--accent);border-radius:4px 4px 0 0;padding:5px 9px;text-align:center}
@@ -391,7 +417,7 @@ header::after{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;ba
 }
 
 function bracketSVG(st, seedOf, champGlyph) {
-  const tree = bracketTree(st)
+  const tree = viewTree(st)   // blank skeleton during the group stage rather than a hidden knockout area
   if (!tree || !tree.length) return { html: '<div class="bracketScroll"><div class="ko"></div></div>', css: '' }
   tree.forEach((r, ri) => r.matches.forEach((m, mi) => {
     if (m.winner == null) { m.elim = false; return }
@@ -415,7 +441,7 @@ function bracketSVG(st, seedOf, champGlyph) {
   const champCard = st.champion
     ? `<div class="match done"><div class="card champcard"><span class="cup">${champGlyph}</span><span class="cnm">${he(st.champion.label)}</span><span class="csub">Champion</span></div></div>`
     : `<div class="match pending"><div class="card champcard off"><span class="cup">${champGlyph}</span><span class="cnm">&mdash;</span><span class="csub">awaiting final</span></div></div>`
-  const html = `<div class="bracketScroll"><div class="ko"><div class="koInner">${svg}<div class="kocols">${cols}</div></div><div class="champcol"><div class="matches">${champCard}</div></div></div></div>`
+  const html = `<div class="bracketScroll"><div class="ko"><div class="koInner">${svg}<div class="kocols">${cols}</div></div><div class="champcol${st.champion ? ' lit' : ''}"><div class="matches">${champCard}</div></div></div></div>`
   return { html, css: `.koInner{width:${koW}px;height:${H}px}.kocol .matches{height:${H}px}.champcol{height:${H}px}` }
 }
 
@@ -425,7 +451,7 @@ function bracketSVG(st, seedOf, champGlyph) {
 // one mint focus-sweep on the live match. 80/15/5 color discipline; names upright; no faked ratings/controls.
 function renderArena(st) {
   const live = !complete(st)
-  const tree = bracketTree(st) || []
+  const tree = viewTree(st) || []   // rail reflects the (blank) skeleton during the group stage too
   // honest seed tag: each knockout team's group + finish rank (A1 = won group A). Not a faked OVR/position.
   const seedMap = {}
   for (const G of st.groupOrder) ((st.groups[G] && st.groups[G].advanced) || []).forEach((label, i) => { seedMap[label] = G + (i + 1) })
@@ -436,7 +462,9 @@ function renderArena(st) {
     const playing = r.matches.some(m => m.status === 'playing')
     return { stakes: r.stakes, done, total, status: done === total && total ? 'cmpl' : (playing || done > 0 ? 'live' : 'lock') }
   })
-  const liveStage = (rail.find(r => r.status === 'live') || {}).stakes || (st.champion ? 'FINAL' : 'R16')
+  // Honest live label: a KO round only counts as "live" once it has a playing/done match; before that the
+  // GROUP STAGE is what's live (not R16). Prevents the HUD claiming "● LIVE R16" while groups are still forming.
+  const liveStage = (rail.find(r => r.status === 'live') || {}).stakes || (st.champion ? 'FINAL' : 'Groups')
   // robust to a missing/late draw beacon: the format is known from st.field OR proven by any group that
   // advanced a third (advanced.length > 2), so a stale "top two" label can't show once thirds qualify.
   const anyThird = st.groupOrder.some(G => (((st.groups[G] || {}).advanced) || []).length > 2)
@@ -491,7 +519,11 @@ header{display:flex;align-items:center;justify-content:space-between;gap:16px;fl
 .kocols{display:flex;gap:56px;height:100%;position:relative;z-index:1}
 .kocol{width:184px;flex:0 0 184px;height:100%}
 .kocol .matches{display:flex;flex-direction:column;justify-content:space-around}
-.champcol{flex:0 0 250px;display:flex;align-items:center}
+.champcol{position:relative;flex:0 0 250px;display:flex;align-items:center}
+/* the winner's road continued into the trophy — steel while awaiting, gold once the final is earned. Spans the
+   .ko 56px gutter so the FINAL card connects to the octagon instead of the champion floating disconnected. */
+.champcol::before{content:'';position:absolute;right:100%;top:50%;width:56px;height:3px;margin-top:-1.5px;background:var(--rail)}
+.champcol.lit::before{background:var(--rdone);box-shadow:0 0 7px var(--rglow)}
 .champcol .matches{width:100%}
 ${bsvg.css}
 .match{position:relative;display:flex;align-items:center;justify-content:center}
@@ -502,6 +534,7 @@ ${bsvg.css}
 .match.playing .card{box-shadow:inset 0 0 0 1px var(--ui);border-top:2px solid var(--ui);overflow:hidden}
 .match.playing .card::after{content:'';position:absolute;z-index:4;top:0;left:-42%;width:42%;height:2px;background:linear-gradient(90deg,transparent,var(--ui),#fff,transparent);filter:drop-shadow(0 0 5px var(--ui));animation:sweep 2s linear infinite}
 @keyframes sweep{to{transform:translateX(340%)}}
+@media(prefers-reduced-motion:reduce){.hudSeg.liveSeg .d{animation:none}.match.playing .card::after{display:none}}
 .lamp{display:none}
 .liveTag{position:absolute;top:-8px;left:9px;font-size:8px;font-weight:900;letter-spacing:.12em;color:var(--live);background:var(--bg0);padding:0 4px;z-index:5}
 .sl{display:flex;align-items:center;gap:9px;padding:7px 10px;min-height:32px}
@@ -561,7 +594,7 @@ ${bsvg.css}
 <header>
 <div class="brand"><span class="bTrophy">&#127942;</span><div><div class="bName">World Cup</div><div class="bMode">Arena</div></div></div>
 <div class="rail">${railHTML || '<div class="stg lock"><span class="stgN">R16</span><span class="stgC">LOCK</span></div>'}</div>
-<div class="hud"><span class="hudSeg spec"><span>Spectator</span></span><span class="hudSeg ${live ? 'liveSeg' : 'doneSeg'}"><span>${live ? '<span class="d"></span>Live' : '&#10003; Final'}</span></span><span class="hudSeg stage"><span>${live ? he(liveStage) : 'Champion'}</span></span><span class="hudSeg"><span>Auto 02s</span></span></div>
+<div class="hud"><span class="hudSeg spec"><span>Spectator</span></span><span class="hudSeg ${live ? 'liveSeg' : 'doneSeg'}"><span>${live ? '<span class="d"></span>Live' : '&#10003; Final'}</span></span><span class="hudSeg stage"><span>${live ? he(liveStage) : 'Champion'}</span></span><span class="hudSeg"><span>${st.field === 48 ? 48 : 32}&#8201;Team</span></span></div>
 </header>
 ${bsvg.html}
   <div class="sec"><b>Group stage</b> &middot; ${groupRule}</div>
@@ -602,6 +635,7 @@ header h1 .o{color:var(--accent);-webkit-text-stroke:2px var(--ink)}
 .pill.done{background:var(--ink);color:var(--paper)}
 .pill .dot{display:inline-block;width:8px;height:8px;background:var(--paper);margin-right:7px;vertical-align:middle;animation:blk 1s steps(1) infinite}
 @keyframes blk{0%,50%{opacity:1}51%,100%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.pill .dot,.lamp{animation:none}}
 .wrap{max-width:1340px;margin:0 auto;padding:18px 18px 50px}
 ${CONNECTORS}
 .bracket{padding-top:18px}
@@ -673,7 +707,7 @@ function render(st, theme) { return (THEMES[theme || LIVE_THEME] || renderArena)
 
 // ─────────────────────────────────────────────────────────── CLI
 function parseArgs(argv) {
-  const a = { out: 'worldcup-live.html', once: false, nonce: '', nonceProvided: false, theme: '', switcher: false }
+  const a = { out: 'worldcup-live.html', once: false, nonce: '', nonceProvided: false, theme: '', switcher: false, serve: false, port: 0 }
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--events') a.events = argv[++i]
     else if (argv[i] === '--out') a.out = argv[++i]
@@ -681,6 +715,8 @@ function parseArgs(argv) {
     else if (argv[i] === '--theme') a.theme = argv[++i] || ''   // see THEMES keys
     else if (argv[i] === '--switcher') a.switcher = true        // emit every theme + a sticky theme-switcher bar
     else if (argv[i] === '--once') a.once = true
+    else if (argv[i] === '--serve') a.serve = true                       // host on localhost + update in place (no reload, no blink)
+    else if (argv[i] === '--port') a.port = parseInt(argv[++i], 10) || 0 // 0 = ephemeral (never collides)
   }
   return a
 }
@@ -717,15 +753,104 @@ function writeAtomic(out, html) {
   fs.renameSync(tmp, out)
 }
 function sizeOf(p) { try { return fs.statSync(p).size } catch (e) { return -1 } }
+// ─────────────────────────────────────────────────────────── --serve (localhost; updates in place)
+// Why this kills the blink: a file:// page can ONLY update by reloading the whole document (white flash).
+// Served over http://127.0.0.1, the page instead fetches just the bracket markup and swaps it into one
+// container — the document never navigates, so there is no flash. We treat render() as a black box and
+// slice its output into <head> (served ONCE, in the shell) and the body markup (re-fetched as it changes).
+function stripRefresh(html) { return html.replace('<meta http-equiv="refresh" content="2">', '') }  // SSE/poll drives updates now; never auto-reload a served page
+function splitDoc(html) {
+  const he = html.indexOf('</head>'), bo = html.indexOf('<body>'), bc = html.lastIndexOf('</body>')
+  const head = he >= 0 ? html.slice(0, he + '</head>'.length) : '<!doctype html><html><head></head>'  // through </head>
+  const body = (bo >= 0 && bc >= 0) ? html.slice(bo + '<body>'.length, bc) : html                     // inner body only
+  const sm = head.match(/<style[\s\S]*?<\/style>/i)                                                    // the (one) css block
+  return { head, body, style: sm ? sm[0] : '' }
+}
+// CRITICAL: the frame carries the CURRENT <style>, not just the bracket markup. The renderer emits
+// bracket-size-dependent rules (e.g. `.kocol .matches{height:Hpx}` — what lets space-around SPREAD the
+// columns instead of bunching every match at the top) ONLY once a bracket exists. The shell's <head> is
+// sent once and can predate the bracket, so a head-frozen stylesheet would be missing those rules forever.
+// Shipping the style INSIDE each frame (after the head style, so its rules win) keeps layout correct as the
+// bracket appears and grows. (A node-preserving morph would let us stop re-shipping it; noted for later.)
+function serveBody(st) { const d = splitDoc(stripRefresh(render(st, LIVE_THEME))); return d.style + d.body }
+// The client: ask for the latest bracket once a second; only repaint when it ACTUALLY changed, so the
+// poll itself never causes a flicker — a repaint happens only on the ~handful of real updates in a run.
+const SERVE_CLIENT = `(function () {
+  var root = document.getElementById('wc-root'), last = null
+  // Replacing innerHTML rebuilds the whole subtree, which would reset the bracket's horizontal scroll
+  // and the page scroll on every update — a hard yank when a result lands. Capture both, swap, restore.
+  // (The looping live animations still restart on swap; a node-preserving morph is what removes that.)
+  function swap (html) {
+    var sc = root.querySelector('.bracketScroll'), sx = sc ? sc.scrollLeft : 0, py = window.scrollY
+    root.innerHTML = html
+    var nsc = root.querySelector('.bracketScroll'); if (nsc) nsc.scrollLeft = sx
+    window.scrollTo(0, py)
+  }
+  function tick () {
+    fetch('frame', { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : null }).then(function (html) {
+      if (html != null && html !== last) { last = html; swap(html) }
+    }).catch(function () {})   // server gone (run finished) → keep the final frame on screen
+  }
+  last = root.innerHTML; setInterval(tick, 1000)
+})();`
+function serveShell(st) {
+  const d = splitDoc(stripRefresh(render(st, LIVE_THEME)))
+  // #wc-root holds style+body so the very first paint AND every swapped frame carry the bracket-size CSS.
+  return d.head + '<body><main id="wc-root">' + d.style + d.body + '</main><script>' + SERVE_CLIENT + '</script></body></html>'
+}
+function openInBrowser(url) {
+  const win = process.platform === 'win32'
+  const cmd = process.platform === 'darwin' ? 'open' : win ? 'cmd' : 'xdg-open'
+  const args = win ? ['/c', 'start', '', url] : [url]
+  try { require('child_process').spawn(cmd, args, { stdio: 'ignore', detached: true }).unref() } catch (e) { /* best-effort */ }
+}
+// Pure request routing — extracted so the loopback guard and the /frame-vs-shell split are unit-testable
+// without booting a server. Loopback-only (DNS-rebind guard); /frame returns bare bracket markup, else the shell.
+function serveRoute(host, url, st) {
+  if (host !== '127.0.0.1' && host !== 'localhost') return { status: 403, body: 'forbidden' }
+  return { status: 200, body: (url || '/').split('?')[0] === '/frame' ? serveBody(st) : serveShell(st) }
+}
+function serveLive(a) {
+  const http = require('http')
+  let curState = readState(a.events, a.nonce)
+  const server = http.createServer((req, res) => {
+    const r = serveRoute((req.headers.host || '').split(':')[0], req.url, curState)
+    res.writeHead(r.status, r.status === 200 ? { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } : {})
+    res.end(r.body)
+  })
+  const GRACE_MS = 6000, IDLE_MS = 180000
+  let lastSize = sizeOf(a.events), idleSince = Date.now()
+  // Fail loud, not with a raw stack: a busy --port (or any bind error) must surface a clear, actionable
+  // message and exit, never an unhandled 'error' event. (Default port 0 is ephemeral and never collides.)
+  server.on('error', e => {
+    const busy = e && e.code === 'EADDRINUSE'
+    console.error('live-view --serve: cannot start server' + (a.port ? ' on port ' + a.port : '') + ': ' + ((e && e.message) || e) +
+      (busy ? ' — that port is in use; omit --port to get an automatic free one.' : ''))
+    process.exit(1)
+  })
+  server.listen(a.port || 0, '127.0.0.1', function () {
+    const url = 'http://127.0.0.1:' + server.address().port
+    console.log('live view serving ' + url + '  (updates in place — no reload, no blink)')
+    openInBrowser(url)
+  })
+  const iv = setInterval(() => {
+    if (sizeOf(a.events) > lastSize) { lastSize = sizeOf(a.events); idleSince = Date.now(); curState = readState(a.events, a.nonce) }  // grew → re-fold
+    const idle = Date.now() - idleSince
+    if (complete(curState) && idle > GRACE_MS) { clearInterval(iv); server.close(); console.log('bracket complete; live view final.'); process.exit(0) }
+    if (idle > IDLE_MS) { clearInterval(iv); server.close(); console.log('no new events for 3min; live view stopped (may be incomplete).'); process.exit(0) }
+  }, 1000)
+  process.on('SIGINT', () => { clearInterval(iv); try { server.close() } catch (e) {} process.exit(0) })
+}
 function main() {
   const a = parseArgs(process.argv)
-  if (!a.events) { console.error(`usage: live-view.js --events <path-to-journal.jsonl> [--out worldcup-live.html] [--nonce <token>] [--theme <${Object.keys(THEMES).join('|')}>] [--switcher] [--once]`); process.exit(2) }
+  if (!a.events) { console.error(`usage: live-view.js --events <path-to-journal.jsonl> [--out worldcup-live.html] [--nonce <token>] [--theme <${Object.keys(THEMES).join('|')}>] [--switcher] [--once] [--serve [--port N]]`); process.exit(2) }
   // Theme: --theme wins over WORLDCUP_LIVE_THEME (set in parseArgs' default via the env). Warn on a typo
   // rather than silently falling back, so a mis-set theme doesn't look like the default was intended.
   if (a.theme) { if (!THEMES[a.theme]) console.error(`live-view: unknown --theme "${a.theme}" — using arena; valid: ${Object.keys(THEMES).join(', ')}`); LIVE_THEME = THEMES[a.theme] ? a.theme : 'arena' }
   // Finding 3: surface the auth posture — otherwise the control this PR adds is off/misconfigured silently.
   if (a.nonceProvided && !a.nonce) console.error('live-view: --nonce was given but is empty — every beacon will be rejected; pass the same token you set as args.liveNonce')
   else if (!a.nonceProvided) console.error('live-view: no --nonce — accepting any beacon (unauthenticated / legacy mode)')
+  if (a.serve) return serveLive(a)   // localhost mode: host the view + update in place (no reload, no blink)
   // The sink is the run's spine journal (subagents/workflows/<runId>/journal.jsonl): one JSON record per
   // workflow agent, appended the moment it completes — so it only GROWS, a handful of times over a run.
   // Gate each re-read on a cheap statSync(size): the steady-state poll is a stat, and we re-read +
@@ -748,5 +873,5 @@ function main() {
   process.on('SIGINT', () => { clearInterval(iv); process.exit(0) })
 }
 
-module.exports = { parseEvents, parseLines, fold, render, statusLine, bracketTree, complete, THEMES }
+module.exports = { parseEvents, parseLines, fold, render, statusLine, bracketTree, viewTree, placeholderTree, complete, THEMES, splitDoc, stripRefresh, serveBody, serveShell, serveRoute }
 if (require.main === module) main()
