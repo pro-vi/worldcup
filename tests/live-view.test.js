@@ -79,7 +79,7 @@ test('stripRefresh removes the auto-reload meta tag (served pages must not navig
 test('serveShell mounts the bracket in #wc-root, inlines the poll client, and never auto-reloads', () => {
   const shell = serveShell(champSt)
   assert.match(shell, /id="wc-root"/, 'has the morph/swap container')
-  assert.match(shell, /fetch\('frame'/, 'inlines the in-place update client')
+  assert.match(shell, /fetch\('\/frame'/, 'inlines the in-place update client (absolute path)')
   assert.doesNotMatch(shell, /http-equiv="refresh"/, 'served shell does not meta-refresh')
 })
 
@@ -98,6 +98,8 @@ test('group stage shows a BLANK bracket skeleton (not hidden), sized from the fi
   assert.ok(vt.every(r => r.matches.every(m => m.status === 'pending' && m.a == null)), 'every slot blank/TBD')
   assert.equal(viewTree(fold([{ ev: 'draw', seq: 1, field: 48, groups: [] }])).length, 5, '48-field → 5 rounds (adds R32)')
   assert.equal(viewTree(fold([])), null, 'no field at all → hidden (legacy fallback)')
+  assert.ok(viewTree(fold([{ ev: 'gate', seq: 1, field: 32, disqualified: [] }])), 'gate alone (event #1) knows the field → skeleton paints from the very first event')
+  assert.equal(viewTree(fold([{ ev: 'draw', seq: 1, field: 64, groups: [] }])), null, 'unknown field → no lying skeleton')
   // and the rendered page actually paints the blank slots during the group stage
   const gsHtml = render(groupStage, 'arena')
   assert.match(gsHtml, /class="sl tbd"/, 'blank TBD slots painted in the group stage')
@@ -106,13 +108,22 @@ test('group stage shows a BLANK bracket skeleton (not hidden), sized from the fi
   assert.doesNotMatch(gsHtml, /hudSeg stage"><span>R16<\/span>/, 'HUD never claims R16 is live during groups')
 })
 
-test('serveRoute: loopback-only (DNS-rebind guard), /frame is bare markup, else the shell', () => {
-  assert.equal(serveRoute('evil.example.com', '/', champSt).status, 403, 'foreign Host refused')
-  assert.equal(serveRoute('127.0.0.1', '/', champSt).status, 200, '127.0.0.1 allowed')
-  assert.equal(serveRoute('localhost', '/', champSt).status, 200, 'localhost allowed')
-  assert.match(serveRoute('127.0.0.1', '/', champSt).body, /id="wc-root"/, 'root path serves the shell')
-  const frame = serveRoute('127.0.0.1', '/frame?x=1', champSt).body
-  assert.doesNotMatch(frame, /id="wc-root"|<html>/, '/frame is a bare fragment (query string ignored)')
+test('serveRoute: real browser Host wire-shape, loopback-only, method gate, /frame fragment', () => {
+  const GET = (h, u) => serveRoute('GET', h, u, champSt)
+  // the exact shape a browser sends to an ephemeral port — MUST be accepted (the bug a pre-stripped unit test hid)
+  assert.equal(GET('127.0.0.1:8137', '/').status, 200, '127.0.0.1:PORT accepted')
+  assert.equal(GET('localhost:8137', '/').status, 200, 'localhost:PORT accepted')
+  assert.equal(GET('127.0.0.1', '/').status, 200, 'bare 127.0.0.1 accepted')
+  // DNS-rebind / prefix-or-suffix bypass attempts refused (exact match, never startsWith)
+  assert.equal(GET('evil.example.com', '/').status, 403, 'foreign Host refused')
+  assert.equal(GET('localhost.evil.example:8137', '/').status, 403, 'a suffix of localhost is NOT loopback')
+  assert.equal(GET('127.0.0.1.evil.example', '/').status, 403, 'a prefix of 127.0.0.1 is NOT loopback')
+  // method gate
+  assert.equal(serveRoute('POST', '127.0.0.1:8137', '/', champSt).status, 405, 'non-GET/HEAD rejected')
+  assert.equal(serveRoute('HEAD', '127.0.0.1:8137', '/', champSt).status, 200, 'HEAD allowed')
+  // routing: / → shell, /frame → bare fragment (query ignored)
+  assert.match(GET('127.0.0.1:8137', '/').body, /id="wc-root"/, '/ serves the shell')
+  assert.doesNotMatch(GET('127.0.0.1:8137', '/frame?x=1').body, /id="wc-root"|<html>/, '/frame is a bare fragment')
 })
 
 test('all three themes render every state without throwing (smoke)', () => {

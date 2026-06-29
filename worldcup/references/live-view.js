@@ -113,6 +113,7 @@ function fold(events) {
         st.groups[g.group] = { teams: g.teams || [], table: prev.table || null, advanced: prev.advanced || null }
       }
     } else if (e.ev === 'gate') {
+      if (e.field != null) st.field = e.field   // gate (the FIRST event) carries field too — set it so the blank skeleton can paint from event #1, not only once the draw lands
       st.dq = e.disqualified || []
       st.gated = true   // the gate is emitted FIRST (before the draw), so remember it ran — otherwise a
                         // zero-DQ gate-only state is indistinguishable from an empty sink ("waiting").
@@ -177,10 +178,10 @@ function bracketTree(st) {
 // RENDERING ONLY: complete() and statusLine() keep using bracketTree() (the real tree), so completion/exit and
 // status are unchanged — a blank skeleton must never read as "in progress" or "done".
 function placeholderTree(field) {
-  const shape = field === 48
-    ? [['R32', 16], ['R16', 8], ['QF', 4], ['SF', 2], ['FINAL', 1]]
-    : [['R16', 8], ['QF', 4], ['SF', 2], ['FINAL', 1]]
-  return shape.map(([stakes, n]) => ({ stakes, matches: Array.from({ length: n }, () => ({ a: null, b: null, winner: null, margin: null, status: 'pending' })) }))
+  const shape = field === 48 ? [['R32', 16], ['R16', 8], ['QF', 4], ['SF', 2], ['FINAL', 1]]
+    : field === 32 ? [['R16', 8], ['QF', 4], ['SF', 2], ['FINAL', 1]]
+    : null   // unknown field: no skeleton, rather than render a wrong-shaped (lying) bracket
+  return shape && shape.map(([stakes, n]) => ({ stakes, matches: Array.from({ length: n }, () => ({ a: null, b: null, winner: null, margin: null, status: 'pending' })) }))
 }
 function viewTree(st) {
   const t = bracketTree(st)
@@ -763,8 +764,8 @@ function splitDoc(html) {
   const he = html.indexOf('</head>'), bo = html.indexOf('<body>'), bc = html.lastIndexOf('</body>')
   const head = he >= 0 ? html.slice(0, he + '</head>'.length) : '<!doctype html><html><head></head>'  // through </head>
   const body = (bo >= 0 && bc >= 0) ? html.slice(bo + '<body>'.length, bc) : html                     // inner body only
-  const sm = head.match(/<style[\s\S]*?<\/style>/i)                                                    // the (one) css block
-  return { head, body, style: sm ? sm[0] : '' }
+  const sm = head.match(/<style[\s\S]*?<\/style>/gi)   // ALL css blocks in order (a future theme could split base + dynamic css; grabbing only the first would re-break the frame-style fix)
+  return { head, body, style: sm ? sm.join('') : '' }
 }
 // CRITICAL: the frame carries the CURRENT <style>, not just the bracket markup. The renderer emits
 // bracket-size-dependent rules (e.g. `.kocol .matches{height:Hpx}` — what lets space-around SPREAD the
@@ -787,7 +788,7 @@ const SERVE_CLIENT = `(function () {
     window.scrollTo(0, py)
   }
   function tick () {
-    fetch('frame', { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : null }).then(function (html) {
+    fetch('/frame', { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : null }).then(function (html) {
       if (html != null && html !== last) { last = html; swap(html) }
     }).catch(function () {})   // server gone (run finished) → keep the final frame on screen
   }
@@ -804,19 +805,32 @@ function openInBrowser(url) {
   const args = win ? ['/c', 'start', '', url] : [url]
   try { require('child_process').spawn(cmd, args, { stdio: 'ignore', detached: true }).unref() } catch (e) { /* best-effort */ }
 }
-// Pure request routing — extracted so the loopback guard and the /frame-vs-shell split are unit-testable
-// without booting a server. Loopback-only (DNS-rebind guard); /frame returns bare bracket markup, else the shell.
-function serveRoute(host, url, st) {
-  if (host !== '127.0.0.1' && host !== 'localhost') return { status: 403, body: 'forbidden' }
+// Hardened headers for the served loopback origin: declare the type (nothing sniffed), forbid caching, deny
+// framing + cross-origin reads, and a strict CSP (the page needs only same-origin fetch + inline css/js). NO
+// CORS / Private-Network-Access allow headers — a foreign page must never be able to read this.
+const SERVE_HEADERS = {
+  'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Connection': 'close',
+  'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Cross-Origin-Resource-Policy': 'same-origin',
+  'Content-Security-Policy': "default-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+}
+// Pure request routing — extracted so the loopback guard, method gate, and /frame-vs-shell split are unit-testable
+// without booting a server. The Host header is the REAL browser wire shape ("127.0.0.1:PORT" / "[::1]:PORT"):
+// lowercase, drop a trailing dot, unwrap [ipv6] or strip :port, then EXACT-match loopback — never a prefix test
+// (which "localhost.evil.example" would pass). Only GET/HEAD; anything else 405.
+function serveRoute(method, hostHeader, url, st) {
+  if (method !== 'GET' && method !== 'HEAD') return { status: 405, body: 'method not allowed' }
+  let host = String(hostHeader || '').toLowerCase().trim().replace(/\.$/, '')
+  host = host.startsWith('[') ? host.slice(1, host.indexOf(']')) : host.replace(/:\d+$/, '')
+  if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') return { status: 403, body: 'forbidden' }
   return { status: 200, body: (url || '/').split('?')[0] === '/frame' ? serveBody(st) : serveShell(st) }
 }
 function serveLive(a) {
   const http = require('http')
   let curState = readState(a.events, a.nonce)
   const server = http.createServer((req, res) => {
-    const r = serveRoute((req.headers.host || '').split(':')[0], req.url, curState)
-    res.writeHead(r.status, r.status === 200 ? { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } : {})
-    res.end(r.body)
+    const r = serveRoute(req.method, req.headers.host, req.url, curState)
+    res.writeHead(r.status, r.status === 200 ? SERVE_HEADERS : { 'Content-Type': 'text/plain; charset=utf-8', 'Connection': 'close' })
+    res.end(req.method === 'HEAD' ? undefined : r.body)   // HEAD: headers only, no body
   })
   const GRACE_MS = 6000, IDLE_MS = 180000
   let lastSize = sizeOf(a.events), idleSince = Date.now()
