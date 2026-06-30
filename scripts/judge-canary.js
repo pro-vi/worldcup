@@ -30,18 +30,33 @@ function validateFixture(fixture) {
   }
 }
 
-function validateRecord(fixture, recordFile) {
-  const rec = readJson(recordFile)
-  const results = Array.isArray(rec) ? rec : rec.results
+function validateResults(fixture, results) {
   assert(Array.isArray(results), 'record must be an array or { results: [] }')
-  const byId = new Map(results.map(r => [r.id, r]))
+  // Build the index strictly: every result needs an id, duplicate ids are rejected (a Map would silently keep
+  // the last), and ids unknown to the fixture are rejected (a stray/typo'd result must not be ignored).
+  const byId = new Map()
+  for (const r of results) {
+    assert(r && typeof r.id === 'string' && r.id, 'each result needs an id')
+    assert(!byId.has(r.id), `duplicate result id: ${r.id}`)
+    byId.set(r.id, r)
+  }
+  const known = new Set(fixture.cases.map(c => c.id))
+  for (const id of byId.keys()) assert(known.has(id), `unknown result id: ${id}`)
   for (const c of fixture.cases) {
     const r = byId.get(c.id)
     assert(r, `record missing result for ${c.id}`)
     assert(r.pass === true, `${c.id}: pass must be true`)
     assert(typeof r.evidence === 'string' && r.evidence.trim(), `${c.id}: evidence is required`)
-    if (r.outcome) assert(c.accept.includes(r.outcome), `${c.id}: outcome "${r.outcome}" not in accept list`)
+    // outcome is REQUIRED and must be in the accept list — without this, a record with no outcome bypassed
+    // the entire accept gate as long as pass+evidence were present (the release-gate hole).
+    assert(typeof r.outcome === 'string' && r.outcome, `${c.id}: outcome is required`)
+    assert(c.accept.includes(r.outcome), `${c.id}: outcome "${r.outcome}" not in accept list [${c.accept.join(', ')}]`)
   }
+}
+
+function validateRecord(fixture, recordFile) {
+  const rec = readJson(recordFile)
+  validateResults(fixture, Array.isArray(rec) ? rec : rec.results)
 }
 
 function main(argv) {
@@ -61,6 +76,8 @@ function main(argv) {
   for (const c of fixture.cases) console.log(`- ${c.id}: ${c.expected}`)
   console.log('To validate a real release run, record results as JSON and run: node scripts/judge-canary.js --record <file>')
 }
+
+module.exports = { validateFixture, validateResults, validateRecord, main }
 
 if (require.main === module) {
   try { main(process.argv.slice(2)) }

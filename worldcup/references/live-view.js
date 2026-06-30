@@ -105,7 +105,7 @@ function fold(events) {
     if (typeof e.seq === 'number') st.seenSeq = true   // a beacon-fed run (vs a legacy raw stream)
     st.last = e.ev
     if (e.ev === 'draw') {
-      st.field = e.field
+      if (e.field === 32 || e.field === 48) st.field = e.field   // store only a SUPPORTED size
       for (const g of e.groups || []) {
         if (!st.groups[g.group]) st.groupOrder.push(g.group)
         // merge, never wipe an already-folded table/advanced (defensive; seq makes draw precede groups anyway)
@@ -113,7 +113,7 @@ function fold(events) {
         st.groups[g.group] = { teams: g.teams || [], table: prev.table || null, advanced: prev.advanced || null }
       }
     } else if (e.ev === 'gate') {
-      if (e.field != null) st.field = e.field   // gate (the FIRST event) carries field too — set it so the blank skeleton can paint from event #1, not only once the draw lands
+      if (e.field === 32 || e.field === 48) st.field = e.field   // gate (FIRST event) carries field too; store ONLY a supported size so the skeleton + HUD label can never lie for an unknown field (e.g. 64)
       st.dq = e.disqualified || []
       st.gated = true   // the gate is emitted FIRST (before the draw), so remember it ran — otherwise a
                         // zero-DQ gate-only state is indistinguishable from an empty sink ("waiting").
@@ -595,7 +595,7 @@ ${bsvg.css}
 <header>
 <div class="brand"><span class="bTrophy">&#127942;</span><div><div class="bName">World Cup</div><div class="bMode">Arena</div></div></div>
 <div class="rail">${railHTML || '<div class="stg lock"><span class="stgN">R16</span><span class="stgC">LOCK</span></div>'}</div>
-<div class="hud"><span class="hudSeg spec"><span>Spectator</span></span><span class="hudSeg ${live ? 'liveSeg' : 'doneSeg'}"><span>${live ? '<span class="d"></span>Live' : '&#10003; Final'}</span></span><span class="hudSeg stage"><span>${live ? he(liveStage) : 'Champion'}</span></span><span class="hudSeg"><span>${st.field === 48 ? 48 : 32}&#8201;Team</span></span></div>
+<div class="hud"><span class="hudSeg spec"><span>Spectator</span></span><span class="hudSeg ${live ? 'liveSeg' : 'doneSeg'}"><span>${live ? '<span class="d"></span>Live' : '&#10003; Final'}</span></span><span class="hudSeg stage"><span>${live ? he(liveStage) : 'Champion'}</span></span>${st.field ? `<span class="hudSeg"><span>${st.field}&#8201;Team</span></span>` : ''}</div>
 </header>
 ${bsvg.html}
   <div class="sec"><b>Group stage</b> &middot; ${groupRule}</div>
@@ -803,7 +803,9 @@ function openInBrowser(url) {
   const win = process.platform === 'win32'
   const cmd = process.platform === 'darwin' ? 'open' : win ? 'cmd' : 'xdg-open'
   const args = win ? ['/c', 'start', '', url] : [url]
-  try { require('child_process').spawn(cmd, args, { stdio: 'ignore', detached: true }).unref() } catch (e) { /* best-effort */ }
+  // spawn() reports a missing opener (no `open`/`xdg-open`) via an ASYNC 'error' event, which the try/catch
+  // can't see — without an error listener that would crash --serve after the server is up. Attach one, then unref.
+  try { const c = require('child_process').spawn(cmd, args, { stdio: 'ignore', detached: true }); c.on('error', () => {}); c.unref() } catch (e) { /* best-effort */ }
 }
 // Hardened headers for the served loopback origin: declare the type (nothing sniffed), forbid caching, deny
 // framing + cross-origin reads, and a strict CSP (the page needs only same-origin fetch + inline css/js). NO
@@ -864,6 +866,7 @@ function main() {
   // Finding 3: surface the auth posture — otherwise the control this PR adds is off/misconfigured silently.
   if (a.nonceProvided && !a.nonce) console.error('live-view: --nonce was given but is empty — every beacon will be rejected; pass the same token you set as args.liveNonce')
   else if (!a.nonceProvided) console.error('live-view: no --nonce — accepting any beacon (unauthenticated / legacy mode)')
+  if (a.serve && a.once) { console.error('live-view: --serve and --once are mutually exclusive (--serve hosts a live view; --once writes one static snapshot)'); process.exit(2) }
   if (a.serve) return serveLive(a)   // localhost mode: host the view + update in place (no reload, no blink)
   // The sink is the run's spine journal (subagents/workflows/<runId>/journal.jsonl): one JSON record per
   // workflow agent, appended the moment it completes — so it only GROWS, a handful of times over a run.

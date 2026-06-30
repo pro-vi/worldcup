@@ -100,6 +100,14 @@ test('group stage shows a BLANK bracket skeleton (not hidden), sized from the fi
   assert.equal(viewTree(fold([])), null, 'no field at all → hidden (legacy fallback)')
   assert.ok(viewTree(fold([{ ev: 'gate', seq: 1, field: 32, disqualified: [] }])), 'gate alone (event #1) knows the field → skeleton paints from the very first event')
   assert.equal(viewTree(fold([{ ev: 'draw', seq: 1, field: 64, groups: [] }])), null, 'unknown field → no lying skeleton')
+  // field normalization (review P1): an unsupported size is never stored → no skeleton AND no "N Team" HUD label
+  const f64 = fold([{ ev: 'draw', seq: 1, field: 64, groups: [] }])
+  assert.ok(!f64.field, 'unsupported field (64) is not stored as st.field')
+  assert.doesNotMatch(render(f64, 'arena'), /\d+&#8201;Team/, 'unsupported field → no "N Team" HUD label')
+  // gate-only 48 → field stored from event #1 → 48 skeleton + honest "48 Team" label
+  const g48 = fold([{ ev: 'gate', seq: 1, field: 48, disqualified: [] }])
+  assert.equal(g48.field, 48, 'gate (event #1) stores a supported field')
+  assert.match(render(g48, 'arena'), /48&#8201;Team/, 'gate-only 48 → honest "48 Team" HUD label')
   // and the rendered page actually paints the blank slots during the group stage
   const gsHtml = render(groupStage, 'arena')
   assert.match(gsHtml, /class="sl tbd"/, 'blank TBD slots painted in the group stage')

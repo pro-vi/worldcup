@@ -1,8 +1,18 @@
 # Live view (Tier-1) — `live-view.js`
 
 Watch a running worldcup fill in **live** — group standings forming, eliminations landing, the
-bracket advancing — in a self-contained, auto-refreshing HTML artifact, while the background
-Workflow is still running. Dependency-free, no server, no sockets.
+bracket advancing — while the background Workflow is still running. Dependency-free (Node stdlib only).
+
+Two output modes (mutually exclusive — pick one):
+
+- **File mode (default):** writes a self-contained, auto-refreshing `worldcup-live.html` (`<meta refresh>`).
+  No server, no sockets — works anywhere, but every refresh is a full reload, so it white-flashes.
+  `--once` writes a single static snapshot and exits. Flags: `--out <file>`, `--theme`, `--switcher`, `--once`.
+- **Serve mode (`--serve [--port N]`):** hosts the view on `http://127.0.0.1` (Node stdlib HTTP server, loopback
+  only) and updates the bracket **in place** (the page polls `/frame` and swaps it in) — no reload, no flash,
+  scroll preserved. Default port is ephemeral; `--serve` and `--once` are mutually exclusive (a usage error).
+  The HTTP server is unauthenticated read-only loopback (the `--nonce` authenticates the event journal, not the
+  server) — it exposes the rendered tournament to local users/processes; don't `--serve` a private journal.
 
 ```
 WORKFLOW (producer)                 the run's LIVE SPINE                 live-view.js (consumer)
