@@ -1,0 +1,18 @@
+.DS_Store
+*.log
+logs/
+node_modules/
+*.tmp
+/scratch/
+
+# local agent session data — not part of the repo
+.prov/
+.claude/
+
+# private working notes — never commit
+.inbox/
+
+# generated run artifacts (live view, report, event journals)
+worldcup-live*.html
+worldcup-report*.html
+*.jsonl

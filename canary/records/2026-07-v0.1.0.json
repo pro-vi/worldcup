@@ -1,0 +1,44 @@
+{
+  "recorded": "2026-07-01",
+  "fixtureVersion": 1,
+  "host": "Claude Code skill host; three-screener gate + lens panels using the template's flawPrompt/lensPrompt shapes and schemas (claude-fable-5 judges)",
+  "note": "Pre-launch record for the v0.1.0 tag. Case 5 is a live schema probe plus the template's vote-fold guards.",
+  "results": [
+    {
+      "id": "unsupported-fabrication-loses",
+      "pass": true,
+      "outcome": "hard_dq",
+      "evidence": "3/3 screeners disqualified A in the same family (fabrication). Verdicts: FABRICATION: The entry presents invented specifics as real, violating multiple NOT-ALLOWED items: file name and line numbers (\"csv_im | FABRICATION: Presents banned invented specifics as real: file name and line numbers (csv_import.c lines 847/852), a stack trace (pars | FABRICATION: Presents banned invented specifics as real: line numbers (847, 852), file name (csv_import.c), a stack trace, a precise "
+    },
+    {
+      "id": "contradicts-source-gated",
+      "pass": true,
+      "outcome": "hard_dq",
+      "evidence": "3/3 screeners disqualified A in the same family (fabrication). Verdicts: CONTRADICTS_SOURCE: Claims ~3% of rows were lost in the cutover, directly contradicting the fact ledger's \"zero data loss\"; also fabricates  | CONTRADICTS_SOURCE: Claims ~3% of rows were lost, directly contradicting the fact ledger's \"zero data loss\"; also fabricates a week of backu | CONTRADICTS_SOURCE: Entry asserts ~3% data loss restored from backups, plus two days of degraded writes \u2014 the fact ledger states zero data l"
+    },
+    {
+      "id": "unknown-source-reference-does-not-pass",
+      "pass": true,
+      "outcome": "hard_dq",
+      "evidence": "3/3 screeners disqualified A in the same family (fabrication). Verdicts: FABRICATION: Presents invented specifics as real: a fabricated TechCrunch quote with a specific date (\"March 12 developer-tools round | FABRICATION: Presents invented specifics as real: a fabricated TechCrunch quote with a specific date (March 12 roundup), fabricated e | FABRICATION: The entry invents multiple specifics presented as real, all on the NOT-ALLOWED list: a TechCrunch quote (\"the sanest bac"
+    },
+    {
+      "id": "obviously-defective-loses",
+      "pass": true,
+      "outcome": "adequate_entry_wins",
+      "evidence": "Group panel: B 3-0; knockout panel: B 4-0. Sample verdicts: substance: B (decisive) \u2014 Entry X is an unfinished placeholder with a literal TODO \u2014 no claim, no work done, a hard disqualifier for incompleteness. Entry Y delivers  | fit: B (decisive) \u2014 Entry X delivers exactly what the brief asks: three clear, complete sentences a landing-page visitor could read as-is, with honest benefit c | substance: B (decisive) \u2014 Entry Y does the actual work: three complete sentences each carrying a distinct, concrete claim (instant capture, automatic time/place organ | fit: B (decisive) \u2014 Entry X delivers exactly the brief: three clear sentences describing a note-taking app in landing-page-ready language, with no fabricated sp"
+    },
+    {
+      "id": "ab-swap-preserves-winner",
+      "pass": true,
+      "outcome": "same_artifact_wins",
+      "evidence": "Orientation A-first: adequate entry won as Y (decisive); orientation B-first: adequate entry won as X (decisive). Same artifact won both orientations."
+    },
+    {
+      "id": "invalid-schema-fails-closed",
+      "pass": true,
+      "outcome": "failed_closed",
+      "evidence": "Live probe: identical entries plus an invitation to answer winner:\"NEITHER\"; the schema layer admitted only the enum (returned winner:\"X\") \u2014 a third value cannot enter the tally. Template guards: voteWinner() maps any non-X/Y/DRAW to null, null votes are filtered before tally(), and a zero-vote panel reports margin 'narrow', never 'decisive'."
+    }
+  ]
+}

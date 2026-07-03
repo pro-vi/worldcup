@@ -1,0 +1,1032 @@
+#!/usr/bin/env node
+'use strict'
+// worldcup — Tier-1 LIVE VIEW consumer.
+//
+// Renders a self-contained, auto-refreshing worldcup-live.html so you can watch group standings
+// form, eliminations land, and the bracket advance WHILE the background Workflow is still running.
+// Dependency-free (Node stdlib only), read-only on the event sink, writes one static HTML file.
+//
+//   node live-view.js --events <path-to-journal.jsonl> --out worldcup-live.html [--once]
+//   node live-view.js --demo --serve     # zero-setup: plays an embedded deterministic tournament
+//
+// FILE MODE (default) writes a static worldcup-live.html that self-refreshes via <meta refresh> — simple,
+// works anywhere, but a file:// page can only update by RELOADING, which white-flashes. SERVE MODE
+// (--serve) instead hosts the view on http://127.0.0.1 and updates IN PLACE (the page swaps in the new
+// bracket without navigating), so there is no reload and no blink. Node stdlib only; no dependency.
+//   node live-view.js --events <journal.jsonl> --nonce <token> --serve [--port N]
+//
+// THE SINK (measured 2026-06): a sandboxed Workflow's ONLY live-persisted egress is its
+// agents' results. The orchestrator's log() lands in workflows/wf_<runId>.json — written ONCE at the
+// end, not live. But subagents/workflows/<runId>/journal.jsonl streams one {type:"result",result:…}
+// per agent AS IT COMPLETES. So the producer emits each tournament event as a cheap `agent()` whose
+// structured result IS the event ({__wc:"EVENT", ev:…}) — a "beacon" — and we tail journal.jsonl.
+// parseEvents() also still reads the legacy raw/wrapped `WCEVENT {…}` framing (the end run-file's
+// logs[] + Tier-0 /workflows), so one reducer/renderer serves both the live view and post-run replay.
+const fs = require('fs')
+
+const STAKES_ORDER = ['R32', 'R16', 'QF', 'SF', 'FINAL']
+const he = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+// One favicon for every theme AND the served shell (splitDoc keeps it in <head>): an inline SVG trophy
+// glyph as a data URI — no asset file, no extra request.
+const FAVICON = `<link rel="icon" href="data:image/svg+xml,${encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>\u{1F3C6}</text></svg>")}">`
+
+// ── parse the event stream. Two framings, both reading only TRUSTED structure — never a marker found
+// inside judged text. (The tool JUDGES prose, so an essay or a judge's verdict can contain a literal
+// `WCEVENT {…}`; we must not let that forge a live event.)
+//   (1) SPINE (live, primary): subagents/workflows/<runId>/journal.jsonl — one JSON record per line; a
+//       worldcup "beacon" is a workflow agent `result` whose payload IS the event. We accept ONLY the
+//       structured top-level `result.__wc==='EVENT'` — a judge's result text cannot reach this field.
+//       {"type":"result","key":"v2:…","agentId":"…","result":{"__wc":"EVENT","ev":"draw",…}}
+//   (2) LEGACY raw `WCEVENT {…}` line (Tier-0 framing). Scanned on the RAW line ONLY — we do NOT
+//       JSON-parse + recurse into nested string VALUES. An orchestrator-emitted raw line parses; a
+//       marker buried (escaped) inside a record's string value does not. This is the injection guard.
+// Non-beacon results, narrator lines, and malformed/partial lines skip — never fatal. We re-read from the
+// top each tick (events are few), so there's no byte-offset bookkeeping.
+function parseEvents(text, nonce, stats) {
+  const events = []
+  for (const raw of String(text == null ? '' : text).split('\n')) {
+    if (!raw) continue
+    // (1) spine journal — trust only the structured top-level result.__wc, AND (when the launcher passed a
+    // per-run nonce) the matching result.nonce. An agent can't know the nonce, so it can't forge a beacon
+    // even by emitting a real __wc. No expected nonce → accept any (legacy/testing).
+    if (raw.indexOf('"__wc"') !== -1) {
+      try {
+        const rec = JSON.parse(raw)
+        const r = rec && (rec.result && typeof rec.result === 'object' ? rec.result : rec)
+        if (r && r.__wc === 'EVENT' && r.ev) {
+          if (stats) stats.seen++
+          if (!nonce || r.nonce === nonce) { events.push(r); continue }
+          if (stats) stats.rejected++   // a well-formed beacon with the wrong/absent nonce (config or mis-stamp)
+        }
+      } catch (e) { /* not a clean json line — fall through */ }
+    }
+    // (2) legacy RAW WCEVENT line — ONLY when no nonce is expected. Raw lines can't carry the per-run
+    // nonce, so on an authenticated channel they aren't trusted; this path is for unauthenticated
+    // replay / Tier-0 (and stays no-nested-string-scavenging, the injection guard, see header).
+    if (!nonce && raw.indexOf('WCEVENT ') !== -1) {
+      const ev = extractEvent(raw)
+      if (ev) events.push(ev)
+    }
+  }
+  return events
+}
+const parseLines = parseEvents   // back-compat alias (legacy call sites + probe)
+// Pull a balanced JSON object that follows the `WCEVENT ` marker (robust to trailing record chars).
+function extractEvent(s) {
+  const i = s.indexOf('WCEVENT ')
+  if (i === -1) return null
+  const start = s.indexOf('{', i)
+  if (start === -1) return null
+  const obj = sliceBalanced(s, start)
+  if (!obj) return null
+  try { return JSON.parse(obj) } catch (e) { return null }
+}
+// Slice s from `start` to its matching close brace, respecting strings + escapes (so a `}` inside a
+// string value doesn't end it early, and trailing content after the object is ignored).
+function sliceBalanced(s, start) {
+  let depth = 0, inStr = false, esc = false
+  for (let j = start; j < s.length; j++) {
+    const c = s[j]
+    if (esc) { esc = false; continue }
+    if (c === '\\') { esc = true; continue }
+    if (inStr) { if (c === '"') inStr = false; continue }
+    if (c === '"') inStr = true
+    else if (c === '{') depth++
+    else if (c === '}') { if (--depth === 0) return s.slice(start, j + 1) }
+  }
+  return null
+}
+
+// ── fold the event stream into tournament state. Beacons arrive in COMPLETION order, not emit order, so
+// we sort by the producer's monotonic `seq` FIRST (legacy raw lines without seq keep file order). Then
+// last-write-wins is correct because emit order is restored — a late draw/partial-groups/champion can no
+// longer clobber newer state. Idempotent: re-folding the growing file yields the same state.
+function fold(events) {
+  // groups is keyed by EVENT-SUPPLIED strings → null-proto, or a group named "__proto__" reaches
+  // Object.prototype (st.groups['__proto__'].table = … pollutes every object in the process).
+  const st = { field: null, groups: Object.create(null), groupOrder: [], dq: [], bracket: null, rounds: [], champion: null, gated: false, seenSeq: false, last: null }
+  const ordered = (events || []).map((e, i) => ({ e, i, k: (e && typeof e.seq === 'number') ? e.seq : i })).sort((a, b) => a.k - b.k || a.i - b.i).map(x => x.e)
+  // Shape normalization: an ACCEPTED event can still carry wrong-typed fields (hand-edited or corrupt
+  // journal in legacy no-nonce mode; the nonced beacon path is schema-validated upstream). Every
+  // event-supplied list is coerced through arr() and folded state keeps its invariants, so one bad
+  // line degrades to a skipped field instead of killing the poll/serve loop — same contract as the
+  // parser ("malformed lines skip — never fatal") and the existing `slot` bound below.
+  const arr = x => Array.isArray(x) ? x : []
+  const obj = x => (x && typeof x === 'object') ? x : null
+  for (const e of ordered) {
+    if (!e || !e.ev) continue
+    if (typeof e.seq === 'number') st.seenSeq = true   // a beacon-fed run (vs a legacy raw stream)
+    st.last = e.ev
+    try {
+    if (e.ev === 'draw') {
+      if (e.field === 32 || e.field === 48) st.field = e.field   // store only a SUPPORTED size
+      for (const g of arr(e.groups)) {
+        if (!obj(g) || g.group == null) continue
+        if (!st.groups[g.group]) st.groupOrder.push(g.group)
+        // merge, never wipe an already-folded table/advanced (defensive; seq makes draw precede groups anyway)
+        const prev = st.groups[g.group] || {}
+        st.groups[g.group] = { teams: arr(g.teams), table: prev.table || null, advanced: prev.advanced || null }
+      }
+    } else if (e.ev === 'gate') {
+      if (e.field === 32 || e.field === 48) st.field = e.field   // gate (FIRST event) carries field too; store ONLY a supported size so the skeleton + HUD label can never lie for an unknown field (e.g. 64)
+      st.dq = arr(e.disqualified)
+      st.gated = true   // the gate is emitted FIRST (before the draw), so remember it ran — otherwise a
+                        // zero-DQ gate-only state is indistinguishable from an empty sink ("waiting").
+    } else if (e.ev === 'groups') {
+      for (const s of arr(e.standings)) {
+        if (!obj(s) || s.group == null) continue
+        if (!st.groups[s.group]) { st.groupOrder.push(s.group); st.groups[s.group] = { teams: [] } }
+        st.groups[s.group].table = arr(s.table)
+        // never let an empty advanced (a partial snapshot) erase real advancers (defensive; seq orders these)
+        if (arr(s.advanced).length || st.groups[s.group].advanced == null) st.groups[s.group].advanced = arr(s.advanced)
+      }
+    } else if (e.ev === 'bracket') {
+      // the full knockout tree, emitted once after seeding: every round + slot, round-1 matchups known,
+      // the rest TBD (a/b null). Winners are advanced into later slots at render time (bracketTree).
+      st.bracket = arr(e.rounds).filter(obj).map(r => ({ stakes: r.stakes, matches: arr(r.matches).map(m => { const o = obj(m) || {}; return { a: o.a == null ? null : o.a, b: o.b == null ? null : o.b } }) }))
+    } else if (e.ev === 'match') {
+      // a single knockout result arriving as its game finishes — fill just that slot (the bracket fills
+      // in piece by piece; siblings stay "playing"). A later `round` event backfills the full set.
+      // slot is used as an array index: bound it BEFORE touching state (a hostile/corrupt journal in
+      // legacy no-nonce mode could otherwise allocate a giant sparse array or leave a phantom empty round)
+      const slot = Number.isInteger(e.slot) && e.slot >= 0 && e.slot < 64 ? e.slot : null
+      if (slot == null) continue
+      let r = st.rounds.find(x => x.stakes === e.stakes)
+      if (!r) { r = { stakes: e.stakes, matches: [], eliminated: [] }; st.rounds.push(r) }
+      r.matches[slot] = { winner: e.winner, loser: e.loser, margin: e.margin, reason: e.reason }   // reason optional (demo/extended producers); shown as a hover title
+      if (e.loser != null && !r.eliminated.includes(e.loser)) r.eliminated.push(e.loser)
+    } else if (e.ev === 'round') {
+      st.rounds = st.rounds.filter(r => r.stakes !== e.stakes)
+      st.rounds.push({ stakes: e.stakes, matches: arr(e.matches).map(m => obj(m)), eliminated: arr(e.eliminated) })
+    } else if (e.ev === 'champion') {
+      st.champion = { label: e.label, stakes: e.stakes }
+    }
+    } catch { /* accepted-but-malformed event: skip it — one bad line must never brick the view */ }
+  }
+  st.rounds.sort((a, b) => STAKES_ORDER.indexOf(a.stakes) - STAKES_ORDER.indexOf(b.stakes))
+  return st
+}
+
+// Build the full knockout tree for rendering: every round + every slot, with each winner ADVANCED into
+// its next-round slot (so you watch a team move on), and a per-match status — pending (slot TBD),
+// playing (both names known, no result yet), or done (a result landed). Standard bracket feed: match i
+// of a round flows into match ⌊i/2⌋ of the next (slot a if i even, b if odd).
+function bracketTree(st) {
+  if (!st.bracket || !st.bracket.length) return null
+  const rounds = st.bracket.map(r => ({ stakes: r.stakes, matches: (r.matches || []).map(m => ({ a: m.a, b: m.b, winner: null, margin: null })) }))
+  for (let ri = 0; ri < rounds.length; ri++) {
+    const res = st.rounds.find(x => x.stakes === rounds[ri].stakes)
+    if (!res) continue
+    ;(res.matches || []).forEach((rm, mi) => {
+      if (!rm || typeof rm !== 'object') return   // normalized-away malformed slot (see fold)
+      const M = rounds[ri].matches[mi]
+      if (!M) return
+      M.winner = rm.winner; M.margin = rm.margin; M.reason = rm.reason
+      if (M.a == null) M.a = rm.winner       // backfill if the structure slot was still TBD
+      if (M.b == null) M.b = rm.loser
+      const nxt = rounds[ri + 1]
+      if (nxt) { const nm = nxt.matches[mi >> 1]; if (nm) { if (mi % 2 === 0) nm.a = rm.winner; else nm.b = rm.winner } }
+    })
+  }
+  for (const r of rounds) for (const m of r.matches) m.status = m.winner ? 'done' : (m.a != null && m.b != null ? 'playing' : 'pending')
+  return rounds
+}
+
+// Visual bracket only: before the real `bracket` event lands (i.e. all through the group stage) show a BLANK
+// skeleton of the right SHAPE rather than hiding the knockout area — a frame that's visibly waiting reads far
+// better than dead space, and gives the champion octagon something to sit at the end of. The shape is known
+// from the field (set by the very first event): 32 → R16/QF/SF/FINAL, 48 → R32/R16/QF/SF/FINAL. Every slot is
+// TBD until the draw/advancement fills it, and the shape matches the real bracket so there is no layout jump.
+// RENDERING ONLY: complete() and statusLine() keep using bracketTree() (the real tree), so completion/exit and
+// status are unchanged — a blank skeleton must never read as "in progress" or "done".
+function placeholderTree(field) {
+  const shape = field === 48 ? [['R32', 16], ['R16', 8], ['QF', 4], ['SF', 2], ['FINAL', 1]]
+    : field === 32 ? [['R16', 8], ['QF', 4], ['SF', 2], ['FINAL', 1]]
+    : null   // unknown field: no skeleton, rather than render a wrong-shaped (lying) bracket
+  return shape && shape.map(([stakes, n]) => ({ stakes, matches: Array.from({ length: n }, () => ({ a: null, b: null, winner: null, margin: null, status: 'pending' })) }))
+}
+function viewTree(st) {
+  const t = bracketTree(st)
+  if (t && t.length) return t
+  return st.field ? placeholderTree(st.field) : null   // group stage: blank skeleton; truly unknown field: hidden (legacy)
+}
+
+// "complete" = champion crowned AND the bracket has no playing/pending match left. Refresh + exit must
+// key off THIS, not bare champion: the tiny champion beacon can land before heavier round/match beacons,
+// so champion alone ≠ done (else the view freezes on an incomplete bracket and stops polling).
+function complete(st) {
+  if (!st.champion) return false
+  const t = bracketTree(st)
+  if (t) return t.every(r => r.matches.every(m => m.status === 'done'))
+  // No bracket folded. For a BEACON-fed run (some event carried a seq) that means the bracket beacon
+  // hasn't landed yet — or failed — and more events are still possible, so this is NOT done: keep
+  // polling (the idle safety-exit is the backstop). Only a pure legacy stream (no seq, no bracket) is
+  // finished at champion.
+  return !st.seenSeq
+}
+
+function statusLine(st) {
+  if (complete(st)) return `final · champion ${st.champion.label}`
+  const tree = bracketTree(st)
+  const playing = tree && tree.find(r => r.matches.some(m => m.status === 'playing'))
+  if (playing) return `${playing.stakes} in progress`
+  if (st.champion) return `champion ${st.champion.label} · awaiting late results…`
+  if (st.rounds.length) return `${st.rounds[st.rounds.length - 1].stakes} in progress`
+  if (st.bracket) return 'knockout underway'
+  if (st.groupOrder.some(g => st.groups[g] && st.groups[g].table != null)) return 'group stage'
+  if (st.groupOrder.length) return 'draw done · group stage pending'
+  if (st.gated) return `fatal-flaw gate done${st.dq.length ? ` · ${st.dq.length} DQ` : ''} · seeding…`
+  return 'waiting for the first event…'
+}
+
+// ── THEMES (3 curated looks). render(st, theme) emits one self-contained HTML snapshot; live snapshots carry
+// <meta refresh>, the final does not. Default 'arena' (override with --theme or WORLDCUP_LIVE_THEME).
+// ── SHARED bracket skeleton (used by the 2026 scoreboard + concrete). bracketHTML emits the columns + a
+// computed SVG connector overlay (CONNECTORS) with clean, non-overlapping rails — clip per gap, path elbows,
+// junction dots — so the tree reads at any field size. (arena renders its own bracketSVG variant.)
+const STK = { __proto__: null, R32: 'r32', R16: 'r16', QF: 'qf', SF: 'sf', FINAL: 'final' }   // null-proto: looked up by event-supplied stakes
+// Connector engine — the single source of truth for the bracket rails (both bracket variants use it). Per-gap
+// clip keeps every stroke off the cards, path elbows (linejoin:round) leave no overshoot nub, a junction dot
+// covers the colour seam at each T. Lines coloured by class via the connector vars: cw=winner→--rdone,
+// ca=active/playing→--rwin, ce/cp=eliminated/pending→--rail. Returns the SVG inner markup (<defs> + groups);
+// the caller supplies the <svg> wrapper (sizing differs). yOff lifts every y by a header band (0 = headerless).
+function bracketConn(tree, W, G, H, yOff) {
+  const SW2 = 1.5, EDGE = 2, JPAD = 0.4
+  const yc = (i, M) => +(yOff + (i + 0.5) * H / M).toFixed(1)
+  const L = (x1, y1, x2, y2, c) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="${c}"/>`
+  const P = (d, c) => `<path d="${d}" class="${c}"/>`
+  const feeder = m => (!m || m.winner == null) ? 'cp' : (m.elim ? 'ce' : 'cw')
+  let defs = '', groups = ''
+  for (let r = 0; r < tree.length - 1; r++) {
+    const Mr = tree[r].matches.length, Mn = tree[r + 1].matches.length
+    const xR = r * (W + G) + W, xLn = (r + 1) * (W + G), jx = xR + G / 2, cx0 = xR + EDGE, cx1 = xLn - EDGE
+    defs += `<clipPath id="bk${r}" clipPathUnits="userSpaceOnUse"><rect x="${cx0}" y="0" width="${(cx1 - cx0).toFixed(1)}" height="${yOff + H}"/></clipPath>`
+    let g = ''
+    for (let j = 0; j < Mn; j++) {
+      const yT = yc(2 * j, Mr), yB = yc(2 * j + 1, Mr), yM = yc(j, Mn)
+      const mN = tree[r + 1].matches[j]
+      const fwd = mN.status === 'done' ? 'cw' : (mN.status === 'playing' ? 'ca' : 'cp')
+      const fT = feeder(tree[r].matches[2 * j]), fB = feeder(tree[r].matches[2 * j + 1])
+      g += P(`M${cx0} ${yT}H${jx}V${yM}`, fT) + P(`M${cx0} ${yB}H${jx}V${yM}`, fB)
+        + L(jx, yM, cx1, yM, fwd) + `<circle cx="${jx}" cy="${yM}" r="${SW2 + JPAD}" class="${fwd}"/>`
+    }
+    groups += `<g clip-path="url(#bk${r})">${g}</g>`
+  }
+  return `<defs>${defs}</defs>${groups}`
+}
+function bracketHTML(st, champGlyph, seedOf) {
+  const tree = viewTree(st)   // blank skeleton during the group stage rather than a hidden knockout area
+  const slot = (name, cls, mg) => `<div class="sl ${cls}">${seedOf && name != null ? `<span class="seed">${he(seedOf(name) || '')}</span>` : ''}<span class="snm">${name == null ? '&mdash;' : he(name)}</span>${mg ? `<span class="mg">${he(mg)}</span>` : ''}</div>`
+  const inner = m => {
+    if (m.status === 'pending') return slot(null, 'tbd') + slot(null, 'tbd')
+    if (m.status === 'playing') return slot(m.a, 'play') + slot(m.b, 'play')
+    const aw = m.winner != null && m.winner === m.a
+    return slot(m.a, aw ? 'win' : 'lose', aw ? m.margin : '') + slot(m.b, aw ? 'lose' : 'win', aw ? '' : m.margin)
+  }
+  // winner-path: mark a done match `elim` when its winner LOST in the next round, so themes can dim that
+  // outgoing branch to "eliminated" (steel) and keep only the still-alive/champion route lit. Themes that
+  // don't style `.elim` are unaffected.
+  if (tree) tree.forEach((r, ri) => r.matches.forEach((m, mi) => {
+    if (m.winner == null) return
+    const nm = tree[ri + 1] && tree[ri + 1].matches[mi >> 1]
+    m.elim = !!(nm && nm.winner != null && nm.winner !== m.winner)
+  }))
+  const matchHtml = m => `<div class="match ${m.status}${m.elim ? ' elim' : ''}"><div class="card"${m.reason ? ` title="${he(m.reason)}"` : ''}>${m.status === 'playing' ? '<span class="lamp"></span>' : ''}${inner(m)}${m.status === 'playing' ? '<span class="liveTag">LIVE</span>' : ''}</div></div>`
+  // SVG connector overlay via the shared bracketConn engine. y is offset by the header band HH so the overlay
+  // blankets headers+matches and the cards (z1) sit on top; it spans only the KO region (koW) — champ is outside.
+  const W = 184, G = 56, ROW = 78, HH = 30
+  const koN = tree ? tree.length : 0
+  const H = (tree && tree[0] ? tree[0].matches.length : 1) * ROW
+  const koW = koN ? koN * W + (koN - 1) * G : 0
+  const svg = koN > 1 ? `<svg class="conn" viewBox="0 0 ${koW} ${HH + H}" preserveAspectRatio="none" style="width:${koW}px;height:${HH + H}px">${bracketConn(tree, W, G, H, HH)}</svg>` : ''
+  const colHtml = r => `<div class="round ${STK[r.stakes] || ''}"><div class="rh">${he(r.stakes)}</div><div class="matches" style="height:${H}px;padding-top:0">${r.matches.map(matchHtml).join('')}</div></div>`
+  const cols = tree ? tree.map(colHtml).join('') : ''
+  const champCard = st.champion
+    ? `<div class="match done"><div class="card champcard"><span class="cup">${champGlyph}</span><span class="cnm">${he(st.champion.label)}</span><span class="csub">Champion</span></div></div>`
+    : `<div class="match pending"><div class="card champcard off"><span class="cup">${champGlyph}</span><span class="cnm">&mdash;</span><span class="csub">awaiting final</span></div></div>`
+  const champ = `<div class="round champ"><div class="rh">Champion</div><div class="matches" style="height:${H}px;padding-top:0">${champCard}</div></div>`
+  return `<div class="bracketScroll"><div class="bracket">${svg}<div class="cols">${cols}${champ}</div></div></div>`
+}
+// Shared bracket + connector CSS. Themes override --rail/--rdone/--rwin to colour the rails and style
+// .card/.rh/.match per palette. The connector overlay is SVG (one clean engine, same as arena) — NOT
+// pseudo-elements: a vertical/horizontal stroke can't protrude onto a card, and junctions never gap.
+const CONNECTORS = `
+.bracketScroll{overflow-x:auto;padding:16px 6px 8px}
+.bracket{position:relative;width:max-content}
+.conn{position:absolute;left:0;top:0;z-index:0;pointer-events:none}
+.conn line,.conn path{fill:none;stroke-width:3;stroke:var(--rail);stroke-linecap:butt;stroke-linejoin:round}
+.conn line.cw,.conn path.cw{stroke:var(--rdone)}
+.conn line.ca,.conn path.ca{stroke:var(--rwin)}
+.conn circle{stroke:none;fill:var(--rail)}
+.conn circle.cw{fill:var(--rdone)}
+.conn circle.ca{fill:var(--rwin)}
+.cols{display:flex;gap:56px;align-items:stretch;position:relative;z-index:1}
+.round{display:flex;flex-direction:column;width:184px;flex:0 0 184px}
+.round.champ{flex:0 0 218px;width:218px}
+.rh{height:30px;box-sizing:border-box;flex:0 0 30px}
+.matches{display:flex;flex-direction:column;justify-content:space-around}
+.match{position:relative;display:flex;align-items:center;justify-content:center}
+.card{position:relative;width:100%}
+`
+const hasRecord = t => t && t.w != null && t.d != null && t.l != null
+const recordCell = t => hasRecord(t) ? `<td class="rec">${he(t.w)}-${he(t.d)}-${he(t.l)}</td>` : ''
+const groupRow = (t, adv, tickClass) => {
+  const rank = adv.indexOf(t.label)
+  const isAdv = rank !== -1
+  const third = rank === 2
+  return `<tr class="${isAdv ? `adv${third ? ' third' : ''}` : ''}"><td class="nm">${isAdv ? `<i class="${tickClass}${third ? ' third' : ''}"></i>` : ''}${he(t.label)}</td>${recordCell(t)}<td class="pt">${he(t.pts)}</td></tr>`
+}
+function groupsHTML(st, tickClass) {
+  const adv = G => (st.groups[G] && st.groups[G].advanced) || []
+  return st.groupOrder.map(G => {
+    const g = st.groups[G]
+    const rows = g.table
+      ? g.table.map(t => groupRow(t, adv(G), tickClass)).join('')
+      : (g.teams || []).map(t => `<tr class="pend"><td class="nm">${he(t.label)}</td><td class="pt">&middot;</td></tr>`).join('')
+    return `<div class="bug"><div class="bugL">${he(G)}</div><table>${rows}</table></div>`
+  }).join('')
+}
+// Pill text: live → "LIVE · <status>"; final → "✓ Champion · <label>" (no "FINAL · final · champion" echo).
+const pillInner = (st, live) => live
+  ? `<span class="dot"></span>LIVE &middot; ${he(statusLine(st))}`
+  : `&#10003; Champion &middot; ${he(st.champion ? st.champion.label : '&mdash;')}`
+
+function renderScoreboard(st, T) {
+  const live = !complete(st)
+  const dq = st.dq.length
+    ? `<div class="ticker"><div class="tkH">&#9888; Disqualified at the gate &middot; ${st.dq.length}</div><div class="tkB">${st.dq.map(d => `<span class="dqi"><b>${he(d.category || 'FLAW')}</b> ${he(d.label)}</span>`).join('')}</div></div>` : ''
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${FAVICON}${live ? '<meta http-equiv="refresh" content="2">' : ''}<title>World Cup &mdash; ${live ? 'LIVE' : 'FINAL'}</title><style>
+:root{${T.vars}}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:var(--txt);background:${T.bodyBg};min-height:100vh}
+header{padding:30px 22px 8px;text-align:center;position:relative;overflow:hidden}
+.yr{position:absolute;top:-22px;left:50%;transform:translateX(-50%);font-size:clamp(120px,20vw,190px);font-weight:900;letter-spacing:-.07em;color:var(--yrwm);line-height:1;pointer-events:none;z-index:0}
+.kick{position:relative;z-index:1;font-size:11px;font-weight:900;letter-spacing:.2em;color:var(--accent);text-transform:uppercase}
+header h1{position:relative;z-index:1;margin:3px 0 0;font-size:clamp(40px,7vw,66px);font-weight:900;letter-spacing:-.055em;line-height:.9}
+.pill{position:relative;z-index:1;display:inline-flex;align-items:center;gap:8px;margin-top:12px;padding:7px 16px;border-radius:5px;font-size:12px;font-weight:900;letter-spacing:.09em;text-transform:uppercase}
+.pill.live{background:var(--liveSoft);color:var(--live);box-shadow:inset 0 0 0 1px var(--live)}
+.pill.live .dot{width:9px;height:9px;border-radius:50%;background:var(--live);box-shadow:0 0 8px var(--live);animation:blink 1.6s steps(1) infinite}
+.pill.done{background:var(--win);color:var(--winInk)}
+@keyframes blink{0%,55%{opacity:1}56%,100%{opacity:.25}}
+@media(prefers-reduced-motion:reduce){.pill.live .dot,.lamp{animation:none}}
+.wrap{max-width:1340px;margin:0 auto;padding:6px 18px 44px}
+${CONNECTORS}
+.rh{font-size:11px;font-weight:900;letter-spacing:.18em;text-transform:uppercase;color:var(--accentInk);background:var(--accent);border-radius:4px 4px 0 0;padding:5px 9px;text-align:center}
+.round.champ .rh{background:var(--win);color:var(--winInk)}
+.matches{justify-content:space-around;gap:10px;padding-top:12px}
+.card{background:var(--card);border-radius:5px;box-shadow:inset 4px 0 0 var(--cardHi)}
+.match.pending .card{background:var(--cardDim);box-shadow:inset 4px 0 0 var(--pend)}
+.match.done .card{box-shadow:inset 4px 0 0 var(--accent)}
+.match.playing .card{box-shadow:inset 4px 0 0 var(--accent),0 0 0 1px var(--accent);border-top:1px solid var(--accent)}
+.lamp{position:absolute;top:-4px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--live);box-shadow:0 0 7px var(--live);animation:blink 1.6s steps(1) infinite;z-index:2}
+.liveTag{position:absolute;top:-9px;left:8px;font-size:8px;font-weight:900;letter-spacing:.1em;color:var(--live);background:var(--bg);padding:0 4px}
+.sl{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;min-height:30px}
+.sl+.sl{border-top:1px solid var(--hair)}
+.snm{font-size:13px;font-weight:700}
+.sl.win .snm{color:var(--win);font-weight:900}
+.sl.lose .snm{color:var(--lose);text-decoration:line-through;text-decoration-thickness:1px}
+.sl.tbd .snm{color:var(--tbd)}
+.mg{font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);white-space:nowrap}
+.champcard{display:flex;flex-direction:column;align-items:center;gap:3px;padding:20px 16px;border-radius:7px;background:linear-gradient(180deg,var(--winSoft),transparent);box-shadow:inset 0 0 0 1.5px var(--win)!important;overflow:hidden}
+.champcard::after{content:'';position:absolute;inset:-30% -10% auto;height:140%;background:radial-gradient(50% 60% at 50% 30%,var(--winGlow),transparent 70%);pointer-events:none}
+.champcard.off{background:var(--cardDim);box-shadow:inset 0 0 0 1px var(--pend)!important}
+.cup{font-size:42px;line-height:1;filter:drop-shadow(0 4px 12px var(--winGlow));z-index:1}
+.champcard.off .cup{filter:grayscale(1);opacity:.4}
+.cnm{font-size:clamp(18px,2.2vw,26px);font-weight:900;letter-spacing:-.02em;color:var(--win);text-align:center;line-height:1;z-index:1}
+.champcard.off .cnm{color:var(--mut)}
+.csub{font-size:9px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--mut);z-index:1}
+.sec{font-size:11px;font-weight:900;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);margin:30px 2px 12px;display:flex;align-items:center;gap:10px}
+.sec::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--accent),transparent);opacity:.5}
+.groups{display:grid;grid-template-columns:repeat(8,1fr);gap:10px}
+.bug{background:var(--bg2);border-radius:6px;box-shadow:inset 0 0 0 1px var(--hair);padding:8px 9px;overflow:hidden}
+.bugL{font-size:26px;font-weight:900;letter-spacing:-.03em;color:var(--bugL);line-height:.8;margin-bottom:4px}
+.bug table{width:100%;border-collapse:collapse;font-size:12px}
+.bug td{padding:3px 0}
+.bug td.nm{color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:96px}
+.bug td.rec{text-align:right;color:var(--mut);font-size:10px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 6px 0 4px}
+.bug td.pt{text-align:right;font-weight:800;color:var(--txt);font-variant-numeric:tabular-nums}
+.bug tr.adv td.nm{color:var(--txt);font-weight:700}
+.bug tr.adv td.nm .tk{display:inline-block;width:7px;height:7px;border-radius:2px;background:var(--adv);margin-right:5px;vertical-align:middle}
+.bug tr.adv td.nm .tk.third{width:auto;height:auto;min-width:12px;padding:0 3px;border:1px solid var(--adv);background:transparent;color:var(--adv);font-size:8px;font-weight:900;font-style:normal;line-height:1.1;text-align:center}
+.bug tr.adv td.nm .tk.third::before{content:'3'}
+.bug tr.pend td{color:var(--tbd)}
+.ticker{margin-top:26px;border-radius:6px;overflow:hidden;box-shadow:inset 0 0 0 1px var(--dqSoft);background:var(--dqBg)}
+.tkH{background:var(--dq);color:var(--dqInk);font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px}
+.tkB{display:flex;flex-wrap:wrap;gap:8px 18px;padding:10px 12px;font-size:12.5px}
+.dqi b{color:var(--dq);font-weight:900;letter-spacing:.04em;margin-right:6px}
+${T.sig || ''}
+@media(max-width:760px){.groups{grid-template-columns:repeat(2,1fr)}}
+</style></head><body>
+<header>${T.year ? `<div class="yr">${T.year}</div>` : ''}<div class="kick">${T.kicker}</div><h1>WORLD CUP</h1>
+<div class="pill ${live ? 'live' : 'done'}">${pillInner(st, live)}</div></header>
+<div class="wrap">
+${bracketHTML(st, T.glyph || '&#127942;')}
+<div class="sec">Group stage</div>
+<div class="groups">${groupsHTML(st, 'tk') || '<div style="color:var(--mut)">draw pending&hellip;</div>'}</div>
+${dq}
+</div></body></html>`
+}
+
+// 2026 scoreboard config — an original tournament poster palette that fills the scoreboard var contract.
+// It keeps the international-tournament energy without claiming official event identity.
+const WC2026 = {
+    kicker: '2026 &middot; Tournament', year: '26', glyph: '&#127942;',
+    bodyBg: 'radial-gradient(125% 78% at 50% -12%,#1b1450 0,#0c1030 40%,var(--bg) 82%) fixed',
+    vars: `--bg:#070912;--bg2:#0F1330;--card:#171c3e;--cardHi:#2c2f72;--cardDim:rgba(23,28,62,.55);--accent:#2BE3FF;--accentInk:#03121a;--txt:#F6F8FF;--mut:#98A1CE;--win:#FF2E8B;--winInk:#fff;--winSoft:rgba(255,46,139,.16);--winGlow:rgba(255,46,139,.42);--lose:#5A6298;--pend:#262c5e;--tbd:#3a4072;--adv:#2BE3FF;--hair:rgba(255,255,255,.08);--live:#FF2E8B;--liveSoft:rgba(255,46,139,.14);--dq:#FF8A3D;--dqInk:#1a0d08;--dqSoft:rgba(255,138,61,.3);--dqBg:#19110a;--bugL:#2c2f72;--yrwm:rgba(255,255,255,.05);--rail:#2c2f72;--rdone:#2BE3FF;--rglow:rgba(43,227,255,.45);--rwin:#FF2E8B;--rwinglow:rgba(255,46,139,.5)`,
+    sig: `.yr{top:-30px;font-style:italic;letter-spacing:-.09em;opacity:.92;background:linear-gradient(118deg,#FF2E8B 4%,#FF7A2F 26%,#FFD23F 45%,#2BE3FF 68%,#7A6CFF 96%);-webkit-background-clip:text;background-clip:text;color:transparent}
+header h1{color:#F6F8FF;text-shadow:0 2px 18px rgba(7,9,18,.7)}
+.kick{letter-spacing:.2em;background:linear-gradient(90deg,#FF2E8B,#2BE3FF);-webkit-background-clip:text;background-clip:text;color:transparent}
+header::after{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,#FF2E8B,#FF7A2F,#FFD23F,#2BE3FF,#7A6CFF)}`,
+}
+
+function bracketSVG(st, seedOf, champGlyph) {
+  const tree = viewTree(st)   // blank skeleton during the group stage rather than a hidden knockout area
+  if (!tree || !tree.length) return { html: '<div class="bracketScroll"><div class="ko"></div></div>', css: '' }
+  tree.forEach((r, ri) => r.matches.forEach((m, mi) => {
+    if (m.winner == null) { m.elim = false; return }
+    const nm = tree[ri + 1] && tree[ri + 1].matches[mi >> 1]
+    m.elim = !!(nm && nm.winner != null && nm.winner !== m.winner)
+  }))
+  const W = 184, G = 56, ROW = 78
+  const H = tree[0].matches.length * ROW
+  const koW = tree.length * W + (tree.length - 1) * G
+  const slot = (name, cls, mg) => `<div class="sl ${cls}">${seedOf && name != null ? `<span class="seed">${he(seedOf(name) || '')}</span>` : ''}<span class="snm">${name == null ? '&mdash;' : he(name)}</span>${mg ? `<span class="mg">${he(mg)}</span>` : ''}</div>`
+  const inner = m => {
+    if (m.status === 'pending') return slot(null, 'tbd') + slot(null, 'tbd')
+    if (m.status === 'playing') return slot(m.a, 'play') + slot(m.b, 'play')
+    const aw = m.winner != null && m.winner === m.a
+    return slot(m.a, aw ? 'win' : 'lose', aw ? m.margin : '') + slot(m.b, aw ? 'lose' : 'win', aw ? '' : m.margin)
+  }
+  const matchHtml = m => `<div class="match ${m.status}">${m.status === 'playing' ? '<span class="liveTag">LIVE</span>' : ''}<div class="card"${m.reason ? ` title="${he(m.reason)}"` : ''}>${inner(m)}</div></div>`
+  const cols = tree.map(r => `<div class="kocol"><div class="matches">${r.matches.map(matchHtml).join('')}</div></div>`).join('')
+  // connectors via the shared bracketConn engine; arena has no header band, so yOff = 0.
+  const svg = `<svg class="conn" viewBox="0 0 ${koW} ${H}" width="${koW}" height="${H}">${bracketConn(tree, W, G, H, 0)}</svg>`
+  const champCard = st.champion
+    ? `<div class="match done"><div class="card champcard"><span class="cup">${champGlyph}</span><span class="cnm">${he(st.champion.label)}</span><span class="csub">Champion</span></div></div>`
+    : `<div class="match pending"><div class="card champcard off"><span class="cup">${champGlyph}</span><span class="cnm">&mdash;</span><span class="csub">awaiting final</span></div></div>`
+  const html = `<div class="bracketScroll"><div class="ko"><div class="koInner">${svg}<div class="kocols">${cols}</div></div><div class="champcol${st.champion ? ' lit' : ''}"><div class="matches">${champCard}</div></div></div></div>`
+  return { html, css: `.koInner{width:${koW}px;height:${H}px}.kocol .matches{height:${H}px}.champcol{height:${H}px}` }
+}
+
+// ════════════════════════════ ARENA — game-UI grammar (console sports HUD, not TV broadcast). Steel base, ONE
+// mint system color (selected/live/active route), GOLD reserved for EARNED outcomes (winner row/route/champion).
+// A progression-rail HUD ("R16 8/8 · QF 2/4 · SF LOCK"), a SPECTATOR/AUTO-SIM strip, octagon champion item,
+// one mint focus-sweep on the live match. 80/15/5 color discipline; names upright; no faked ratings/controls.
+function renderArena(st) {
+  const live = !complete(st)
+  const tree = viewTree(st) || []   // rail reflects the (blank) skeleton during the group stage too
+  // honest seed tag: each knockout team's group + finish rank (A1 = won group A). Not a faked OVR/position.
+  const seedMap = Object.create(null)   // keyed by event-supplied labels — never Object.prototype
+  for (const G of st.groupOrder) ((st.groups[G] && st.groups[G].advanced) || []).forEach((label, i) => { seedMap[label] = G + (i + 1) })
+  const seedOf = label => seedMap[label] || ''
+  const bsvg = bracketSVG(st, seedOf, '&#127942;')
+  const rail = tree.map(r => {
+    const done = r.matches.filter(m => m.status === 'done').length, total = r.matches.length
+    const playing = r.matches.some(m => m.status === 'playing')
+    return { stakes: r.stakes, done, total, status: done === total && total ? 'cmpl' : (playing || done > 0 ? 'live' : 'lock') }
+  })
+  // Honest live label: a KO round only counts as "live" once it has a playing/done match; before that the
+  // GROUP STAGE is what's live (not R16). Prevents the HUD claiming "● LIVE R16" while groups are still forming.
+  const liveStage = (rail.find(r => r.status === 'live') || {}).stakes || (st.champion ? 'FINAL' : 'Groups')
+  // robust to a missing/late draw beacon: the format is known from st.field OR proven by any group that
+  // advanced a third (advanced.length > 2), so a stale "top two" label can't show once thirds qualify.
+  const anyThird = st.groupOrder.some(G => (((st.groups[G] || {}).advanced) || []).length > 2)
+  const groupRule = (st.field === 48 || anyThird) ? 'top 2 + best thirds advance' : 'top two advance'
+  const railHTML = rail.map(r => `<div class="stg ${r.status}"><span class="stgN">${he(r.stakes)}</span><span class="stgC">${r.status === 'lock' ? 'LOCK' : r.done + '/' + r.total}</span></div>`).join('')
+  const dq = st.dq.length
+    ? `<div class="gate"><div class="gateH"><span class="gx">&#9651;</span> Gate review &mdash; rejected <span class="gn">${st.dq.length}</span></div><div class="gateB">${st.dq.map(d => `<span class="dqi"><span class="dtag">${he(d.category || 'FLAW')}</span> ${he(d.label)}</span>`).join('')}</div></div>` : ''
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${FAVICON}${live ? '<meta http-equiv="refresh" content="2">' : ''}<title>World Cup &mdash; ${live ? 'LIVE' : 'FINAL'}</title><style>
+:root{--bg0:#05070B;--bg1:#09111A;--s0:#0E1722;--s1:#141F2B;--s2:#192633;--line:#2A3542;--txt:#F4F7FA;--mut:#8491A0;--ui:#37F0C0;--uiDim:#173D36;--uiGlow:rgba(55,240,192,.5);--gold:#F2C44C;--goldHi:#FFF0A3;--win:#F2C44C;--lose:#66717E;--pend:#36414D;--live:#FF3B5C;--dq:#FF683D;
+ --rail:#2A3542;--rdone:#F2C44C;--rglow:rgba(242,196,76,.4);--rwin:#F2C44C;--rwinglow:rgba(242,196,76,.5)}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:var(--txt);min-height:100vh;background:
+ radial-gradient(75% 60% at 50% -10%,#172536 0,var(--bg1) 45%,var(--bg0) 78%) fixed,
+ repeating-linear-gradient(115deg,transparent 0 72px,rgba(55,240,192,.025) 73px 74px,transparent 75px 146px)}
+.shell{max-width:1360px;margin:0 auto;padding:18px}
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:14px}
+.brand{display:flex;align-items:center;gap:11px}
+.bTrophy{font-size:30px;line-height:1;filter:drop-shadow(0 0 6px rgba(242,196,76,.4))}
+.bName{font-size:22px;font-weight:900;font-style:italic;letter-spacing:-.04em;text-transform:uppercase;line-height:.92}
+.bMode{font-size:10px;font-weight:900;letter-spacing:.22em;text-transform:uppercase;color:var(--ui)}
+.rail{display:flex;align-items:stretch;gap:6px}
+.stg{display:flex;flex-direction:column;align-items:center;gap:1px;padding:5px 11px;background:var(--s0);box-shadow:inset 0 0 0 1px var(--line);transform:skewX(-9deg)}
+.stg>span{transform:skewX(9deg)}
+.stgN{font-size:11px;font-weight:900;letter-spacing:.12em}.stgC{font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--mut);font-variant-numeric:tabular-nums}
+.stg.live{background:var(--uiDim);box-shadow:inset 0 0 0 1px var(--ui)}.stg.live .stgN{color:var(--ui)}.stg.live .stgC{color:var(--ui)}
+.stg.cmpl .stgN{color:var(--gold)}.stg.cmpl{box-shadow:inset 0 0 0 1px rgba(242,196,76,.4),inset 0 -3px 0 var(--gold)}
+.stg.lock{opacity:.55}.stg.lock .stgN{color:var(--mut)}
+.hud{display:flex;align-items:stretch;gap:0}
+.hudSeg{font-size:10px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;padding:6px 11px;background:var(--s0);box-shadow:inset 0 0 0 1px var(--line);color:var(--mut);transform:skewX(-9deg);display:flex;align-items:center}
+.hudSeg>span{transform:skewX(9deg);display:flex;align-items:center;gap:6px}
+.hudSeg.spec{color:var(--txt)}
+.hudSeg.liveSeg{color:var(--live)}.hudSeg.liveSeg .d{width:7px;height:7px;border-radius:50%;background:var(--live);box-shadow:0 0 7px var(--live);animation:blink 1.6s steps(1) infinite}
+.hudSeg.doneSeg{color:var(--gold)}
+.hudSeg.stage{color:var(--ui)}
+@keyframes blink{0%,55%{opacity:1}56%,100%{opacity:.2}}
+/* SVG bracket — connectors are an explicit <svg> overlay (bracketSVG); cards laid out so they align exactly. */
+.bracketScroll{overflow-x:auto;padding-bottom:8px}
+.ko{display:flex;gap:56px;align-items:center;padding:20px 6px 6px}
+.koInner{position:relative;flex:0 0 auto}
+.conn{position:absolute;inset:0;z-index:0;pointer-events:none}
+/* Connectors decouple three concerns that kept fighting each other (per GPT Pro consult): (1) CARD CLEARANCE — a
+   per-gap <clipPath> in bracketSVG hard-clips every stroke to the gutter, so nothing can paint into a card column
+   (paint-order is NOT clipping: the card's translucent shadow would otherwise bleed over a flush line); (2) ELBOW
+   CORNERS — each feeder+riser is ONE <path> with linejoin:round, so there is no overshoot nub to draw; (3) the
+   T-SEAM — a small <circle> at the junction, coloured deliberately. Caps no longer do double duty. */
+.conn line,.conn path{fill:none;stroke-width:3;stroke:var(--rail);stroke-linecap:butt;stroke-linejoin:round}
+.conn line.cw,.conn path.cw{stroke:var(--rdone)}
+.conn line.ca,.conn path.ca{stroke:var(--ui)}
+.conn circle{stroke:none;fill:var(--rail)}
+.conn circle.cw{fill:var(--rdone)}
+.conn circle.ca{fill:var(--ui)}
+.kocols{display:flex;gap:56px;height:100%;position:relative;z-index:1}
+.kocol{width:184px;flex:0 0 184px;height:100%}
+.kocol .matches{display:flex;flex-direction:column;justify-content:space-around}
+.champcol{position:relative;flex:0 0 250px;display:flex;align-items:center}
+/* the winner's road continued into the trophy — steel while awaiting, gold once the final is earned. Spans the
+   .ko 56px gutter so the FINAL card connects to the octagon instead of the champion floating disconnected. */
+.champcol::before{content:'';position:absolute;right:100%;top:50%;width:56px;height:3px;margin-top:-1.5px;background:var(--rail)}
+.champcol.lit::before{background:var(--rdone);box-shadow:0 0 7px var(--rglow)}
+.champcol .matches{width:100%}
+${bsvg.css}
+.match{position:relative;display:flex;align-items:center;justify-content:center}
+/* downward-only depth shadow (negative spread pulls the penumbra in from the sides) instead of filter:drop-shadow,
+   whose wide Gaussian footprint bled a translucent mask over the connectors flanking each card. */
+.card{position:relative;width:100%;background:linear-gradient(180deg,var(--s1),var(--s0));border-radius:3px;box-shadow:inset 0 0 0 1px var(--line),0 4px 8px -6px rgba(0,0,0,.55)}
+.match.pending .card{background:var(--s0);box-shadow:inset 0 0 0 1px var(--line)}
+.match.playing .card{box-shadow:inset 0 0 0 1px var(--ui);border-top:2px solid var(--ui);overflow:hidden}
+.match.playing .card::after{content:'';position:absolute;z-index:4;top:0;left:-42%;width:42%;height:2px;background:linear-gradient(90deg,transparent,var(--ui),#fff,transparent);filter:drop-shadow(0 0 5px var(--ui));animation:sweep 2s linear infinite}
+@keyframes sweep{to{transform:translateX(340%)}}
+@media(prefers-reduced-motion:reduce){.hudSeg.liveSeg .d{animation:none}.match.playing .card::after{display:none}}
+.lamp{display:none}
+.liveTag{position:absolute;top:-8px;left:9px;font-size:8px;font-weight:900;letter-spacing:.12em;color:var(--live);background:var(--bg0);padding:0 4px;z-index:5}
+.sl{display:flex;align-items:center;gap:9px;padding:7px 10px;min-height:32px}
+.sl+.sl{border-top:1px solid rgba(255,255,255,.05)}
+.match.pending .sl+.sl{border-top:1px dashed var(--line)}
+.seed{flex:0 0 auto;font-size:11px;font-weight:900;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--mut);background:var(--s2);box-shadow:inset 0 0 0 1px var(--line);border-radius:2px;padding:2px 5px;min-width:26px;text-align:center}
+.snm{flex:1;font-size:14px;font-weight:700;letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sl.win{background:linear-gradient(90deg,rgba(242,196,76,.13),rgba(242,196,76,.03) 70%,transparent)}
+.sl.win .snm{font-weight:900;color:var(--goldHi)}
+.sl.win .seed{color:var(--gold);box-shadow:inset 0 0 0 1px rgba(242,196,76,.4)}
+.sl.lose .snm{color:var(--lose);text-decoration:line-through;text-decoration-thickness:1px}
+.sl.lose .seed{color:#4a5560}
+.sl.play .snm{color:var(--txt)}
+.sl.tbd .snm{color:#3a4450}.sl.tbd .seed{color:#3a4450}
+.mg{flex:0 0 auto;font-size:8.5px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);background:var(--bg0);box-shadow:inset 0 0 0 1px rgba(242,196,76,.3);border-radius:2px;padding:2px 6px;white-space:nowrap}
+.round.champ{flex:0 0 250px;width:250px}
+.champ .matches{padding-top:8px}
+.champcard{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:34px 18px;background:var(--gold);box-shadow:none!important;clip-path:polygon(22% 0,78% 0,100% 22%,100% 78%,78% 100%,22% 100%,0 78%,0 22%);filter:drop-shadow(0 6px 16px rgba(0,0,0,.5))}
+.champcard::before{content:'';position:absolute;inset:2px;clip-path:polygon(22% 0,78% 0,100% 22%,100% 78%,78% 100%,22% 100%,0 78%,0 22%);background:radial-gradient(70% 70% at 50% 38%,var(--s2),var(--bg0));z-index:0}
+.champcard.off{background:var(--line)}
+.champcard.off::before{background:var(--s0)}
+.cup{position:relative;z-index:1;font-size:42px;line-height:1;filter:drop-shadow(0 2px 6px rgba(0,0,0,.5))}
+.champcard.off .cup{filter:grayscale(1);opacity:.45}
+.cnm{position:relative;z-index:1;font-size:clamp(18px,2.2vw,26px);font-weight:900;font-style:italic;letter-spacing:-.03em;text-transform:uppercase;color:var(--goldHi);text-align:center;line-height:.95}
+.champcard.off .cnm{color:var(--mut);font-style:normal}
+.csub{position:relative;z-index:1;font-size:9px;font-weight:900;letter-spacing:.24em;text-transform:uppercase;color:var(--gold)}
+.champcard.off .csub{color:var(--mut)}
+.sec{font-size:10px;font-weight:900;letter-spacing:.22em;text-transform:uppercase;color:var(--mut);margin:30px 2px 12px;display:flex;align-items:center;gap:10px}
+.sec b{color:var(--ui)}.sec::after{content:'';flex:1;height:1px;background:var(--line)}
+.groups{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.bug{background:linear-gradient(180deg,var(--s1),var(--s0));box-shadow:inset 0 0 0 1px var(--line);border-radius:3px;padding:9px 11px;position:relative}
+.bugT{display:flex;align-items:baseline;gap:7px;margin-bottom:5px}
+.bugL{font-size:24px;font-weight:900;font-style:italic;letter-spacing:-.04em;line-height:.8;color:var(--txt)}
+.bugLab{font-size:8px;font-weight:900;letter-spacing:.2em;text-transform:uppercase;color:var(--mut)}
+.bug table{width:100%;border-collapse:collapse;font-size:12px}
+.bug td{padding:3px 0}
+.bug td.nm{color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px}
+.bug td.rec{text-align:right;color:var(--mut);font-size:10px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 6px 0 4px}
+.bug td.pt{text-align:right;font-weight:900;color:var(--txt);font-variant-numeric:tabular-nums}
+/* advancing indicator: a mint tint across the qualified rows (a horizontal "qualification zone", no left rail) + the Q chip */
+.bug tr.adv td{background:rgba(55,240,192,.08)}
+.bug tr.adv td.nm{color:var(--txt);font-weight:700}
+.bug tr.adv td.pt{color:var(--ui)}
+.bug tr.adv td.nm .tk{display:inline-block;font-size:7px;font-weight:900;letter-spacing:.05em;color:#04140f;background:var(--ui);border-radius:2px;padding:1px 4px;margin-right:6px;vertical-align:middle}
+.bug tr.adv td.nm .tk::before{content:'Q'}
+.bug tr.adv td.nm .tk.third{color:var(--ui);background:transparent;box-shadow:inset 0 0 0 1px var(--ui);font-style:normal}
+.bug tr.adv td.nm .tk.third::before{content:'3'}
+.bug tr.pend td{color:#3a4450}
+.gate{margin-top:26px;background:var(--s0);box-shadow:inset 0 0 0 1px var(--line),inset 0 2px 0 var(--dq);border-radius:3px}
+.gateH{font-size:10px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;color:var(--dq);padding:8px 12px 4px;display:flex;align-items:center;gap:7px}
+.gateH .gx{font-size:9px}.gateH .gn{color:var(--txt);background:var(--s2);box-shadow:inset 0 0 0 1px var(--line);border-radius:2px;padding:0 6px;margin-left:2px}
+.gateB{display:flex;flex-wrap:wrap;gap:7px 16px;padding:4px 12px 11px;font-size:12.5px}
+.dtag{font-size:9px;font-weight:900;letter-spacing:.05em;color:var(--dq);background:var(--bg0);box-shadow:inset 0 0 0 1px rgba(255,104,61,.4);border-radius:2px;padding:1px 5px;margin-right:5px}
+@media(max-width:760px){.groups{grid-template-columns:repeat(2,1fr)}header{justify-content:center}}
+</style></head><body>
+<div class="shell">
+<header>
+<div class="brand"><span class="bTrophy">&#127942;</span><div><div class="bName">World Cup</div><div class="bMode">Arena</div></div></div>
+<div class="rail">${railHTML || '<div class="stg lock"><span class="stgN">R16</span><span class="stgC">LOCK</span></div>'}</div>
+<div class="hud"><span class="hudSeg spec"><span>Spectator</span></span><span class="hudSeg ${live ? 'liveSeg' : 'doneSeg'}"><span>${live ? '<span class="d"></span>Live' : '&#10003; Final'}</span></span><span class="hudSeg stage"><span>${live ? he(liveStage) : 'Champion'}</span></span>${st.field ? `<span class="hudSeg"><span>${st.field}&#8201;Team</span></span>` : ''}</div>
+</header>
+${bsvg.html}
+  <div class="sec"><b>Group stage</b> &middot; ${groupRule}</div>
+<div class="groups">${groupsArena(st) || '<div style="color:var(--mut)">draw pending&hellip;</div>'}</div>
+${dq}
+</div></body></html>`
+}
+// arena groups: console-like tiles with a GROUP micro-label + big id + mint Q badges (not gold).
+function groupsArena(st) {
+  const adv = G => (st.groups[G] && st.groups[G].advanced) || []
+  return st.groupOrder.map(G => {
+    const g = st.groups[G]
+    const rows = g.table
+      ? g.table.map(t => groupRow(t, adv(G), 'tk')).join('')
+      : (g.teams || []).map(t => `<tr class="pend"><td class="nm">${he(t.label)}</td><td class="pt">&middot;</td></tr>`).join('')
+    return `<div class="bug"><div class="bugT"><span class="bugL">${he(G)}</span><span class="bugLab">Group</span></div><table>${rows}</table></div>`
+  }).join('')
+}
+
+// ════════════════════════════ CONCRETE — brutalist concrete-and-ink match poster. Heavy black borders, hard
+// offset shadows, monospace, oversized Arial-Black headline, ONE safety-orange accent tracing the winner's
+// road. No radius, no gradients, no glow. Reuses the shared bracket skeleton + connector rails (recoloured).
+function renderConcrete(st) {
+  const live = !complete(st)
+  const dq = st.dq.length
+    ? `<div class="ticker"><div class="tkH">&#9888; DISQUALIFIED AT THE GATE &middot; ${st.dq.length}</div><div class="tkB">${st.dq.map(d => `<span class="dqi"><b>${he(d.category || 'FLAW')}</b> ${he(d.label)}</span>`).join('')}</div></div>` : ''
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${FAVICON}${live ? '<meta http-equiv="refresh" content="2">' : ''}<title>WORLD CUP &mdash; ${live ? 'LIVE' : 'FINAL'}</title><style>
+:root{--ink:#0B0B0B;--paper:#E8E4D8;--paper2:#DCD7C7;--accent:#FF3B00;--mut:#5B584E;--rail:#0B0B0B;--rdone:#FF3B00;--rglow:transparent;--rwin:#FF3B00;--rwinglow:transparent}
+*{box-sizing:border-box}
+body{margin:0;font:13px/1.4 ui-monospace,'SF Mono',Menlo,Consolas,monospace;color:var(--ink);background:var(--paper);min-height:100vh;background-image:repeating-linear-gradient(0deg,transparent 0 38px,rgba(11,11,11,.025) 38px 39px)}
+header{padding:28px 20px 14px;border-bottom:5px solid var(--ink);position:relative}
+.kick{font-size:11px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;margin-bottom:4px}
+header h1{margin:0;font:900 clamp(44px,9vw,100px)/.84 'Arial Black','Helvetica Neue',system-ui,sans-serif;letter-spacing:-.04em;text-transform:uppercase}
+header h1 .o{color:var(--accent);-webkit-text-stroke:2px var(--ink)}
+.meta{position:absolute;top:28px;right:20px;text-align:right;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;line-height:1.7}
+.pill{display:inline-block;margin-top:14px;padding:6px 13px;font-size:12px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;border:2px solid var(--ink)}
+.pill.live{background:var(--accent);color:var(--paper)}
+.pill.done{background:var(--ink);color:var(--paper)}
+.pill .dot{display:inline-block;width:8px;height:8px;background:var(--paper);margin-right:7px;vertical-align:middle;animation:blk 1s steps(1) infinite}
+@keyframes blk{0%,50%{opacity:1}51%,100%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.pill .dot,.lamp{animation:none}}
+.wrap{max-width:1340px;margin:0 auto;padding:18px 18px 50px}
+${CONNECTORS}
+.bracket{padding-top:18px}
+.rh{font-size:11px;font-weight:900;letter-spacing:.16em;text-transform:uppercase;color:var(--paper);background:var(--ink);padding:5px 8px;text-align:center}
+.round.champ .rh{background:var(--accent);color:var(--ink)}
+.matches{justify-content:space-around;gap:12px;padding-top:14px}
+.card{background:var(--paper2);border:2px solid var(--ink);box-shadow:4px 4px 0 var(--ink)}
+.match.pending .card{background:transparent;border-style:dashed;box-shadow:none;opacity:.5}
+.match.done .card{background:#F1EEE4}
+.match.playing .card{box-shadow:4px 4px 0 var(--accent)}
+.match.elim .card{box-shadow:2px 2px 0 var(--mut)}
+.lamp{position:absolute;top:-2px;right:6px;width:8px;height:8px;background:var(--accent);animation:blk 1s steps(1) infinite;z-index:2}
+.liveTag{position:absolute;top:-11px;left:-2px;font-size:9px;font-weight:900;letter-spacing:.08em;color:var(--paper);background:var(--accent);padding:1px 5px;border:2px solid var(--ink)}
+.sl{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 9px;min-height:30px}
+.sl+.sl{border-top:2px solid var(--ink)}
+.snm{font-size:12.5px;font-weight:700;text-transform:uppercase}
+.sl.win{background:var(--ink)}
+.sl.win .snm{color:var(--paper);font-weight:900}
+.sl.lose .snm{color:var(--mut);text-decoration:line-through;text-decoration-thickness:2px}
+.sl.tbd .snm{color:var(--mut);opacity:.5}
+.sl.play .snm{font-weight:800}
+.mg{font-size:9px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;background:var(--accent);color:var(--ink);padding:1px 4px;white-space:nowrap}
+.champcard{display:flex;flex-direction:column;align-items:center;gap:4px;padding:18px 14px;background:var(--accent);border:2px solid var(--ink);box-shadow:5px 5px 0 var(--ink)}
+.champcard.off{background:transparent;border-style:dashed;box-shadow:none;opacity:.55}
+.cup{font-size:40px;line-height:1}
+.cnm{font-size:clamp(17px,2.1vw,24px);font-weight:900;letter-spacing:-.01em;text-transform:uppercase;text-align:center;line-height:1;color:var(--ink)}
+.champcard.off .cnm{color:var(--mut)}
+.csub{font-size:9px;font-weight:900;letter-spacing:.2em;text-transform:uppercase;color:var(--ink)}
+.champcard.off .csub{color:var(--mut)}
+.sec{font-size:12px;font-weight:900;letter-spacing:.18em;text-transform:uppercase;margin:34px 0 12px;padding-bottom:6px;border-bottom:3px solid var(--ink)}
+.groups{display:grid;grid-template-columns:repeat(8,1fr);gap:0;border:2px solid var(--ink);border-right:0;border-bottom:0}
+.bug{border-right:2px solid var(--ink);border-bottom:2px solid var(--ink);padding:8px 9px;background:var(--paper2);overflow:hidden}
+.bugL{font:900 22px/.8 'Arial Black','Helvetica Neue',system-ui,sans-serif;margin-bottom:5px}
+.bug table{width:100%;border-collapse:collapse;font-size:11.5px}
+.bug td{padding:2px 0}
+.bug td.nm{text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:96px;color:var(--mut)}
+.bug td.rec{text-align:right;color:var(--mut);font-size:9.5px;font-weight:900;font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 6px 0 4px}
+.bug td.pt{text-align:right;font-weight:900;font-variant-numeric:tabular-nums}
+.bug tr.adv td.nm{color:var(--ink);font-weight:700}
+.bug tr.adv td.nm .tk{display:inline-block;width:7px;height:7px;background:var(--accent);margin-right:5px;vertical-align:middle}
+.bug tr.adv td.nm .tk.third{width:auto;height:auto;min-width:12px;padding:0 2px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-size:8px;font-weight:900;font-style:normal;line-height:1.1;text-align:center}
+.bug tr.adv td.nm .tk.third::before{content:'3'}
+.bug tr.pend td{color:var(--mut);opacity:.5}
+.ticker{margin-top:28px;border:2px solid var(--ink)}
+.tkH{background:var(--accent);color:var(--ink);font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;padding:6px 12px;border-bottom:2px solid var(--ink)}
+.tkB{display:flex;flex-wrap:wrap;gap:8px 18px;padding:10px 12px;font-size:12px}
+.dqi b{font-weight:900;margin-right:6px;text-transform:uppercase}
+@media(max-width:760px){.groups{grid-template-columns:repeat(2,1fr)}.meta{display:none}}
+</style></head><body>
+<header><div class="meta">${live ? '&#9679; LIVE FEED' : 'FINAL'}<br>${he(statusLine(st))}</div>
+<div class="kick">Open Bracket &middot; Live Tournament &middot; Concrete Cut</div>
+<h1>W<span class="o">O</span>RLD CUP</h1>
+<div class="pill ${live ? 'live' : 'done'}">${live ? '<span class="dot"></span>LIVE' : '&#10003; CHAMPION &middot; ' + he(st.champion ? st.champion.label : '&mdash;')}</div></header>
+<div class="wrap">
+${bracketHTML(st, '&#127942;')}
+<div class="sec">GROUP STAGE</div>
+<div class="groups">${groupsHTML(st, 'tk') || '<div style="padding:10px">DRAW PENDING&hellip;</div>'}</div>
+${dq}
+</div></body></html>`
+}
+
+// Theme registry + dispatcher. live-view's tick() calls render(st); the theme is chosen once at startup.
+// Three curated looks: arena (game-UI console), concrete (brutalist match poster), 2026 (poster scoreboard).
+const THEMES = {
+  __proto__: null,   // null-proto: looked up by the user's --theme string (`--theme __proto__` must miss, not crash)
+  'arena': renderArena, 'concrete': renderConcrete, '2026': st => renderScoreboard(st, WC2026),
+}
+let LIVE_THEME = process.env.WORLDCUP_LIVE_THEME || 'arena'
+function render(st, theme) { return (THEMES[theme || LIVE_THEME] || renderArena)(st) }
+
+// ─────────────────────────────────────────────────────────── --demo (embedded deterministic tournament)
+// Zero-setup showcase: `node live-view.js --demo --serve` (or `npm run demo`). A scripted 32-team run —
+// every shape the producer emits (gate DQ → draw → partial→final groups → bracket → 15 knockout matches →
+// round summaries → champion), wrapped EXACTLY like journal beacons and staged as a REAL tmpdir journal, so
+// the demo drives the same tail/fold/render/serve paths as a live run (composes with --theme/--switcher/
+// --serve/--once). No Math.random — the bracket is a fixed story. Entrants are variant labels (the real use
+// case: essay/tagline variants), register×football mashups, trademark-clean.
+const DEMO_GROUPS = [   // [group, t0..t3] in FINAL standing order; top two advance
+  ['A', 'deadpan-gegenpress', 'cold-open', 'long-ball-lede', 'park-the-thesis'],
+  ['B', 'thesis-first', 'tiki-taka-prose', 'high-press-hook', 'wing-play-aside'],
+  ['C', 'route-one', 'false-nine', 'nutmeg-negation', 'total-football-essay'],
+  ['D', 'dry-wit-counter', 'catenaccio-caveat', 'overlap-anecdote', 'one-touch-tagline'],
+  ['E', 'pressing-question', 'deep-lying-premise', 'box-to-box-brief', 'target-man-topic'],
+  ['F', 'through-ball-throughline', 'offside-trap-irony', 'set-piece-syllogism', 'counter-attack-coda'],
+  ['G', 'sweeper-keeper-summary', 'inverted-winger-inversion', 'half-space-hedge', 'low-block-litotes'],
+  ['H', 'galactico-gloss', 'pivot-paragraph', 'ole-outline', 'stoppage-time-stinger'],
+]
+// Three arithmetically consistent round-robin arcs (cumulative [pts,w,d,l] per team after each of 3 waves),
+// cycled A..H — the two PARTIAL groups snapshots visibly build and second place changes hands mid-stage.
+const DEMO_ARCS = [
+  [[[3, 1, 0, 0], [1, 0, 1, 0], [1, 0, 1, 0], [0, 0, 0, 1]], [[4, 1, 1, 0], [2, 0, 2, 0], [4, 1, 1, 0], [0, 0, 0, 2]], [[7, 2, 1, 0], [5, 1, 2, 0], [4, 1, 1, 1], [0, 0, 0, 3]]],
+  [[[3, 1, 0, 0], [0, 0, 0, 1], [3, 1, 0, 0], [0, 0, 0, 1]], [[6, 2, 0, 0], [3, 1, 0, 1], [3, 1, 0, 1], [0, 0, 0, 2]], [[9, 3, 0, 0], [6, 2, 0, 1], [3, 1, 0, 2], [0, 0, 0, 3]]],
+  [[[1, 0, 1, 0], [1, 0, 1, 0], [1, 0, 1, 0], [1, 0, 1, 0]], [[4, 1, 1, 0], [4, 1, 1, 0], [1, 0, 1, 1], [1, 0, 1, 1]], [[7, 2, 1, 0], [5, 1, 2, 0], [2, 0, 2, 1], [1, 0, 1, 2]]],
+]
+// Knockout script: [a, b, winner, margin, reason]. Standard feed (winner of slot i → next round ⌊i/2⌋);
+// R16 pairs group winners with cross-group runners-up. One 'pens' (the final); two R16 upsets.
+const DEMO_KO = [
+  ['R16', [
+    ['deadpan-gegenpress', 'tiki-taka-prose', 'deadpan-gegenpress', 'clear', 'flat voice smothers the flourish'],
+    ['route-one', 'catenaccio-caveat', 'route-one', 'clear', 'direct thesis over a wall of hedges'],
+    ['pressing-question', 'offside-trap-irony', 'pressing-question', 'narrow', 'the hook lands before the irony springs'],
+    ['sweeper-keeper-summary', 'pivot-paragraph', 'sweeper-keeper-summary', 'clear', 'cleans up everything the pivot leaves loose'],
+    ['thesis-first', 'cold-open', 'cold-open', 'narrow', 'the anecdote outruns the abstract'],
+    ['dry-wit-counter', 'false-nine', 'false-nine', 'narrow', 'drops deep, drags the joke out of position'],
+    ['through-ball-throughline', 'deep-lying-premise', 'through-ball-throughline', 'clear', 'one pass splits the buried premise'],
+    ['galactico-gloss', 'inverted-winger-inversion', 'galactico-gloss', 'clear', 'star polish beats a double negative'],
+  ]],
+  ['QF', [
+    ['deadpan-gegenpress', 'route-one', 'deadpan-gegenpress', 'narrow', 'wins the plain-language derby on chances made'],
+    ['pressing-question', 'sweeper-keeper-summary', 'sweeper-keeper-summary', 'clear', 'answers the question, then files it'],
+    ['cold-open', 'false-nine', 'cold-open', 'clear', 'scene beats scheme'],
+    ['through-ball-throughline', 'galactico-gloss', 'galactico-gloss', 'narrow', 'surface shine survives the killer pass'],
+  ]],
+  ['SF', [
+    ['deadpan-gegenpress', 'sweeper-keeper-summary', 'deadpan-gegenpress', 'clear', 'no tidy summary survives the press'],
+    ['cold-open', 'galactico-gloss', 'cold-open', 'narrow', 'substance edges sparkle in added time'],
+  ]],
+  ['FINAL', [
+    ['deadpan-gegenpress', 'cold-open', 'cold-open', 'pens', 'level after extra time; the opener converts the fifth'],
+  ]],
+]
+function demoEvents() {   // the 26 events of a 32-field run, seq 1..26 in emit order
+  const evs = []
+  const push = e => { e.seq = evs.length + 1; evs.push(e) }
+  push({ ev: 'gate', field: 32, disqualified: [{ label: 'ghost-goal-citation', category: 'FABRICATION' }] })   // exactly ONE DQ → the gate panel shows
+  push({ ev: 'draw', field: 32, groups: DEMO_GROUPS.map(([g, ...teams], gi) => ({ group: g, teams: teams.map((label, ti) => ({ label, seed: ti * 8 + gi + 1 })) })) })
+  for (let wave = 0; wave < 3; wave++) push({ ev: 'groups', standings: DEMO_GROUPS.map(([g, ...teams], gi) => ({
+    group: g,
+    table: teams.map((label, ti) => { const [pts, w, d, l] = DEMO_ARCS[gi % 3][wave][ti]; return { label, pts, w, d, l } }).sort((x, y) => y.pts - x.pts),
+    advanced: wave === 2 ? teams.slice(0, 2) : [],   // two PARTIAL snapshots, then the final one with advancers
+  })) })
+  push({ ev: 'bracket', rounds: DEMO_KO.map(([stakes, ms]) => ({ stakes, matches: ms.map((m, slot) => ({ slot, a: stakes === 'R16' ? m[0] : null, b: stakes === 'R16' ? m[1] : null })) })) })
+  for (const [stakes, ms] of DEMO_KO) {
+    ms.forEach(([a, b, winner, margin, reason], slot) => push({ ev: 'match', stakes, slot, winner, loser: winner === a ? b : a, margin, reason }))
+    push({ ev: 'round', stakes, matches: ms.map(([a, b, winner, margin, reason]) => ({ winner, loser: winner === a ? b : a, margin, reason })), eliminated: ms.map(([a, b, winner]) => (winner === a ? b : a)) })
+  }
+  push({ ev: 'champion', label: DEMO_KO[3][1][0][2], stakes: 'FINAL' })
+  return evs
+}
+// Wire framing — byte-shape of a real journal beacon line (nonce:'' = unauthenticated, like a real
+// no-liveNonce run), so parseEvents/fold can't tell the demo from a live run.
+function demoLines() { return demoEvents().map(e => JSON.stringify({ type: 'result', result: Object.assign({ __wc: 'EVENT', nonce: '' }, e) })) }
+// Stage the demo journal under tmpdir and point the NORMAL machinery at it. --once gets every line up
+// front; live modes drip one beacon every 700ms so the bracket visibly fills over ~20s.
+function setupDemo(a) {
+  a.events = require('path').join(require('os').tmpdir(), `worldcup-demo-${process.pid}-${Date.now()}.jsonl`)
+  process.on('exit', () => { try { fs.unlinkSync(a.events) } catch (e) { /* already gone */ } })
+  const lines = demoLines()
+  if (a.once) { fs.writeFileSync(a.events, lines.join('\n') + '\n'); return }
+  fs.writeFileSync(a.events, lines.shift() + '\n')
+  const w = setInterval(() => { lines.length ? fs.appendFileSync(a.events, lines.shift() + '\n') : clearInterval(w) }, 700)
+  if (w.unref) w.unref()   // the writer must never hold the process open on its own
+}
+
+// ─────────────────────────────────────────────────────────── CLI
+function parseArgs(argv) {
+  const a = { out: 'worldcup-live.html', once: false, nonce: '', nonceProvided: false, theme: '', switcher: false, serve: false, port: 0, demo: false }
+  for (let i = 2; i < argv.length; i++) {
+    if (argv[i] === '--events') a.events = argv[++i]
+    else if (argv[i] === '--demo') a.demo = true                // embedded deterministic tournament — no --events needed
+    else if (argv[i] === '--out') a.out = argv[++i]
+    else if (argv[i] === '--nonce') { a.nonce = argv[++i] || ''; a.nonceProvided = true }   // per-run provenance
+    else if (argv[i] === '--theme') a.theme = argv[++i] || ''   // see THEMES keys
+    else if (argv[i] === '--switcher') a.switcher = true        // emit every theme + a sticky theme-switcher bar
+    else if (argv[i] === '--once') a.once = true
+    else if (argv[i] === '--serve') a.serve = true                       // host on localhost + update in place (no reload, no blink)
+    else if (argv[i] === '--port') {                              // 0 = ephemeral (never collides)
+      const raw = argv[++i]
+      // validate here, not at listen(): out-of-range throws a raw sync RangeError there, and a
+      // typo ('--port abc') would otherwise silently become an ephemeral port instead of an error.
+      // Empty/missing is rejected too (Number('') === 0): '--port "$PORT"' with the variable unset
+      // must not silently bind an ephemeral port — same standard as the empty --nonce guard below.
+      const p = (raw === undefined || String(raw).trim() === '') ? NaN : Number(raw)
+      if (!Number.isInteger(p) || p < 0 || p > 65535) { console.error(`live-view: --port must be an integer 0-65535 (got ${JSON.stringify(raw)})`); process.exit(2) }
+      a.port = p
+    }
+  }
+  return a
+}
+// Theme switcher: render EVERY theme to <stem>-<key>.html, each with a sticky top bar linking to its siblings,
+// and make --out the default theme's page. Pure HTML links (no JS) — clicking navigates to that theme's file,
+// which carries its own <meta refresh> so the live feed keeps updating after you switch.
+function injectNav(html, curKey, keys, base) {
+  const tab = k => `<a href="./${encodeURIComponent(`${base}-${k}.html`)}" style="padding:7px 11px;font:700 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.07em;text-transform:uppercase;text-decoration:none;color:${k === curKey ? '#0a0a0a' : '#9aa'};background:${k === curKey ? '#FFD23F' : 'transparent'};border-right:1px solid #2a2a2a">${k}</a>`
+  const bar = `<div style="position:fixed;top:0;left:0;right:0;z-index:2147483647;display:flex;flex-wrap:wrap;align-items:center;background:#0a0a0a;border-bottom:1px solid #2a2a2a"><span style="padding:7px 11px;font:900 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.12em;color:#FFD23F">&#127942; THEME &#9656;</span>${keys.map(tab).join('')}</div><div style="height:33px"></div>`
+  return html.replace('<body>', '<body>' + bar)
+}
+function writeSwitcher(a, st) {
+  const stem = a.out.replace(/\.html?$/i, ''), base = stem.split('/').pop(), keys = Object.keys(THEMES)
+  for (const k of keys) writeAtomic(`${stem}-${k}.html`, injectNav(render(st, k), k, keys, base))
+  writeAtomic(a.out, injectNav(render(st, LIVE_THEME), LIVE_THEME, keys, base))   // landing = the chosen theme
+}
+let warnedNonceMiss = false
+function readState(path, nonce) {
+  let text = ''
+  try { text = fs.readFileSync(path, 'utf8') } catch (e) { /* sink not created yet — render the waiting state */ }
+  const stats = { seen: 0, rejected: 0 }
+  const st = fold(parseEvents(text, nonce, stats))
+  // Note: a silent nonce mismatch looks identical to "not started yet". If beacons are present but
+  // none match the expected nonce, say so once — the #1 cause of a mysterious blank live view.
+  if (nonce && !warnedNonceMiss && stats.seen > 0 && stats.seen === stats.rejected) {
+    warnedNonceMiss = true
+    console.error(`live-view: ${stats.seen} beacon(s) present but NONE matched --nonce "${nonce}" — check it equals the run's args.liveNonce`)
+  }
+  return st
+}
+function writeAtomic(out, html) {
+  const tmp = out + '.tmp'
+  fs.writeFileSync(tmp, html)        // temp + rename so a watching browser never reads a half-written file
+  fs.renameSync(tmp, out)
+}
+function sizeOf(p) { try { return fs.statSync(p).size } catch (e) { return -1 } }
+// ─────────────────────────────────────────────────────────── --serve (localhost; updates in place)
+// Why this kills the blink: a file:// page can ONLY update by reloading the whole document (white flash).
+// Served over http://127.0.0.1, the page instead fetches just the bracket markup and swaps it into one
+// container — the document never navigates, so there is no flash. We treat render() as a black box and
+// slice its output into <head> (served ONCE, in the shell) and the body markup (re-fetched as it changes).
+function stripRefresh(html) { return html.replace('<meta http-equiv="refresh" content="2">', '') }  // SSE/poll drives updates now; never auto-reload a served page
+function splitDoc(html) {
+  const he = html.indexOf('</head>'), bo = html.indexOf('<body>'), bc = html.lastIndexOf('</body>')
+  const head = he >= 0 ? html.slice(0, he + '</head>'.length) : '<!doctype html><html><head></head>'  // through </head>
+  const body = (bo >= 0 && bc >= 0) ? html.slice(bo + '<body>'.length, bc) : html                     // inner body only
+  const sm = head.match(/<style[\s\S]*?<\/style>/gi)   // ALL css blocks in order (a future theme could split base + dynamic css; grabbing only the first would re-break the frame-style fix)
+  return { head, body, style: sm ? sm.join('') : '' }
+}
+// CRITICAL: the frame carries the CURRENT <style>, not just the bracket markup. The renderer emits
+// bracket-size-dependent rules (e.g. `.kocol .matches{height:Hpx}` — what lets space-around SPREAD the
+// columns instead of bunching every match at the top) ONLY once a bracket exists. The shell's <head> is
+// sent once and can predate the bracket, so a head-frozen stylesheet would be missing those rules forever.
+// Shipping the style INSIDE each frame (after the head style, so its rules win) keeps layout correct as the
+// bracket appears and grows. (A node-preserving morph would let us stop re-shipping it; noted for later.)
+function serveBody(st) { const d = splitDoc(stripRefresh(render(st, LIVE_THEME))); return d.style + d.body }
+// The client: ask for the latest bracket once a second; only repaint when it ACTUALLY changed, so the
+// poll itself never causes a flicker — a repaint happens only on the ~handful of real updates in a run.
+const SERVE_CLIENT = `(function () {
+  var root = document.getElementById('wc-root'), last = null
+  // Replacing innerHTML rebuilds the whole subtree, which would reset the bracket's horizontal scroll
+  // and the page scroll on every update — a hard yank when a result lands. Capture both, swap, restore.
+  // (The looping live animations still restart on swap; a node-preserving morph is what removes that.)
+  function swap (html) {
+    var sc = root.querySelector('.bracketScroll'), sx = sc ? sc.scrollLeft : 0, py = window.scrollY
+    root.innerHTML = html
+    var nsc = root.querySelector('.bracketScroll'); if (nsc) nsc.scrollLeft = sx
+    window.scrollTo(0, py)
+  }
+  function tick () {
+    fetch('/frame', { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : null }).then(function (html) {
+      if (html != null && html !== last) { last = html; swap(html) }
+    }).catch(function () {})   // server gone (run finished) → keep the final frame on screen
+  }
+  last = root.innerHTML; setInterval(tick, 1000)
+})();`
+function serveShell(st) {
+  const d = splitDoc(stripRefresh(render(st, LIVE_THEME)))
+  // #wc-root holds style+body so the very first paint AND every swapped frame carry the bracket-size CSS.
+  return d.head + '<body><main id="wc-root">' + d.style + d.body + '</main><script>' + SERVE_CLIENT + '</script></body></html>'
+}
+function openInBrowser(url) {
+  const win = process.platform === 'win32'
+  const cmd = process.platform === 'darwin' ? 'open' : win ? 'cmd' : 'xdg-open'
+  const args = win ? ['/c', 'start', '', url] : [url]
+  // spawn() reports a missing opener (no `open`/`xdg-open`) via an ASYNC 'error' event, which the try/catch
+  // can't see — without an error listener that would crash --serve after the server is up. Attach one, then unref.
+  try { const c = require('child_process').spawn(cmd, args, { stdio: 'ignore', detached: true }); c.on('error', () => {}); c.unref() } catch (e) { /* best-effort */ }
+}
+// Hardened headers for the served loopback origin: declare the type (nothing sniffed), forbid caching, deny
+// framing + cross-origin reads, and a strict CSP (the page needs only same-origin fetch + inline css/js). NO
+// CORS / Private-Network-Access allow headers — a foreign page must never be able to read this.
+const SERVE_HEADERS = {
+  'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Connection': 'close',
+  'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Cross-Origin-Resource-Policy': 'same-origin',
+  'Content-Security-Policy': "default-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+}
+// Pure request routing — extracted so the loopback guard, method gate, and /frame-vs-shell split are unit-testable
+// without booting a server. The Host header is the REAL browser wire shape ("127.0.0.1:PORT" / "[::1]:PORT"):
+// lowercase, drop a trailing dot, unwrap [ipv6] or strip :port, then EXACT-match loopback — never a prefix test
+// (which "localhost.evil.example" would pass). Only GET/HEAD; anything else 405.
+function serveRoute(method, hostHeader, url, st) {
+  if (method !== 'GET' && method !== 'HEAD') return { status: 405, body: 'method not allowed' }
+  let host = String(hostHeader || '').toLowerCase().trim().replace(/\.$/, '')
+  host = host.startsWith('[') ? host.slice(1, host.indexOf(']')) : host.replace(/:\d+$/, '')
+  if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') return { status: 403, body: 'forbidden' }
+  return { status: 200, body: (url || '/').split('?')[0] === '/frame' ? serveBody(st) : serveShell(st) }
+}
+function serveLive(a) {
+  const http = require('http')
+  let curState = readState(a.events, a.nonce)
+  const server = http.createServer((req, res) => {
+    const r = serveRoute(req.method, req.headers.host, req.url, curState)
+    // Errors get the same hardened header set, only re-typed: the bodies are fixed literals, but
+    // defense-in-depth should not depend on that. (Spread order matters — text/plain must win.)
+    res.writeHead(r.status, r.status === 200 ? SERVE_HEADERS : { ...SERVE_HEADERS, 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end(req.method === 'HEAD' ? undefined : r.body)   // HEAD: headers only, no body
+  })
+  const GRACE_MS = 6000, IDLE_MS = 180000
+  let lastSize = sizeOf(a.events), idleSince = Date.now()
+  // Fail loud, not with a raw stack: a busy --port (or any bind error) must surface a clear, actionable
+  // message and exit, never an unhandled 'error' event. (Default port 0 is ephemeral and never collides.)
+  server.on('error', e => {
+    const busy = e && e.code === 'EADDRINUSE'
+    console.error('live-view --serve: cannot start server' + (a.port ? ' on port ' + a.port : '') + ': ' + ((e && e.message) || e) +
+      (busy ? ' — that port is in use; omit --port to get an automatic free one.' : ''))
+    process.exit(1)
+  })
+  server.listen(a.port || 0, '127.0.0.1', function () {
+    const url = 'http://127.0.0.1:' + server.address().port
+    console.log('live view serving ' + url + '  (updates in place — no reload, no blink)')
+    openInBrowser(url)
+  })
+  let demoDone = false
+  const iv = setInterval(() => {
+    if (sizeOf(a.events) > lastSize) { lastSize = sizeOf(a.events); idleSince = Date.now(); curState = readState(a.events, a.nonce) }  // grew → re-fold
+    const idle = Date.now() - idleSince
+    // Demo mode outlives the 6s finalize: the whole point of `npm run demo` is looking at the finished
+    // bracket, so the page stays served until Ctrl-C (the 3min idle reaper still prevents a leak).
+    if (a.demo && !demoDone && complete(curState)) { demoDone = true; console.log('demo complete — the page stays up; Ctrl-C to stop (auto-exits after 3min idle).') }
+    if (complete(curState) && idle > (a.demo ? IDLE_MS : GRACE_MS)) { clearInterval(iv); server.close(); console.log('bracket complete; live view final.'); process.exit(0) }
+    if (idle > IDLE_MS) { clearInterval(iv); server.close(); console.log('no new events for 3min; live view stopped (may be incomplete).'); process.exit(0) }
+  }, 1000)
+  process.on('SIGINT', () => { clearInterval(iv); try { server.close() } catch (e) {} process.exit(0) })
+}
+function main() {
+  const a = parseArgs(process.argv)
+  if (!a.events && !a.demo) {
+    console.error(`usage: live-view.js --demo [--serve]                                  # zero-setup embedded demo tournament (also: npm run demo)
+   or: live-view.js --events <path-to-journal.jsonl> [--out worldcup-live.html] [--nonce <token>] [--theme <${Object.keys(THEMES).join('|')}>] [--switcher] [--once] [--serve [--port N]]`)
+    process.exit(2)
+  }
+  // Theme: --theme wins over WORLDCUP_LIVE_THEME (set in parseArgs' default via the env). Warn on a typo
+  // rather than silently falling back, so a mis-set theme doesn't look like the default was intended.
+  if (a.theme) { if (!THEMES[a.theme]) console.error(`live-view: unknown --theme "${a.theme}" — using arena; valid: ${Object.keys(THEMES).join(', ')}`); LIVE_THEME = THEMES[a.theme] ? a.theme : 'arena' }
+  if (a.serve && a.once) { console.error('live-view: --serve and --once are mutually exclusive (--serve hosts a live view; --once writes one static snapshot)'); process.exit(2) }
+  if (a.demo) {   // demo journal is unauthenticated by design (same as a real no-liveNonce run) → ignore --events/--nonce
+    if (a.events) console.error('live-view: --demo ignores --events (the demo stages its own journal)')
+    if (a.nonceProvided) console.error('live-view: --demo ignores --nonce (demo beacons are unauthenticated)')
+    a.nonce = ''; a.nonceProvided = false
+    setupDemo(a)   // sets a.events; from here the demo IS a normal run
+  }
+  // Surface the auth posture on startup — a mis-set or missing nonce must not fail silently.
+  // Provided-but-EMPTY is fatal: an empty nonce is falsy, so the tailer would accept EVERY beacon —
+  // running fully unauthenticated while the user believes they authenticated. The realistic path here
+  // is an unset shell variable (--nonce "$TOKEN"); there is no legitimate use, since unauthenticated
+  // mode is already expressible by omitting --nonce.
+  if (a.nonceProvided && !a.nonce) { console.error('live-view: --nonce was given but is EMPTY (unset shell variable?) — refusing to fall back to unauthenticated mode; pass the run\'s args.liveNonce, or omit --nonce entirely for legacy unauthenticated mode'); process.exit(2) }
+  if (!a.nonceProvided && !a.demo) console.error('live-view: no --nonce — accepting any beacon (unauthenticated / legacy mode)')
+  if (a.serve && a.switcher) console.error('live-view: --serve ignores --switcher (the served view is single-theme; pick one with --theme <key>)')
+  if (a.serve) return serveLive(a)   // localhost mode: host the view + update in place (no reload, no blink)
+  // The sink is the run's spine journal (subagents/workflows/<runId>/journal.jsonl): one JSON record per
+  // workflow agent, appended the moment it completes — so it only GROWS, a handful of times over a run.
+  // Gate each re-read on a cheap statSync(size): the steady-state poll is a stat, and we re-read +
+  // re-render only when new bytes appear.
+  const GRACE_MS = 6000, IDLE_MS = 180000  // finalize 6s after the bracket completes; give up after 3min idle
+  let lastSize = -1, idleSince = Date.now()
+  const tick = () => { lastSize = sizeOf(a.events); const st = readState(a.events, a.nonce); a.switcher ? writeSwitcher(a, st) : writeAtomic(a.out, render(st)); return st }
+  let st = tick()
+  if (a.once || complete(st)) { console.log(`live view -> ${a.out} (${complete(st) ? 'final' : statusLine(st)})`); return }
+  console.log(`live view watching ${a.events} -> ${a.out} (browser auto-refreshes every 2s)`)
+  const iv = setInterval(() => {
+    if (sizeOf(a.events) > lastSize) { idleSince = Date.now(); st = tick() }   // grew → re-read + re-render
+    const idle = Date.now() - idleSince
+    // finalize ONLY when the bracket is complete AND the journal has been quiet for the grace window — a
+    // late round/match beacon can still arrive after the (tiny) champion beacon.
+    if (complete(st) && idle > GRACE_MS) { clearInterval(iv); tick(); console.log('bracket complete; live view final.'); process.exit(0) }
+    // safety net: champion never lands (its beacon failed/was capped) — never leak a polling process forever.
+    if (idle > IDLE_MS) { clearInterval(iv); tick(); console.log('no new events for 3min; live view stopped (may be incomplete).'); process.exit(0) }
+  }, 1000)
+  process.on('SIGINT', () => { clearInterval(iv); process.exit(0) })
+}
+
+module.exports = { parseEvents, parseLines, fold, render, statusLine, bracketTree, viewTree, placeholderTree, complete, THEMES, splitDoc, stripRefresh, serveBody, serveShell, serveRoute, demoEvents, demoLines }
+if (require.main === module) main()

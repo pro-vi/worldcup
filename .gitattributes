@@ -1,0 +1,6 @@
+# Normalize every text file to LF in every working tree, including Windows CI.
+# The repo's checks byte-compare rendered output against committed files
+# (sample drift guard) and parse template sources verbatim — a CRLF checkout
+# breaks both, so line endings are pinned rather than left to core.autocrlf.
+* text=auto eol=lf
+*.png binary

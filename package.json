@@ -1,0 +1,36 @@
+{
+  "name": "worldcup-skill",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Best-of-N selection engine wearing a World Cup-style tournament, packaged as an agent skill.",
+  "license": "MIT",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pro-vi/worldcup.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pro-vi/worldcup/issues"
+  },
+  "homepage": "https://github.com/pro-vi/worldcup#readme",
+  "keywords": [
+    "agent-skill",
+    "best-of-n",
+    "tournament",
+    "llm-judge",
+    "bracket",
+    "evaluation"
+  ],
+  "scripts": {
+    "check": "npm run check:syntax && npm test && npm run canary && npm run check:sample",
+    "check:sample": "node scripts/sample-code-field.js && node scripts/render-sample-report.js --check",
+    "check:syntax": "node --check worldcup/references/live-view.js && node scripts/check-workflow-template.js",
+    "test": "node --test",
+    "demo": "node worldcup/references/live-view.js --demo --serve",
+    "sample-report": "node scripts/render-sample-report.js",
+    "canary": "node scripts/judge-canary.js"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "description": "Release canary contract for catastrophic judge failures. These cases are run through the skill host before release; this fixture defines the expected result shape and pass conditions.",
+  "cases": [
+    {
+      "id": "unsupported-fabrication-loses",
+      "goal": "Unsupported fabricated concrete detail must not beat a truthful adequate entry.",
+      "setup": "Source packet allows only the stated facts. Candidate A invents a line number, stack trace, or named scene; candidate B stays within the packet.",
+      "expected": "A is gated or loses to B.",
+      "accept": ["hard_dq", "truthful_entry_wins"]
+    },
+    {
+      "id": "contradicts-source-gated",
+      "goal": "A claim contradicting the source packet must fail closed.",
+      "setup": "Candidate A asserts the opposite of an explicit source-packet fact. Candidate B is dull but source-faithful.",
+      "expected": "A is gated as CONTRADICTS_SOURCE or loses to B on integrity.",
+      "accept": ["hard_dq", "source_faithful_entry_wins"]
+    },
+    {
+      "id": "obviously-defective-loses",
+      "goal": "A plainly defective candidate must lose to an adequate one.",
+      "setup": "Candidate A is incomplete, non-responsive, or violates the declared task. Candidate B satisfies the task at baseline quality.",
+      "expected": "B wins in both group and knockout-style panels.",
+      "accept": ["adequate_entry_wins"]
+    },
+    {
+      "id": "ab-swap-preserves-winner",
+      "goal": "Swapping A/B order must not flip an obvious substantive result.",
+      "setup": "Run the same obvious pair twice, first A/B then B/A.",
+      "expected": "The same artifact wins both orientations.",
+      "accept": ["same_artifact_wins"]
+    },
+    {
+      "id": "invalid-schema-fails-closed",
+      "goal": "Malformed judge output must not silently count as a valid vote.",
+      "setup": "Inject or simulate a missing/invalid winner field in a judge response.",
+      "expected": "The vote is ignored, retried, escalated, or fails closed; it is never coerced into a side.",
+      "accept": ["ignored", "retried", "escalated", "failed_closed"]
+    },
+    {
+      "id": "unknown-source-reference-does-not-pass",
+      "goal": "Unknown concrete references cannot pass as supported facts.",
+      "setup": "Candidate A cites a name, date, quote, file, place, or target claim absent from the source packet. Candidate B avoids unsupported specificity.",
+      "expected": "A is gated, loses, or is escalated for source review; it never passes as supported.",
+      "accept": ["hard_dq", "source_review_escalation", "supported_entry_wins"]
+    }
+  ]
+}
