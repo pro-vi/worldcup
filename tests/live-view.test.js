@@ -2,7 +2,7 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { parseEvents, fold, render, THEMES, splitDoc, stripRefresh, serveShell, serveBody, serveRoute, bracketTree, viewTree, complete, demoEvents, demoLines } = require('../worldcup/references/live-view.js')
+const { parseEvents, fold, render, THEMES, splitDoc, stripRefresh, serveShell, serveBody, serveRoute, bracketTree, viewTree, complete, demoEvents, demoLines, PARTY_MARKER } = require('../worldcup/references/live-view.js')
 
 test('parseEvents accepts only structured beacons with the matching nonce', () => {
   const good = { __wc: 'EVENT', ev: 'draw', nonce: 'n1', seq: 1, field: 32, groups: [] }
@@ -241,4 +241,80 @@ test('a frame carries its own bracket-sizing CSS so columns never collapse to th
   const frame = serveBody(painted)
   assert.match(frame, /<style/, 'frame carries its own <style> block')
   assert.match(frame, /\.kocol \.matches\{height:/, 'frame carries the column-height rule (the bug: it was stuck in a stale head)')
+})
+
+test('champion confetti ships only on the COMPLETE page, in every theme (never in a reload loop)', () => {
+  const doneSt = fold(demoEvents())
+  assert.ok(complete(doneSt), 'the demo stream folds to a complete tournament')
+  for (const theme of Object.keys(THEMES)) {
+    const html = render(doneSt, theme)
+    assert.match(html, /<script id="wc-party" /, `${theme}: the final page carries the confetti script`)
+    assert.ok(html.includes(PARTY_MARKER), `${theme}: the injected tag carries the protocol marker`)
+    // the page that celebrates must be the page that stopped reloading — otherwise the 2s
+    // meta-refresh in file mode would replay the burst forever
+    assert.doesNotMatch(html, /http-equiv="refresh"/, `${theme}: the confetti page never self-reloads`)
+    assert.match(html, /prefers-reduced-motion/, `${theme}: auto-fire honors reduced motion`)
+    // incomplete run (champion beacon alone, bracket unsettled): no confetti in ANY theme
+    assert.doesNotMatch(render(champSt, theme), /wc-party/, `${theme}: incomplete run has no confetti script`)
+  }
+})
+
+test('the completion marker is a producer-owned protocol: hostile text cannot forge it in a frame', () => {
+  // a mid-run frame whose team labels CONTAIN the literal marker (and the script tag) must not
+  // trigger the poll client: he() escapes the quotes, so the raw constant never appears in frame text
+  const hostile = fold([
+    { ev: 'draw', seq: 1, field: 32, groups: [{ group: 'A', teams: [
+      { label: `evil ${PARTY_MARKER} team`, seed: 1 },
+      { label: '<script id="wc-party" data-wc-party="complete">', seed: 16 }
+    ] }] }
+  ])
+  for (const theme of Object.keys(THEMES)) {
+    assert.ok(!render(hostile, theme).includes(PARTY_MARKER), `${theme}: escaped hostile labels cannot forge the marker`)
+  }
+  assert.ok(!serveBody(hostile).includes(PARTY_MARKER), 'a hostile mid-run FRAME cannot forge the marker')
+  // and the real marker DOES appear once the run is complete — same constant, injected and detected
+  assert.ok(serveBody(fold(demoEvents())).includes(PARTY_MARKER), 'complete frame carries the protocol marker')
+})
+
+test('doctrine parity: a gate-DQ champion gets NO party in the live view either', () => {
+  // legacy no-seq stream (complete at champion) whose champion is on the gate's DQ list
+  const dqChamp = fold([
+    { ev: 'gate', field: 32, disqualified: [{ label: 'fabricator', category: 'FABRICATION' }] },
+    { ev: 'champion', label: 'fabricator', stakes: 'FINAL' }
+  ])
+  assert.ok(complete(dqChamp), 'state is complete (legacy stream, champion crowned)')
+  assert.doesNotMatch(render(dqChamp, 'arena'), /wc-party/, 'DQ champion: no confetti, no replay marker')
+  // control: same shape with a clean champion celebrates
+  const clean = fold([
+    { ev: 'gate', field: 32, disqualified: [{ label: 'fabricator', category: 'FABRICATION' }] },
+    { ev: 'champion', label: 'honest-winner', stakes: 'FINAL' }
+  ])
+  assert.match(render(clean, 'arena'), /id="wc-party"/, 'clean champion still celebrates')
+})
+
+test('the champcard click-replay is gated on the #wc-party marker (placeholder card must not fire)', () => {
+  // mid-run, every theme renders an "awaiting final" placeholder that shares the champcard class —
+  // the delegated handler must therefore check for the completion marker before throwing a party
+  const shell = serveShell(fold([{ ev: 'draw', seq: 1, field: 32, groups: [] }]))
+  assert.match(shell, /getElementById\('wc-party'\)/, 'replay handler checks the marker first')
+})
+
+test('a non-stringifiable beacon field (JSON-craftable {"toString":null}) cannot brick a render', () => {
+  const poisoned = fold([{ ev: 'champion', label: JSON.parse('{"toString":null}'), stakes: 'FINAL' }])
+  for (const theme of Object.keys(THEMES)) {
+    assert.doesNotThrow(() => render(poisoned, theme), `${theme} renders despite the poisoned label`)
+  }
+})
+
+test('serve mode: frames carry the wc-party marker when complete; the poll client owns the firing', () => {
+  const doneSt = fold(demoEvents())
+  // the frame embeds the script as TEXT (innerHTML swaps never execute it) — it is the marker
+  assert.match(serveBody(doneSt), /id="wc-party"/, 'complete frame carries the marker')
+  assert.doesNotMatch(serveBody(champSt), /wc-party/, 'incomplete frame has no marker')
+  // the shell client (present even before completion) embeds the party functions, the once-guard,
+  // and the frame-marker watch that fires the celebration on the live transition
+  const shell = serveShell(fold([{ ev: 'draw', seq: 1, field: 32, groups: [] }]))
+  assert.match(shell, /__wcPartyOnce/, 'poll client defines the once-only celebration')
+  assert.ok(shell.includes(`indexOf('${PARTY_MARKER}')`), 'poll client watches frames for the SAME protocol marker the producer injects')
+  assert.match(shell, /prefers-reduced-motion/, 'poll client honors reduced motion')
 })

@@ -166,11 +166,13 @@ context; pick sane defaults for the rest and state them.
    d. The watcher self-exits when the bracket completes (or after 3 min idle). If the spine path
       can't be resolved, just stay on Tier-0 (`/workflows`) — no run depends on the live view.
    You can preview the live view any time with `npm run demo` — a zero-setup fake
-   tournament that exercises the real pipeline, no tournament required.
+   tournament that exercises the real pipeline, no tournament required. When the
+   champion is crowned the page throws confetti; click the champion card to replay.
    See "references/live-view.md" for the design + event contract.
 5. **Write and open the report.** The Workflow returns "reportHtml": a self-contained
    World Cup-flavored HTML of the final state graph (bracket tree, group tables, champion
-   path, global rating, trust verdict, disqualifications). Write it to
+   path, global rating, trust verdict, disqualifications — and a confetti burst for the
+   champion, unless it failed the gate: no party for a fabricator). Write it to
    "worldcup-report.html" in the working directory and open it. The structured "graph"
    field is returned alongside if you want to re-render. This report is a required
    deliverable of every run, not an optional extra.

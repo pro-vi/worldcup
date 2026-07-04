@@ -25,7 +25,12 @@
 const fs = require('fs')
 
 const STAKES_ORDER = ['R32', 'R16', 'QF', 'SF', 'FINAL']
-const he = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+// Coercion-safe stringify: String() itself can throw on a JSON-craftable object ('{"toString":null}'
+// shadows the method), and one poisoned beacon field must never brick the whole view. Every raw
+// template-literal interpolation of beacon-sourced text (statusLine, map keys) must go through ss(),
+// not bare coercion; he() builds on it for the HTML-escaped paths.
+const ss = s => { if (s == null) return ''; try { return String(s) } catch (e) { return '' } }
+const he = s => ss(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 // One favicon for every theme AND the served shell (splitDoc keeps it in <head>): an inline SVG trophy
 // glyph as a data URI — no asset file, no extra request.
 const FAVICON = `<link rel="icon" href="data:image/svg+xml,${encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>\u{1F3C6}</text></svg>")}">`
@@ -226,12 +231,12 @@ function complete(st) {
 }
 
 function statusLine(st) {
-  if (complete(st)) return `final · champion ${st.champion.label}`
+  if (complete(st)) return `final · champion ${ss(st.champion.label)}`
   const tree = bracketTree(st)
   const playing = tree && tree.find(r => r.matches.some(m => m.status === 'playing'))
-  if (playing) return `${playing.stakes} in progress`
-  if (st.champion) return `champion ${st.champion.label} · awaiting late results…`
-  if (st.rounds.length) return `${st.rounds[st.rounds.length - 1].stakes} in progress`
+  if (playing) return `${ss(playing.stakes)} in progress`
+  if (st.champion) return `champion ${ss(st.champion.label)} · awaiting late results…`
+  if (st.rounds.length) return `${ss(st.rounds[st.rounds.length - 1].stakes)} in progress`
   if (st.bracket) return 'knockout underway'
   if (st.groupOrder.some(g => st.groups[g] && st.groups[g].table != null)) return 'group stage'
   if (st.groupOrder.length) return 'draw done · group stage pending'
@@ -477,8 +482,8 @@ function renderArena(st) {
   const tree = viewTree(st) || []   // rail reflects the (blank) skeleton during the group stage too
   // honest seed tag: each knockout team's group + finish rank (A1 = won group A). Not a faked OVR/position.
   const seedMap = Object.create(null)   // keyed by event-supplied labels — never Object.prototype
-  for (const G of st.groupOrder) ((st.groups[G] && st.groups[G].advanced) || []).forEach((label, i) => { seedMap[label] = G + (i + 1) })
-  const seedOf = label => seedMap[label] || ''
+  for (const G of st.groupOrder) ((st.groups[G] && st.groups[G].advanced) || []).forEach((label, i) => { seedMap[ss(label)] = G + (i + 1) })
+  const seedOf = label => seedMap[ss(label)] || ''   // ss(): an object label as a property KEY coerces (and can throw) too
   const bsvg = bracketSVG(st, seedOf, '&#127942;')
   const rail = tree.map(r => {
     const done = r.matches.filter(m => m.status === 'done').length, total = r.matches.length
@@ -727,7 +732,78 @@ const THEMES = {
   'arena': renderArena, 'concrete': renderConcrete, '2026': st => renderScoreboard(st, WC2026),
 }
 let LIVE_THEME = process.env.WORLDCUP_LIVE_THEME || 'arena'
-function render(st, theme) { return (THEMES[theme || LIVE_THEME] || renderArena)(st) }
+
+// ── champion confetti (client-side) ─────────────────────────────────────────────────────────────
+// One shared burst, shipped ONLY on a COMPLETE page (champion crowned, bracket settled — the same
+// condition that drops <meta refresh> in file mode, so a self-reloading live page can never replay
+// it every 2 seconds). Serve mode never executes frame scripts (innerHTML swaps don't run <script>),
+// so SERVE_CLIENT embeds this same code up front and fires when the wc-party marker first appears in
+// a frame. The auto-fire honors prefers-reduced-motion; clicking the champion card replays it — that
+// is user-initiated motion. Palette is theme-agnostic: mid-saturation hues visible on arena's dark
+// console, concrete's paper, and the 2026 poster alike. Guarded define: the shell can carry BOTH the
+// injected copy (inside #wc-root) and the SERVE_CLIENT copy — whichever parses first wins, once
+// (guarded on __wcPartyOnce, the symbol callers actually invoke, so a half-parse can't strand it).
+// Producer-owned completion marker (an explicit protocol constant, not incidental text): render()
+// stamps it on the injected script tag and SERVE_CLIENT detects the SAME constant in frame text —
+// the two can never drift apart. Judged/beacon text can't forge it: he() turns its quotes to &quot;.
+const PARTY_MARKER = 'data-wc-party="complete"'
+const CONFETTI_JS = `(function(){
+if(window.__wcPartyOnce)return;
+window.__wcParty=function(){
+var cv=document.createElement('canvas');
+cv.style.cssText='position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:99';
+var cx=cv.getContext&&cv.getContext('2d');if(!cx)return;
+document.body.appendChild(cv);
+var dpr=Math.min(2,window.devicePixelRatio||1),W=0,H=0;
+function fit(){var de=document.documentElement;W=de.clientWidth||window.innerWidth;H=de.clientHeight||window.innerHeight;cv.width=W*dpr;cv.height=H*dpr;cx.setTransform(dpr,0,0,dpr,0,0);}
+fit();window.addEventListener('resize',fit);
+var src={x:W/2,y:H*0.35},anchor=document.querySelector('.champcard');
+if(anchor){var r=anchor.getBoundingClientRect();if(r.width)src={x:r.left+r.width/2,y:r.top+r.height/2};}
+var COL=['#F2C44C','#FF3B00','#37F0C0','#FF3B5C','#7FD1FF'];
+var N=Math.min(240,Math.max(140,Math.round(W/6))),P=[];
+for(var i=0;i<N;i++){var burst=i<N*0.72,a=Math.random()*Math.PI*2,v=4+Math.random()*9;
+P.push({x:burst?src.x:Math.random()*W,y:burst?src.y:-20-Math.random()*H*0.25,
+vx:burst?Math.cos(a)*v:(Math.random()-0.5)*1.2,vy:burst?Math.sin(a)*v-3:1+Math.random()*2,
+w:4+Math.random()*5,h:8+Math.random()*6,rot:Math.random()*Math.PI*2,vr:(Math.random()-0.5)*0.3,
+c:COL[i%COL.length],dot:i%5===4,life:0,ttl:2600+Math.random()*1600});}
+var t0=null,prev=null;
+function gone(){if(cv.parentNode)cv.parentNode.removeChild(cv);window.removeEventListener('resize',fit);}
+function step(ts){if(t0===null){t0=ts;prev=ts;}
+var dt=Math.min(48,ts-prev);prev=ts;
+cx.clearRect(0,0,W,H);
+var alive=0,k=dt/16.7;
+for(var i=0;i<P.length;i++){var p=P[i];p.life+=dt;if(p.life>p.ttl||p.y>H+30)continue;
+p.vy+=0.22*k;p.vx*=Math.pow(0.985,k);p.x+=p.vx*k+Math.sin((p.life+i*97)/260)*0.7*k;p.y+=p.vy*k;p.rot+=p.vr*k;
+alive++;var f=p.ttl-p.life;cx.globalAlpha=f<420?f/420:1;
+cx.save();cx.translate(p.x,p.y);cx.rotate(p.rot);cx.fillStyle=p.c;
+if(p.dot){cx.beginPath();cx.arc(0,0,p.w/2,0,Math.PI*2);cx.fill();}
+else{cx.scale(1,0.4+0.6*Math.abs(Math.sin(p.rot*2+i)));cx.fillRect(-p.w/2,-p.h/2,p.w,p.h);}
+cx.restore();}
+cx.globalAlpha=1;
+if(alive&&ts-t0<9000)requestAnimationFrame(step);else gone();}
+requestAnimationFrame(step);};
+window.__wcPartyOnce=function(){if(window.__wcPartyDone)return;window.__wcPartyDone=true;
+if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+setTimeout(window.__wcParty,350);};
+document.addEventListener('click',function(e){
+if(!document.getElementById('wc-party'))return;
+var n=e.target;
+while(n&&n!==document){if(n.className&&String(n.className).indexOf('champcard')>-1){window.__wcParty();break;}n=n.parentNode;}});
+})();`
+// The wc-party <script> tag doubles as the serve-mode completion marker: SERVE_CLIENT greps each
+// polled frame for its id (frames are text here, never a live DOM) and fires the once-only burst.
+// It is ALSO the replay switch: the delegated champcard-click handler no-ops unless #wc-party is in
+// the document (mid-run the placeholder card has the same class — clicking "awaiting final" must not
+// throw a premature party; innerHTML-swapped script tags land in the DOM inert, so the id is findable
+// the moment the completion frame arrives).
+function render(st, theme) {
+  const html = (THEMES[theme || LIVE_THEME] || renderArena)(st)
+  // Doctrine parity with the report: a champion that failed the fabrication gate gets NO party here
+  // either (the report renders it PARTY=false — the spectator page must not celebrate what the
+  // verdict refuses to trust). No marker also means the click-replay stays disabled: no dead switch.
+  const championDQ = !!(st.champion && st.dq.some(d => d && d.label === st.champion.label))
+  return complete(st) && !championDQ ? html.replace('</body>', `<script id="wc-party" ${PARTY_MARKER}>${CONFETTI_JS}window.__wcPartyOnce();</script></body>`) : html
+}
 
 // ─────────────────────────────────────────────────────────── --demo (embedded deterministic tournament)
 // Zero-setup showcase: `node live-view.js --demo --serve` (or `npm run demo`). A scripted 32-team run —
@@ -893,7 +969,8 @@ function splitDoc(html) {
 function serveBody(st) { const d = splitDoc(stripRefresh(render(st, LIVE_THEME))); return d.style + d.body }
 // The client: ask for the latest bracket once a second; only repaint when it ACTUALLY changed, so the
 // poll itself never causes a flicker — a repaint happens only on the ~handful of real updates in a run.
-const SERVE_CLIENT = `(function () {
+const SERVE_CLIENT = `${CONFETTI_JS}
+(function () {
   var root = document.getElementById('wc-root'), last = null
   // Replacing innerHTML rebuilds the whole subtree, which would reset the bracket's horizontal scroll
   // and the page scroll on every update — a hard yank when a result lands. Capture both, swap, restore.
@@ -906,7 +983,12 @@ const SERVE_CLIENT = `(function () {
   }
   function tick () {
     fetch('/frame', { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : null }).then(function (html) {
-      if (html != null && html !== last) { last = html; swap(html) }
+      if (html != null && html !== last) {
+        last = html; swap(html)
+        // frames carry the wc-party script only once the run is COMPLETE; innerHTML never executes
+        // it, so the poll client fires the (once-only) celebration when the marker first shows up.
+        if (html.indexOf('${PARTY_MARKER}') !== -1) window.__wcPartyOnce()
+      }
     }).catch(function () {})   // server gone (run finished) → keep the final frame on screen
   }
   last = root.innerHTML; setInterval(tick, 1000)
@@ -1028,5 +1110,5 @@ function main() {
   process.on('SIGINT', () => { clearInterval(iv); process.exit(0) })
 }
 
-module.exports = { parseEvents, parseLines, fold, render, statusLine, bracketTree, viewTree, placeholderTree, complete, THEMES, splitDoc, stripRefresh, serveBody, serveShell, serveRoute, demoEvents, demoLines }
+module.exports = { parseEvents, parseLines, fold, render, statusLine, bracketTree, viewTree, placeholderTree, complete, THEMES, splitDoc, stripRefresh, serveBody, serveShell, serveRoute, demoEvents, demoLines, PARTY_MARKER }
 if (require.main === module) main()

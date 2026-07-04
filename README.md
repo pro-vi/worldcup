@@ -70,6 +70,10 @@ that says plainly when the bracket and the rating disagree.
   field never improved on the real thing is a real result, not a failure.
 - **The trust verdict** — a single-elimination winner can be a lucky draw; the
   report says so and offers a runoff.
+- **The confetti** — the trophy throws a burst when the report opens; click the
+  cup to replay it. Doctrine-aware: a champion that failed the fabrication gate
+  gets no party (the verdict says DO NOT TRUST, and the page won't contradict
+  it), and the auto-fire respects `prefers-reduced-motion`.
 
 Two committed samples, both reproduced byte-for-byte by
 `node scripts/render-sample-report.js` (the whole tournament run with
@@ -157,8 +161,9 @@ Every run is watchable for free in `/workflows` (Tier-0). Tier-1 is a
 dependency-free HTML bracket that fills in *while the run happens*: group tables
 building, knockout games "playing", winners advancing. Three curated themes —
 `arena`, `concrete`, `2026` — plus `--switcher` to flip between them and
-`--serve` for a flicker-free page on `127.0.0.1`. Preview any time with
-`npm run demo`; wiring into a real run is step 4 of `worldcup/SKILL.md`.
+`--serve` for a flicker-free page on `127.0.0.1`. When the champion is crowned,
+the page throws confetti (click the champion card to replay). Preview any time
+with `npm run demo`; wiring into a real run is step 4 of `worldcup/SKILL.md`.
 
 ## Verify the repo
 

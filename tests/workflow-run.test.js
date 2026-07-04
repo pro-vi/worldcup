@@ -134,3 +134,21 @@ test('extractTeams recognizes comment-wrapped Team: markers (code-shaped artifac
   // silently fall back to segment-hash identity and no test would catch it downstream
   assert.deepEqual(extractTeams('leading prose\n// Team: a\nmore\n// Team: b'), ['a', 'b'])
 })
+
+test('the report celebrates a clean champion with confetti, and the trophy is the replay control', async () => {
+  const { result } = await baseRun()
+  const html = result.reportHtml
+  // baseline champion passed the gate → the party flag is ON (a gate-DQ champion would get PARTY=false:
+  // no confetti for a verdict that says DO NOT TRUST)
+  assert.match(html, /var PARTY=true/, 'clean champion turns the party on')
+  assert.match(html, /function party\(/, 'confetti engine is embedded')
+  assert.match(html, /onclick="party\(\)"/, 'the trophy replays the burst on click')
+  assert.match(html, /role="button" tabindex="0"/, 'the trophy replay is keyboard-reachable')
+  assert.match(html, /prefers-reduced-motion/, 'auto-fire honors reduced motion')
+  // retina: the canvas CSS box must be pinned by CSS — inset alone leaves a replaced element at its
+  // attribute size and the dpr-scaled backing store then draws the burst off-screen at 2x coordinates
+  assert.match(html, /\.fx\{[^}]*width:100%;height:100%/, 'confetti canvas CSS box is viewport-pinned')
+  // the engine must live INSIDE the report's single script block (a second <script> tag would trip
+  // the escaping invariant pinned above)
+  assert.equal(html.split('<script').length - 1, 1, 'confetti added no extra script tag')
+})

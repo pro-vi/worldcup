@@ -1528,6 +1528,8 @@ header .sub{color:#d9c4d4;font-size:12px}
 .center{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 8px;min-width:180px}
 .winnerlbl{font-size:13px;letter-spacing:4px;color:var(--gold);font-weight:800;text-transform:uppercase;margin-bottom:6px}
 .trophy{font-size:74px;line-height:1;filter:drop-shadow(0 6px 18px rgba(245,197,66,.55))}
+.trophy[onclick]{cursor:pointer}
+.fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:45}
 .champcard{margin-top:8px;background:linear-gradient(180deg,rgba(245,197,66,.22),rgba(245,197,66,.08));border:1.5px solid var(--gold);border-radius:10px;padding:8px 18px;font-weight:800;font-size:16px}
 .champcard .entry{color:var(--gold)}
 .finalline{margin-top:8px;font-size:11px;color:#d9c4d4}
@@ -1568,7 +1570,7 @@ ul{margin:.2em 0;padding-left:1.1em}
 <div class="sub">champion <b style="color:var(--gold)">${esc(champion.label)}</b> &middot; ${esc(trustVerdict)} &middot; ${refTxt}</div>
 <div class="recpill">${esc(recommendation)}</div>${headlineHtml ? `<div class="headlines">${headlineHtml}</div>` : ''}<div class="hint">click any entry for its info and full text</div></header>
 <div class="wrap"><div class="bracket"><div class="half left">${leftCols}</div>
-<div class="center"><div class="winnerlbl">Winner</div><div class="trophy">&#127942;</div><div class="champcard">${entry(champion.label)}</div><div class="finalline">${finalLine}</div></div>
+<div class="center"><div class="winnerlbl">Winner</div><div class="trophy"${championDQ ? '' : ` role="button" tabindex="0" aria-label="replay the confetti" title="replay the confetti" onclick="party()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();party();}"`}>&#127942;</div><div class="champcard">${entry(champion.label)}</div><div class="finalline">${finalLine}</div></div>
 <div class="half right">${rightCols}</div></div>
 <div class="panels">
 <div class="panel"><h3>Trust</h3><div class="trust">${esc(trustVerdict)}</div><div class="muted">rating leader: ${esc(pool.find(t => t.id === ratingLeaderId).label)} &middot; avg rating of beaten opponents: ${avgBeatenRating}</div></div>
@@ -1599,6 +1601,53 @@ document.getElementById('mbody').innerHTML=h;document.getElementById('modal').cl
 function hide(){document.getElementById('modal').classList.remove('show');}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')hide();});
 document.addEventListener('click',function(e){var t=e.target;if(t&&t.classList&&t.classList.contains('entry')&&t.getAttribute('data-k'))show(t.getAttribute('data-k'));});
+// Confetti: one gold burst from the trophy when the report opens; the cup replays it (click, or
+// Enter/Space — it's a real role=button). Principle: the page must never create more confidence in
+// the winner than the evaluator earned. Confetti celebrates the BRACKET win (the sporting layer);
+// the verdict pill stays the epistemic voice — "lucky draw" and "keep the original" champions still
+// won their bracket and get their shower. A gate-DQ champion is the one state where celebration
+// would contradict the page itself (DO NOT TRUST), so it gets NO party and NO replay control (the
+// cup renders inert rather than as a dead switch). Auto-fire honors prefers-reduced-motion;
+// replaying via the cup is user-initiated motion and still plays.
+var PARTY=${championDQ ? 'false' : 'true'};
+function party(){if(!PARTY)return;
+var cv=document.createElement('canvas');cv.className='fx';
+var cx=cv.getContext&&cv.getContext('2d');if(!cx)return;
+document.body.appendChild(cv);
+var dpr=Math.min(2,window.devicePixelRatio||1),W=0,H=0;
+// .fx pins the canvas CSS box to the viewport (a canvas is a replaced element: inset:0 alone leaves it
+// at its ATTRIBUTE size, and the dpr-scaled backing store would then double every coordinate on retina
+// screens — burst off-screen). fit() manages only the backing store; CSS owns the box. Client dims, not
+// innerWidth: width:100% on a fixed box excludes the scrollbar, and getBoundingClientRect anchors are in
+// that same client space — innerWidth would squish x by the scrollbar width.
+function fit(){var de=document.documentElement;W=de.clientWidth||window.innerWidth;H=de.clientHeight||window.innerHeight;cv.width=W*dpr;cv.height=H*dpr;cx.setTransform(dpr,0,0,dpr,0,0);}
+fit();window.addEventListener('resize',fit);
+var src={x:W/2,y:H*0.3},anchor=document.querySelector('.trophy');
+if(anchor){var r=anchor.getBoundingClientRect();if(r.width)src={x:r.left+r.width/2,y:r.top+r.height/2};}
+var COL=['#f5c542','#fff6d8','#ff7a3c','#7fd1ff','#e58ab0'];
+var N=Math.min(240,Math.max(140,Math.round(W/6))),P=[];
+for(var i=0;i<N;i++){var burst=i<N*0.72,a=Math.random()*Math.PI*2,v=4+Math.random()*9;
+P.push({x:burst?src.x:Math.random()*W,y:burst?src.y:-20-Math.random()*H*0.25,
+vx:burst?Math.cos(a)*v:(Math.random()-0.5)*1.2,vy:burst?Math.sin(a)*v-3:1+Math.random()*2,
+w:4+Math.random()*5,h:8+Math.random()*6,rot:Math.random()*Math.PI*2,vr:(Math.random()-0.5)*0.3,
+c:COL[i%COL.length],dot:i%5===4,life:0,ttl:2600+Math.random()*1600});}
+var t0=null,prev=null;
+function gone(){if(cv.parentNode)cv.parentNode.removeChild(cv);window.removeEventListener('resize',fit);}
+function step(ts){if(t0===null){t0=ts;prev=ts;}
+var dt=Math.min(48,ts-prev);prev=ts;
+cx.clearRect(0,0,W,H);
+var alive=0,k=dt/16.7;
+for(var i=0;i<P.length;i++){var p=P[i];p.life+=dt;if(p.life>p.ttl||p.y>H+30)continue;
+p.vy+=0.22*k;p.vx*=Math.pow(0.985,k);p.x+=p.vx*k+Math.sin((p.life+i*97)/260)*0.7*k;p.y+=p.vy*k;p.rot+=p.vr*k;
+alive++;var f=p.ttl-p.life;cx.globalAlpha=f<420?f/420:1;
+cx.save();cx.translate(p.x,p.y);cx.rotate(p.rot);cx.fillStyle=p.c;
+if(p.dot){cx.beginPath();cx.arc(0,0,p.w/2,0,Math.PI*2);cx.fill();}
+else{cx.scale(1,0.4+0.6*Math.abs(Math.sin(p.rot*2+i)));cx.fillRect(-p.w/2,-p.h/2,p.w,p.h);}
+cx.restore();}
+cx.globalAlpha=1;
+if(alive&&ts-t0<9000)requestAnimationFrame(step);else gone();}
+requestAnimationFrame(step);}
+if(PARTY&&!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches))setTimeout(party,350);
 ${coordScript}
 </script></body></html>`
 }
