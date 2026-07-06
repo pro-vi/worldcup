@@ -4,3 +4,4 @@
 # breaks both, so line endings are pinned rather than left to core.autocrlf.
 * text=auto eol=lf
 *.png binary
+*.gif binary

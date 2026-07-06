@@ -27,6 +27,8 @@ endorsed by, or sponsored by FIFA or any tournament organizer.
 
 ## See it in sixty seconds
 
+![worldcup demo: group tables filling in, a live match glowing, an entry thrown out at the fabrication gate, and the champion crowned with confetti](docs/media/demo.gif)
+
 No agents, no API keys — a bundled demo tournament plays itself through the real
 live-view pipeline:
 
