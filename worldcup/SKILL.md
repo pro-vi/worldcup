@@ -115,7 +115,7 @@ context; pick sane defaults for the rest and state them.
    to the 3-judge gate.
 6. **Cross-model jurors**: whether to bring frontier models in via agentify as
    panelists for the semis and final (see "references/judging.md", Cross-model
-   panel). Default: offer it for the final four when the decision is close or the
+   jurors). Default: offer it for the final four when the decision is close or the
    stakes are high. It costs wall-clock (agentify is slower) so it is opt-in per run.
    Cross-model seats are wired outside the template today — the shipped template runs
    same-family panels; bringing in agentify/frontier jurors for the SF/final is a
@@ -149,6 +149,17 @@ context; pick sane defaults for the rest and state them.
    (mirror bracket + coordinate view). You are filling holes, not writing orchestration.
 4. **Run it** with the Workflow tool. It runs in the background and notifies on
    completion. Watchable via "/workflows" (Tier-0 — free, no setup).
+
+   **If the host has no Workflow tool** (Codex, for example): do not improvise a
+   several-hundred-call run with ad-hoc subagents — the deterministic bracket
+   logic and the ordering contract below are the whole point, and hand-driving
+   it forfeits both. A full run currently needs Claude Code's ultracode Workflow
+   tool; say so, then offer what still works without it: the judging doctrine in
+   "references/judging.md" drops into any evaluation setup, and
+   "references/workflow-template.js" ports to any orchestrator that can spawn
+   judge agents — under its stated contract, the host's `parallel()` must return
+   results in input order (a completion-order pool silently breaks the
+   byte-identical determinism this repo advertises).
 
    **Optional Tier-1 live view** — a self-refreshing HTML bracket that fills in *as the run
    happens* (group tables building, knockout games "playing", winners advancing). To enable:
