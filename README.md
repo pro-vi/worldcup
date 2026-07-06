@@ -95,17 +95,19 @@ the single-call baseline is named future work.
 
 Two committed samples, both reproduced byte-for-byte by
 `node scripts/render-sample-report.js` (the whole tournament run with
-deterministic stub judges; `npm run check` fails if they drift). GitHub shows
-these links as raw HTML source, not a rendered page — clone the repo and open
-them in a browser, or regenerate them locally with the command above, to see
-the actual report:
+deterministic stub judges; `npm run check` fails if they drift). See them
+rendered live — no clone required:
 
-- [`docs/media/sample-report.html`](docs/media/sample-report.html) — 32 tagline
-  variants, the prose-shaped case.
-- [`docs/media/sample-report-code.html`](docs/media/sample-report-code.html) —
-  the same machinery on **code**: 32 generated `debounce` implementations, one
+- [**Taglines sample**](https://pro-vi.github.io/worldcup/media/sample-report.html)
+  — 32 tagline variants, the prose-shaped case.
+- [**Code sample**](https://pro-vi.github.io/worldcup/media/sample-report-code.html)
+  — the same machinery on **code**: 32 generated `debounce` implementations, one
   disqualified at the gate for a fabricated benchmark claim. Code entries render
   as code in the report's info sheets.
+
+Offline instead: clone the repo and open `docs/media/sample-report.html` or
+`docs/media/sample-report-code.html` in a browser, or regenerate them locally
+with the command above.
 
 ![The code sample: a debounce implementation open in the report info sheet](docs/media/report-code.png)
 
