@@ -27,6 +27,8 @@ endorsed by, or sponsored by FIFA or any tournament organizer.
 
 ## See it in sixty seconds
 
+![worldcup demo: group tables filling in, a live match glowing, an entry thrown out at the fabrication gate, and the champion crowned with confetti](docs/media/demo.gif)
+
 No agents, no API keys — a bundled demo tournament plays itself through the real
 live-view pipeline:
 
@@ -56,6 +58,24 @@ of an opaque "the model liked #17," you get group standings, upsets, a
 champion's road with the deciding reasons round by round, and a trust verdict
 that says plainly when the bracket and the rating disagree.
 
+## Why not one big judge call?
+
+Fair question, and the honest answer is *we have not measured it.* A single
+strong-model call handed the same fact-ledger packet is the obvious cheaper
+baseline, and nothing here has beaten it on a benchmark — because there is no
+benchmark yet. Per [ADR 0001](docs/adr/0001-single-domain-general-judge.md),
+with no eval harness "every alternative judge design is argument, not
+measurement"; per
+[ADR 0002](docs/adr/0002-no-judge-certification-canary-floor.md), a passing
+release canary means "not obviously broken," never "certified."
+
+What the tournament *demonstrably* adds over one opaque score is the legibility
+described above — standings, the champion's road, the global rating, the trust
+verdict — plus a fabrication veto that is mechanism-validated, not asserted:
+each of the release canary's three fabrication cases was disqualified 3-of-3 by
+real judges (`canary/records/2026-07-v0.1.0.json`). A head-to-head eval against
+the single-call baseline is named future work.
+
 ## What a run produces
 
 ![The final report: mirror bracket, group tables, road to the title, trust verdict](docs/media/report.png)
@@ -77,17 +97,19 @@ that says plainly when the bracket and the rating disagree.
 
 Two committed samples, both reproduced byte-for-byte by
 `node scripts/render-sample-report.js` (the whole tournament run with
-deterministic stub judges; `npm run check` fails if they drift). GitHub shows
-these links as raw HTML source, not a rendered page — clone the repo and open
-them in a browser, or regenerate them locally with the command above, to see
-the actual report:
+deterministic stub judges; `npm run check` fails if they drift). See them
+rendered live — no clone required:
 
-- [`docs/media/sample-report.html`](docs/media/sample-report.html) — 32 tagline
-  variants, the prose-shaped case.
-- [`docs/media/sample-report-code.html`](docs/media/sample-report-code.html) —
-  the same machinery on **code**: 32 generated `debounce` implementations, one
+- [**Taglines sample**](https://pro-vi.github.io/worldcup/media/sample-report.html)
+  — 32 tagline variants, the prose-shaped case.
+- [**Code sample**](https://pro-vi.github.io/worldcup/media/sample-report-code.html)
+  — the same machinery on **code**: 32 generated `debounce` implementations, one
   disqualified at the gate for a fabricated benchmark claim. Code entries render
   as code in the report's info sheets.
+
+Offline instead: clone the repo and open `docs/media/sample-report.html` or
+`docs/media/sample-report-code.html` in a browser, or regenerate them locally
+with the command above.
 
 ![The code sample: a debounce implementation open in the report info sheet](docs/media/report-code.png)
 
@@ -110,6 +132,12 @@ describe a task like "generate 32 tagline variants and pick the best."
 
 ### Codex CLI
 
+> **On Codex today:** a full tournament run needs Claude Code's ultracode
+> Workflow tool, which Codex does not provide. Installing the skill on Codex
+> still gets you the self-playing `npm run demo`, the fabrication-gated judging
+> doctrine, and the portable Workflow template you can drive from any
+> orchestrator — see [Without the Workflow tool](#the-workflow-dependency).
+
 Codex loads skills from `$CODEX_HOME/skills`, defaulting to `~/.codex/skills`.
 Same shape, from inside the clone:
 
@@ -121,7 +149,8 @@ ls "${CODEX_HOME:-$HOME/.codex}/skills/worldcup/SKILL.md"   # verify
 ```
 
 Restart Codex so it reloads skill frontmatter. In a new session, mention
-`worldcup` or describe a "best of N" tournament task.
+`worldcup` to pull in the judging doctrine and the portable template; run the
+full bracket from a Claude Code host (see the note above).
 
 ## Requirements
 
@@ -131,10 +160,13 @@ Restart Codex so it reloads skill frontmatter. In a new session, mention
 
 ### The Workflow dependency
 
-Real tournament runs need the **ultracode Workflow tool**: a multi-agent
-orchestration feature of the agent host (Claude Code's ultracode mode) that
-takes a plain-JavaScript script exposing `agent()` / `parallel()` / `log()` /
-`phase()` and runs it as one deterministic background run. The skill fills that
+Real tournament runs need the
+**[ultracode Workflow tool](https://code.claude.com/docs/en/workflows)**: a
+multi-agent orchestration feature of the agent host (Claude Code's ultracode
+mode) that takes a plain-JavaScript script exposing `agent()` / `parallel()` /
+`log()` / `phase()` and runs it as one deterministic background run. It needs
+Claude Code v2.1.154 or later on a paid plan — enable it with `/effort
+ultracode`, or just ask for a workflow in any prompt. The skill fills that
 script in from `worldcup/references/workflow-template.js`.
 
 Honest cost note: a real 32-team run is hundreds of judge and generation agent
@@ -176,7 +208,7 @@ tests, the canary-validator tests, a **fake-judge end-to-end harness** that
 plays the entire tournament template with deterministic stub judges (including
 a completion-order-invariance test: same verdicts, byte-identical report), and
 the release-canary fixture contract. CI runs the same on Linux (Node 20/22/24)
-and Windows.
+and Windows (Node 20).
 
 The six-case judge canary is also run through real judges before each release,
 and the validated record is committed: see [`canary/records/`](canary/records/)

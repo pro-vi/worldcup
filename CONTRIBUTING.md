@@ -4,10 +4,10 @@ Thanks for improving `worldcup`. Keep changes small and evidence-backed: this
 repo is mostly a skill plus reference templates, so docs and contracts matter as
 much as code.
 
-A note on history: the public announcement will ship from a clean-history root
-commit (see the launch procedure in `docs/repository-settings.md`), so
-pre-launch scratch (plans, probes, private notes) is not part of the announced
-history; the ADRs in `docs/adr/` summarize anything from that period worth keeping.
+A note on history: the public repository ships from a clean-history root
+commit (see `docs/repository-settings.md`), so pre-launch scratch (plans,
+probes, private notes) is not part of the announced history; the ADRs in
+`docs/adr/` summarize anything from that period worth keeping.
 
 ## Local Checks
 

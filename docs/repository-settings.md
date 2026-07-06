@@ -1,41 +1,27 @@
 # Repository Settings For Launch
 
-These settings live in GitHub, not in the git tree. Apply them when the
-`launch-pass` branch is ready and before announcing the repository.
+These settings live in GitHub, not in the git tree. This file is the
+repository's launch-configuration record: each item states a setting and pairs
+it with the command that confirms it. Run the command to verify any line.
 
-## Clean-History Squash (REQUIRED before announcing)
+## Clean-History Launch
 
-The pre-launch history on `main`/`launch-pass` still contains removed private
-scratch (plans, probes, internal notes). A normal merge keeps all of it
-publicly reachable; the announcement must ship from a single clean root
-commit instead. After `launch-pass` is reviewed and green:
+The public repository ships from a single clean root commit,
+`fd2a970 "worldcup v0.1.0 — open-source launch"`. The pre-launch working
+history (plans, probes, internal notes) is not part of the announced history;
+`docs/adr/` summarizes anything from that period worth keeping. The remote
+carries only `refs/heads/main`; the pre-squash `launch-pass` branch is retired
+both locally and on the remote.
 
-```bash
-git switch launch-pass && npm run check
-git checkout --orphan public-main   # checkout, NOT `switch --orphan`: switch empties the
-                                    # working tree/index; checkout keeps every file staged
-git commit -m "worldcup v0.1.0 — open-source launch"
-git diff --stat launch-pass public-main   # must be EMPTY — same tree, new root
-git push origin public-main:main --force-with-lease
-git branch -f main public-main && git switch main && git branch -D public-main
-git branch -D launch-pass              # required: retire the pre-squash branch locally
-git push origin --delete launch-pass   # required: retire it on the remote too
-```
-
-Verify before announcing:
+Confirm the default clone is clean:
 
 ```bash
-git ls-remote --heads origin    # must list only refs/heads/main
-git log --oneline origin/main   # must show exactly the single clean root commit
+git ls-remote --heads origin         # lists only refs/heads/main
+git log --oneline origin/main | tail -1   # the clean root commit fd2a970 at the base of history
 ```
 
-Until this squash lands, do not tag, announce, or link the repository —
-CONTRIBUTING.md's clean-root note describes the post-squash state. After it
-lands, enable "block force pushes" on `main` (below) so the rewrite is the
-last one.
-
-Honest scope note: this procedure produces a clean default clone — a fresh
-`git clone` only ever sees the single root commit on `main` — not total
+Honest scope note: the clean-history launch produces a clean default clone — a
+fresh `git clone` only ever sees the single root commit on `main` — not total
 unreachability. GitHub also keeps `refs/pull/N/head` refs pointing into the
 pre-squash history, which the repo owner cannot delete, and the orphaned
 pre-squash commits stay fetchable by SHA until GitHub's garbage collection
@@ -44,42 +30,73 @@ purge the repository's history, or delete and recreate the repository instead.
 
 ## Metadata
 
-- Description: `Best-of-N selection engine wearing a World Cup-style tournament`
-- Topics: `agent-skill`, `claude-code`, `codex`, `llm`, `tournament`, `bracket`,
-  `evaluation`, `workflow`, `best-of-n`, `llm-judge`
-- Social preview: upload the 1280x640 hero crop
-  (`docs/media/social-preview.png`) under Settings > General > Social preview
-  before announcing — the link unfurl on HN/X/Slack is decided by this image,
-  not by the README.
+- **Description:** `Best-of-N selection engine wearing a World Cup-style tournament`
+- **Homepage:** `https://pro-vi.github.io/worldcup/` — the GitHub Pages site that
+  serves the rendered interactive reports (Pages source: branch `main`, folder
+  `/docs`).
+- **Topics** (ten): `agent-skill`, `claude-code`, `codex`, `llm`, `tournament`,
+  `bracket`, `evaluation`, `workflow`, `best-of-n`, `llm-judge`.
+- **Social preview:** the 1280x640 hero crop (`docs/media/social-preview.png`),
+  uploaded under Settings > General > Social preview — the link unfurl on
+  HN/X/Slack is decided by this image, not by the README. GitHub exposes no API
+  for this upload, so it is a manual step.
+
+Confirm:
+
+```bash
+gh repo view pro-vi/worldcup --json description,homepageUrl,repositoryTopics
+gh repo view pro-vi/worldcup --json usesCustomOpenGraphImage   # true once the social preview is uploaded
+gh api repos/pro-vi/worldcup/pages --jq '{status,source}'      # built from main:/docs
+```
 
 ## Security
 
-- Enable **Private Vulnerability Reporting** (Settings > Code security) —
-  `SECURITY.md` and the issue-template contact link both point to
-  `security/advisories/new`, which 404s until this is on.
-- Enable secret scanning and push protection.
+- **Private Vulnerability Reporting** is enabled. The clickable security-contact
+  link lives in `.github/ISSUE_TEMPLATE/config.yml` and points to
+  `https://github.com/pro-vi/worldcup/security/advisories/new`, which resolves
+  only when Private Vulnerability Reporting is on. (`SECURITY.md` states the
+  private-reporting policy in prose; it does not itself carry that link.)
+- **Secret scanning** and **push protection** are enabled.
+
+Confirm:
+
+```bash
+gh api repos/pro-vi/worldcup/private-vulnerability-reporting   # {"enabled":true}
+curl -sS -o /dev/null -w '%{http_code}\n' https://github.com/pro-vi/worldcup/security/advisories/new   # not 404
+```
 
 ## Branch Protection
 
-Protect `main` with:
+`main` is protected:
 
-- require pull request before merge;
-- require the CI matrix checks — with the node/OS matrix the required status
-  names are `CI / check (ubuntu-latest, node 20)` (and 22/24, plus
-  `CI / check (windows-latest, node 20)`); at minimum require the
-  ubuntu/node-20 job;
-- require branches to be up to date before merge;
-- block force pushes after any clean-history launch rewrite is complete.
+- pull request required before merge;
+- required status check: the Linux / Node 20 CI job — its check-run name is
+  `check (ubuntu-latest, node 20)` (the matrix also runs Node 22/24 on Linux and
+  Node 20 on Windows). Read the exact live names before wiring protection (do
+  not guess them):
+  `gh api repos/pro-vi/worldcup/commits/main/check-runs --jq '.check_runs[].name'`;
+- branches required to be up to date before merge (strict mode);
+- force pushes blocked — the clean-history rewrite was the last one;
+- admins included (`enforce_admins`): the owner accepts the friction as the
+  guarantee that the rewrite was final.
 
-## CI Housekeeping At Squash Time
+Confirm:
 
-`.github/workflows/ci.yml` triggers on pushes to `main` only (the `launch-pass`
-trigger was removed in the clean-history root commit, since that branch retires
-at squash time).
+```bash
+gh api repos/pro-vi/worldcup/branches/main/protection \
+  --jq '{pr: .required_pull_request_reviews != null, checks: .required_status_checks.contexts, strict: .required_status_checks.strict, force_pushes_blocked: (.allow_force_pushes.enabled | not), enforce_admins: .enforce_admins.enabled}'
+```
+
+## Continuous Integration
+
+`.github/workflows/ci.yml` runs `npm run check` on every pull request and on
+pushes to `main`, across the matrix: Node 20/22/24 on `ubuntu-latest` plus Node
+20 on `windows-latest` (four jobs). The launch checks byte-compare the rendered
+sample reports against their committed copies, so a drift is a red build.
 
 ## Community Profile
 
-Expected files after this launch pass:
+The community-health files are present:
 
 - `README.md`
 - `LICENSE`
@@ -91,11 +108,18 @@ Expected files after this launch pass:
 
 ## Releases
 
-Tag the clean-history launch commit as `v0.1.0` only after the release canary is
-run through the skill host and its record is committed and validated:
+`v0.1.0` is tagged and released from the CI-green launch HEAD. The release
+prerequisite — a real-judge canary record, committed and validated — is met:
+`canary/records/2026-07-v0.1.0.json`. Validate it with:
 
 ```bash
 node scripts/judge-canary.js --record canary/records/2026-07-v0.1.0.json
+```
+
+Confirm the release:
+
+```bash
+gh release view v0.1.0
 ```
 
 See `canary/README.md` for the record shape and rules.
