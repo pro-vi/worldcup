@@ -1446,7 +1446,10 @@ function renderReportV2() {
   const dataJson = JSON.stringify(DATA).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
   const dataJsonLit = JSON.stringify(dataJson)
   const entry = label => `<span class="entry" data-k="${esc(label)}">${esc(label)}</span>`
-  const card = m => m ? `<div class="match"><div class="slot win">${entry(m.winner.label)}<span class="mg">${esc(m.margin || '')}</span></div><div class="slot lose">${entry(m.loser.label)}</div></div>` : `<div class="match empty"></div>`
+  // `road` marks a match the champion WON — every card on the champion's path. The connector
+  // engine (drawConn) reads it to paint the winner rail gold; it is pure tournament data, so the
+  // emitted markup stays deterministic (geometry, by contrast, lives in runtime JS only).
+  const card = m => m ? `<div class="match${m.winner.id === champion.id ? ' road' : ''}"><div class="slot win">${entry(m.winner.label)}<span class="mg">${esc(m.margin || '')}</span></div><div class="slot lose">${entry(m.loser.label)}</div></div>` : `<div class="match empty"></div>`
   const playedRounds = order.filter(k => history[k] && history[k].length)
   const finalKey = playedRounds[playedRounds.length - 1]
   const preRounds = playedRounds.slice(0, -1)
@@ -1573,7 +1576,7 @@ function grid(){var gx=+document.getElementById('gx').value,gy=+document.getElem
 if(document.getElementById('gy')){document.getElementById('gy').value=Math.min(1,AXES.length-1);grid();}`
   }
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>World Cup: ${esc(champion.label)}</title>${FAVICON}<style>
-:root{--bg0:${T.bg0};--bg1:${T.bg1};--s0:${T.s0};--s1:${T.s1};--s2:${T.s2};--line:${T.line};--txt:${T.txt};--mut:${T.mut};--dim:${T.dim};--soft:${T.soft};--ui:${T.ui};--gold:${T.gold};--goldHi:${T.goldHi};--lose:${T.lose};--loss:${T.loss};--dq:${T.dq};--ver:${T.ver};--draw:${T.draw};--bar:${T.bar};--ink:${T.ink};--code:${T.code}}
+:root{--bg0:${T.bg0};--bg1:${T.bg1};--s0:${T.s0};--s1:${T.s1};--s2:${T.s2};--line:${T.line};--txt:${T.txt};--mut:${T.mut};--dim:${T.dim};--soft:${T.soft};--ui:${T.ui};--gold:${T.gold};--goldHi:${T.goldHi};--lose:${T.lose};--loss:${T.loss};--dq:${T.dq};--ver:${T.ver};--draw:${T.draw};--bar:${T.bar};--ink:${T.ink};--code:${T.code};--rail:var(--line);--rdone:var(--bar);--rwin:var(--gold)}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
 body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:var(--txt);min-height:100vh;background:radial-gradient(75% 60% at 50% -10%,${T.glow} 0,var(--bg1) 45%,var(--bg0) 78%) fixed,repeating-linear-gradient(115deg,transparent 0 72px,${T.stripe} 73px 74px,transparent 75px 146px)}
 .shell{max-width:1280px;margin:0 auto;padding:18px 20px 48px}
@@ -1608,7 +1611,19 @@ body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
 .tkI b{color:var(--txt);font-weight:900}
 .tkSep{flex:0 0 auto;color:var(--ui);font-size:8px}
 /* ── bracket: mirror layout; winner gold edge, loser struck ── */
-.bracket{display:flex;justify-content:center;justify-content:safe center;align-items:stretch;gap:10px;padding:30px 0 20px;overflow-x:auto;min-height:400px}
+.bracket{position:relative;display:flex;justify-content:center;justify-content:safe center;align-items:stretch;gap:10px;padding:30px 0 20px;overflow-x:auto;min-height:400px}
+/* connector rails: the live view's SVG engine (bracketConn in live-view.js), NOT pseudo-element
+   stubs — a per-gap clip means no stroke can paint onto a card, each feeder+riser is ONE elbow
+   path (linejoin:round, no overshoot nub), a junction dot covers the colour seam at each T.
+   Painted at runtime by drawConn() below (the columns are elastic, so geometry is measured).
+   ca = the champion's road (--rwin gold), cw = decided (--rdone), unclassed = empty (--rail). */
+.conn{position:absolute;left:0;top:0;z-index:0;pointer-events:none}
+.conn line,.conn path{fill:none;stroke-width:3;stroke:var(--rail);stroke-linecap:butt;stroke-linejoin:round}
+.conn line.cw,.conn path.cw{stroke:var(--rdone)}
+.conn line.ca,.conn path.ca{stroke:var(--rwin)}
+.conn circle{stroke:none;fill:var(--rail)}
+.conn circle.cw{fill:var(--rdone)}
+.conn circle.ca{fill:var(--rwin)}
 .half{display:flex}
 .round{display:flex;flex-direction:column;justify-content:space-around;padding:0 13px;width:171px;min-width:171px}
 .pair{position:relative;display:flex;flex-direction:column;justify-content:space-around;flex:1}
@@ -1625,10 +1640,6 @@ body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
 .slot.lose{color:var(--lose)}
 .slot.lose .entry{text-decoration:line-through;text-decoration-thickness:1px}
 .mg{flex:0 0 auto;font-size:8px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;color:var(--gold);background:var(--bg0);box-shadow:inset 0 0 0 1px rgba(${T.goldRGB},.3);border-radius:2px;padding:2px 4px;white-space:nowrap}
-.half.left .pair:not(.single)::after{content:"";position:absolute;right:-13px;top:25%;bottom:25%;width:2px;background:var(--line)}
-.half.left .match::after{content:"";position:absolute;right:-13px;top:50%;width:13px;height:2px;background:var(--line)}
-.half.right .pair:not(.single)::after{content:"";position:absolute;left:-13px;top:25%;bottom:25%;width:2px;background:var(--line)}
-.half.right .match::after{content:"";position:absolute;left:-13px;top:50%;width:13px;height:2px;background:var(--line)}
 /* ── winner center: gold octagon ── */
 .center{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 6px;min-width:192px}
 .winnerlbl{font-size:11px;letter-spacing:.42em;text-indent:.42em;color:var(--gold);font-weight:900;text-transform:uppercase;margin-bottom:10px}
@@ -1890,6 +1901,73 @@ cx.globalAlpha=1;
 if(alive&&ts-t0<9000)requestAnimationFrame(step);else gone();}
 requestAnimationFrame(step);}
 if(PARTY&&!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches))setTimeout(party,350);
+// ── bracket connector rails: the live view's SVG engine (bracketConn in live-view.js) ported to
+// the mirror layout. Same structure, same grammar: measure the DOM boxes -> build the path list ->
+// ONE absolutely-positioned SVG overlay -> junction dots. A per-gap <clipPath> hard-clips every
+// stroke to the gutter (paint-order is NOT clipping), each feeder+riser is ONE elbow <path> with
+// linejoin:round (no overshoot nub to draw), and a <circle> at each T covers the colour seam.
+// Adapted, not reinvented: the live view lays columns on a fixed 184/56 grid and computes geometry
+// server-side; this bracket's columns are ELASTIC (space-around, safe center), so the same math
+// runs client-side against getBoundingClientRect — on load and on debounced resize — and the
+// emitted HTML stays byte-deterministic. The two halves feed INWARD (dir +1 left / -1 right); the
+// last column of each half joins the centre octagon at its vertical middle (at mid-height the
+// octagon clip-path spans its full box, so the rail meets the visible gold edge exactly).
+// Colours: ca = the champion's road (--rwin gold), cw = decided (--rdone), unclassed = empty
+// feeders (--rail). Rails are static — no animation, so prefers-reduced-motion needs nothing.
+function drawConn(){
+var br=document.querySelector('.bracket');if(!br)return;
+var old=br.querySelector('.conn');if(old)old.parentNode.removeChild(old);
+var oct=br.querySelector('.champOct');if(!oct)return;
+var bb=br.getBoundingClientRect();
+var W=br.scrollWidth,H=br.scrollHeight;
+function bx(el){var r=el.getBoundingClientRect();return{l:r.left-bb.left+br.scrollLeft,r:r.right-bb.left+br.scrollLeft,cy:r.top-bb.top+br.scrollTop+r.height/2,road:el.classList.contains('road'),empty:el.classList.contains('empty')};}
+var SW2=1.5,EDGE=2,JPAD=0.4,defs='',groups='',gid=0;
+function cls(c){return c?' class="'+c+'"':'';}
+// gap(): one inter-column gutter. fs feed ts (target j <- feeders 2j, 2j+1); dir is the flow.
+function gap(fs,ts,dir){
+if(!fs.length||!ts.length)return;
+var eF=dir>0?Math.max.apply(null,fs.map(function(m){return m.r;})):Math.min.apply(null,fs.map(function(m){return m.l;}));
+var eT=dir>0?Math.min.apply(null,ts.map(function(m){return m.l;})):Math.max.apply(null,ts.map(function(m){return m.r;}));
+var x0=Math.min(eF,eT)+EDGE,x1=Math.max(eF,eT)-EDGE;
+if(x1-x0<1)return;
+var jx=((eF+eT)/2).toFixed(1);
+defs+='<clipPath id="bk'+gid+'" clipPathUnits="userSpaceOnUse"><rect x="'+x0.toFixed(1)+'" y="0" width="'+(x1-x0).toFixed(1)+'" height="'+H+'"/></clipPath>';
+var g='';
+for(var j=0;j<ts.length;j++){
+var t=ts[j],ff=[fs[2*j],fs[2*j+1]].filter(Boolean);
+if(!ff.length)continue;
+var yM=t.cy.toFixed(1);
+var fwd=t.oct?(ff.some(function(m){return m.road;})?'ca':(ff.some(function(m){return !m.empty;})?'cw':''))
+:(t.empty?'':(t.road?'ca':'cw'));
+ff.forEach(function(f){g+='<path d="M'+(dir>0?f.r:f.l).toFixed(1)+' '+f.cy.toFixed(1)+'H'+jx+'V'+yM+'"'+cls(f.empty?'':(f.road?'ca':'cw'))+'/>';});
+g+='<line x1="'+jx+'" y1="'+yM+'" x2="'+(dir>0?t.l:t.r).toFixed(1)+'" y2="'+yM+'"'+cls(fwd)+'/>'
++'<circle cx="'+jx+'" cy="'+yM+'" r="'+(SW2+JPAD)+'"'+cls(fwd)+'/>';
+}
+groups+='<g clip-path="url(#bk'+gid+')">'+g+'</g>';gid++;
+}
+var ob=bx(oct);ob.oct=true;
+[['.half.left',1],['.half.right',-1]].forEach(function(hv){
+var el=br.querySelector(hv[0]);if(!el)return;
+var dir=hv[1];
+var rounds=[].slice.call(el.children).filter(function(c){return c.classList.contains('round');});
+if(dir<0)rounds.reverse();// the right half renders outward (SF..R16); walk it chronologically
+var cols=rounds.map(function(rd){return [].slice.call(rd.querySelectorAll('.match')).map(bx);});
+for(var r=0;r+1<cols.length;r++)gap(cols[r],cols[r+1],dir);
+if(cols.length)gap(cols[cols.length-1],[ob],dir);
+});
+if(!groups)return;
+var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+svg.setAttribute('class','conn');
+svg.setAttribute('viewBox','0 0 '+W+' '+H);
+svg.setAttribute('width',W);svg.setAttribute('height',H);
+svg.innerHTML='<defs>'+defs+'</defs>'+groups;
+br.insertBefore(svg,br.firstChild);// first child: paints under the z-indexed cards and octagon
+}
+var connT;
+window.addEventListener('resize',function(){clearTimeout(connT);connT=setTimeout(drawConn,120);});
+window.addEventListener('load',drawConn);// fonts/late layout can move card boxes; redraw settled
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){drawConn();});
+drawConn();
 ${coordScript}
 </script></body></html>`
 }

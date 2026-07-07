@@ -1,5 +1,5 @@
 <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>World Cup: the low-block</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Ctext y=%2252%22 font-size=%2252%22%3E%F0%9F%8F%86%3C/text%3E%3C/svg%3E"><style>
-:root{--bg0:#05070B;--bg1:#09111A;--s0:#0E1722;--s1:#141F2B;--s2:#192633;--line:#2A3542;--txt:#F4F7FA;--mut:#8491A0;--dim:#55606D;--soft:#AEB9C5;--ui:#37F0C0;--gold:#F2C44C;--goldHi:#FFF0A3;--lose:#66717E;--loss:#F0788F;--dq:#FF683D;--ver:#FF683D;--draw:#37F0C0;--bar:#3E4E60;--ink:#E6ECF3;--code:#DFE7EF}
+:root{--bg0:#05070B;--bg1:#09111A;--s0:#0E1722;--s1:#141F2B;--s2:#192633;--line:#2A3542;--txt:#F4F7FA;--mut:#8491A0;--dim:#55606D;--soft:#AEB9C5;--ui:#37F0C0;--gold:#F2C44C;--goldHi:#FFF0A3;--lose:#66717E;--loss:#F0788F;--dq:#FF683D;--ver:#FF683D;--draw:#37F0C0;--bar:#3E4E60;--ink:#E6ECF3;--code:#DFE7EF;--rail:var(--line);--rdone:var(--bar);--rwin:var(--gold)}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
 body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:var(--txt);min-height:100vh;background:radial-gradient(75% 60% at 50% -10%,#172536 0,var(--bg1) 45%,var(--bg0) 78%) fixed,repeating-linear-gradient(115deg,transparent 0 72px,rgba(55,240,192,.025) 73px 74px,transparent 75px 146px)}
 .shell{max-width:1280px;margin:0 auto;padding:18px 20px 48px}
@@ -34,7 +34,19 @@ body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
 .tkI b{color:var(--txt);font-weight:900}
 .tkSep{flex:0 0 auto;color:var(--ui);font-size:8px}
 /* ── bracket: mirror layout; winner gold edge, loser struck ── */
-.bracket{display:flex;justify-content:center;justify-content:safe center;align-items:stretch;gap:10px;padding:30px 0 20px;overflow-x:auto;min-height:400px}
+.bracket{position:relative;display:flex;justify-content:center;justify-content:safe center;align-items:stretch;gap:10px;padding:30px 0 20px;overflow-x:auto;min-height:400px}
+/* connector rails: the live view's SVG engine (bracketConn in live-view.js), NOT pseudo-element
+   stubs — a per-gap clip means no stroke can paint onto a card, each feeder+riser is ONE elbow
+   path (linejoin:round, no overshoot nub), a junction dot covers the colour seam at each T.
+   Painted at runtime by drawConn() below (the columns are elastic, so geometry is measured).
+   ca = the champion's road (--rwin gold), cw = decided (--rdone), unclassed = empty (--rail). */
+.conn{position:absolute;left:0;top:0;z-index:0;pointer-events:none}
+.conn line,.conn path{fill:none;stroke-width:3;stroke:var(--rail);stroke-linecap:butt;stroke-linejoin:round}
+.conn line.cw,.conn path.cw{stroke:var(--rdone)}
+.conn line.ca,.conn path.ca{stroke:var(--rwin)}
+.conn circle{stroke:none;fill:var(--rail)}
+.conn circle.cw{fill:var(--rdone)}
+.conn circle.ca{fill:var(--rwin)}
 .half{display:flex}
 .round{display:flex;flex-direction:column;justify-content:space-around;padding:0 13px;width:171px;min-width:171px}
 .pair{position:relative;display:flex;flex-direction:column;justify-content:space-around;flex:1}
@@ -51,10 +63,6 @@ body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
 .slot.lose{color:var(--lose)}
 .slot.lose .entry{text-decoration:line-through;text-decoration-thickness:1px}
 .mg{flex:0 0 auto;font-size:8px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;color:var(--gold);background:var(--bg0);box-shadow:inset 0 0 0 1px rgba(242,196,76,.3);border-radius:2px;padding:2px 4px;white-space:nowrap}
-.half.left .pair:not(.single)::after{content:"";position:absolute;right:-13px;top:25%;bottom:25%;width:2px;background:var(--line)}
-.half.left .match::after{content:"";position:absolute;right:-13px;top:50%;width:13px;height:2px;background:var(--line)}
-.half.right .pair:not(.single)::after{content:"";position:absolute;left:-13px;top:25%;bottom:25%;width:2px;background:var(--line)}
-.half.right .match::after{content:"";position:absolute;left:-13px;top:50%;width:13px;height:2px;background:var(--line)}
 /* ── winner center: gold octagon ── */
 .center{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 6px;min-width:192px}
 .winnerlbl{font-size:11px;letter-spacing:.42em;text-indent:.42em;color:var(--gold);font-weight:900;text-transform:uppercase;margin-bottom:10px}
@@ -196,7 +204,7 @@ body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
 <div class="ticker"><span class="tkLab"><span>Headlines</span></span><span class="tkI"><b>CINDERELLA STORY</b> &mdash; seed #12 lifts the trophy</span><span class="tkSep">&#9670;</span><span class="tkI"><b>THE TOP SEED FALLS</b> &mdash; catenaccio out in the R16</span><span class="tkSep">&#9670;</span><span class="tkI"><b>IT WENT TO PENS</b> &mdash; final decided in the shootout</span></div>
 <div class="bracket"><div class="half left"><div class="round"><div class="pair"><div class="match"><div class="slot win"><span class="entry" data-k="the sweeper">the sweeper</span><span class="mg">narrow</span></div><div class="slot lose"><span class="entry" data-k="the overlap">the overlap</span></div></div><div class="match"><div class="slot win"><span class="entry" data-k="the target-man">the target-man</span><span class="mg">narrow</span></div><div class="slot lose"><span class="entry" data-k="total-football">total-football</span></div></div></div><div class="pair"><div class="match"><div class="slot win"><span class="entry" data-k="the slow-burn">the slow-burn</span><span class="mg">narrow</span></div><div class="slot lose"><span class="entry" data-k="route-one">route-one</span></div></div><div class="match"><div class="slot win"><span class="entry" data-k="the one-liner">the one-liner</span><span class="mg">narrow</span></div><div class="slot lose"><span class="entry" data-k="the hat-trick">the hat-trick</span></div></div></div></div><div class="round"><div class="pair"><div class="match"><div class="slot win"><span class="entry" data-k="the target-man">the target-man</span><span class="mg">pens</span></div><div class="slot lose"><span class="entry" data-k="the sweeper">the sweeper</span></div></div><div class="match"><div class="slot win"><span class="entry" data-k="the one-liner">the one-liner</span><span class="mg">pens</span></div><div class="slot lose"><span class="entry" data-k="the slow-burn">the slow-burn</span></div></div></div></div><div class="round"><div class="pair single"><div class="match"><div class="slot win"><span class="entry" data-k="the target-man">the target-man</span><span class="mg">pens</span></div><div class="slot lose"><span class="entry" data-k="the one-liner">the one-liner</span></div></div></div></div></div>
 <div class="center"><div class="winnerlbl">Champion</div><div class="champOct"><div class="trophy" role="button" tabindex="0" aria-label="replay the confetti" title="replay the confetti" onclick="party()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();party();}">&#127942;</div><div class="champcard"><span class="entry" data-k="the low-block">the low-block</span></div></div><div class="finalline">def. the target-man (pens)</div></div>
-<div class="half right"><div class="round"><div class="pair single"><div class="match"><div class="slot win"><span class="entry" data-k="the low-block">the low-block</span><span class="mg">pens</span></div><div class="slot lose"><span class="entry" data-k="the high-line">the high-line</span></div></div></div></div><div class="round"><div class="pair"><div class="match"><div class="slot win"><span class="entry" data-k="the high-line">the high-line</span><span class="mg">pens</span></div><div class="slot lose"><span class="entry" data-k="the through-ball">the through-ball</span></div></div><div class="match"><div class="slot win"><span class="entry" data-k="the low-block">the low-block</span><span class="mg">pens</span></div><div class="slot lose"><span class="entry" data-k="the playmaker">the playmaker</span></div></div></div></div><div class="round"><div class="pair"><div class="match"><div class="slot win"><span class="entry" data-k="the through-ball">the through-ball</span><span class="mg">narrow</span></div><div class="slot lose"><span class="entry" data-k="catenaccio">catenaccio</span></div></div><div class="match"><div class="slot win"><span class="entry" data-k="the high-line">the high-line</span><span class="mg">narrow</span></div><div class="slot lose"><span class="entry" data-k="tiki-taka">tiki-taka</span></div></div></div><div class="pair"><div class="match"><div class="slot win"><span class="entry" data-k="the low-block">the low-block</span><span class="mg">narrow</span></div><div class="slot lose"><span class="entry" data-k="the extra-time">the extra-time</span></div></div><div class="match"><div class="slot win"><span class="entry" data-k="the playmaker">the playmaker</span><span class="mg">narrow</span></div><div class="slot lose"><span class="entry" data-k="the wonderkid">the wonderkid</span></div></div></div></div></div></div>
+<div class="half right"><div class="round"><div class="pair single"><div class="match road"><div class="slot win"><span class="entry" data-k="the low-block">the low-block</span><span class="mg">pens</span></div><div class="slot lose"><span class="entry" data-k="the high-line">the high-line</span></div></div></div></div><div class="round"><div class="pair"><div class="match"><div class="slot win"><span class="entry" data-k="the high-line">the high-line</span><span class="mg">pens</span></div><div class="slot lose"><span class="entry" data-k="the through-ball">the through-ball</span></div></div><div class="match road"><div class="slot win"><span class="entry" data-k="the low-block">the low-block</span><span class="mg">pens</span></div><div class="slot lose"><span class="entry" data-k="the playmaker">the playmaker</span></div></div></div></div><div class="round"><div class="pair"><div class="match"><div class="slot win"><span class="entry" data-k="the through-ball">the through-ball</span><span class="mg">narrow</span></div><div class="slot lose"><span class="entry" data-k="catenaccio">catenaccio</span></div></div><div class="match"><div class="slot win"><span class="entry" data-k="the high-line">the high-line</span><span class="mg">narrow</span></div><div class="slot lose"><span class="entry" data-k="tiki-taka">tiki-taka</span></div></div></div><div class="pair"><div class="match road"><div class="slot win"><span class="entry" data-k="the low-block">the low-block</span><span class="mg">narrow</span></div><div class="slot lose"><span class="entry" data-k="the extra-time">the extra-time</span></div></div><div class="match"><div class="slot win"><span class="entry" data-k="the playmaker">the playmaker</span><span class="mg">narrow</span></div><div class="slot lose"><span class="entry" data-k="the wonderkid">the wonderkid</span></div></div></div></div></div></div>
 <div class="strip">
 <span class="stK">Trust</span>
 <span class="stV">robust seed, but the final went to the shootout — offer a top-4 runoff</span>
@@ -359,5 +367,72 @@ cx.globalAlpha=1;
 if(alive&&ts-t0<9000)requestAnimationFrame(step);else gone();}
 requestAnimationFrame(step);}
 if(PARTY&&!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches))setTimeout(party,350);
+// ── bracket connector rails: the live view's SVG engine (bracketConn in live-view.js) ported to
+// the mirror layout. Same structure, same grammar: measure the DOM boxes -> build the path list ->
+// ONE absolutely-positioned SVG overlay -> junction dots. A per-gap <clipPath> hard-clips every
+// stroke to the gutter (paint-order is NOT clipping), each feeder+riser is ONE elbow <path> with
+// linejoin:round (no overshoot nub to draw), and a <circle> at each T covers the colour seam.
+// Adapted, not reinvented: the live view lays columns on a fixed 184/56 grid and computes geometry
+// server-side; this bracket's columns are ELASTIC (space-around, safe center), so the same math
+// runs client-side against getBoundingClientRect — on load and on debounced resize — and the
+// emitted HTML stays byte-deterministic. The two halves feed INWARD (dir +1 left / -1 right); the
+// last column of each half joins the centre octagon at its vertical middle (at mid-height the
+// octagon clip-path spans its full box, so the rail meets the visible gold edge exactly).
+// Colours: ca = the champion's road (--rwin gold), cw = decided (--rdone), unclassed = empty
+// feeders (--rail). Rails are static — no animation, so prefers-reduced-motion needs nothing.
+function drawConn(){
+var br=document.querySelector('.bracket');if(!br)return;
+var old=br.querySelector('.conn');if(old)old.parentNode.removeChild(old);
+var oct=br.querySelector('.champOct');if(!oct)return;
+var bb=br.getBoundingClientRect();
+var W=br.scrollWidth,H=br.scrollHeight;
+function bx(el){var r=el.getBoundingClientRect();return{l:r.left-bb.left+br.scrollLeft,r:r.right-bb.left+br.scrollLeft,cy:r.top-bb.top+br.scrollTop+r.height/2,road:el.classList.contains('road'),empty:el.classList.contains('empty')};}
+var SW2=1.5,EDGE=2,JPAD=0.4,defs='',groups='',gid=0;
+function cls(c){return c?' class="'+c+'"':'';}
+// gap(): one inter-column gutter. fs feed ts (target j <- feeders 2j, 2j+1); dir is the flow.
+function gap(fs,ts,dir){
+if(!fs.length||!ts.length)return;
+var eF=dir>0?Math.max.apply(null,fs.map(function(m){return m.r;})):Math.min.apply(null,fs.map(function(m){return m.l;}));
+var eT=dir>0?Math.min.apply(null,ts.map(function(m){return m.l;})):Math.max.apply(null,ts.map(function(m){return m.r;}));
+var x0=Math.min(eF,eT)+EDGE,x1=Math.max(eF,eT)-EDGE;
+if(x1-x0<1)return;
+var jx=((eF+eT)/2).toFixed(1);
+defs+='<clipPath id="bk'+gid+'" clipPathUnits="userSpaceOnUse"><rect x="'+x0.toFixed(1)+'" y="0" width="'+(x1-x0).toFixed(1)+'" height="'+H+'"/></clipPath>';
+var g='';
+for(var j=0;j<ts.length;j++){
+var t=ts[j],ff=[fs[2*j],fs[2*j+1]].filter(Boolean);
+if(!ff.length)continue;
+var yM=t.cy.toFixed(1);
+var fwd=t.oct?(ff.some(function(m){return m.road;})?'ca':(ff.some(function(m){return !m.empty;})?'cw':''))
+:(t.empty?'':(t.road?'ca':'cw'));
+ff.forEach(function(f){g+='<path d="M'+(dir>0?f.r:f.l).toFixed(1)+' '+f.cy.toFixed(1)+'H'+jx+'V'+yM+'"'+cls(f.empty?'':(f.road?'ca':'cw'))+'/>';});
+g+='<line x1="'+jx+'" y1="'+yM+'" x2="'+(dir>0?t.l:t.r).toFixed(1)+'" y2="'+yM+'"'+cls(fwd)+'/>'
++'<circle cx="'+jx+'" cy="'+yM+'" r="'+(SW2+JPAD)+'"'+cls(fwd)+'/>';
+}
+groups+='<g clip-path="url(#bk'+gid+')">'+g+'</g>';gid++;
+}
+var ob=bx(oct);ob.oct=true;
+[['.half.left',1],['.half.right',-1]].forEach(function(hv){
+var el=br.querySelector(hv[0]);if(!el)return;
+var dir=hv[1];
+var rounds=[].slice.call(el.children).filter(function(c){return c.classList.contains('round');});
+if(dir<0)rounds.reverse();// the right half renders outward (SF..R16); walk it chronologically
+var cols=rounds.map(function(rd){return [].slice.call(rd.querySelectorAll('.match')).map(bx);});
+for(var r=0;r+1<cols.length;r++)gap(cols[r],cols[r+1],dir);
+if(cols.length)gap(cols[cols.length-1],[ob],dir);
+});
+if(!groups)return;
+var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+svg.setAttribute('class','conn');
+svg.setAttribute('viewBox','0 0 '+W+' '+H);
+svg.setAttribute('width',W);svg.setAttribute('height',H);
+svg.innerHTML='<defs>'+defs+'</defs>'+groups;
+br.insertBefore(svg,br.firstChild);// first child: paints under the z-indexed cards and octagon
+}
+var connT;
+window.addEventListener('resize',function(){clearTimeout(connT);connT=setTimeout(drawConn,120);});
+window.addEventListener('load',drawConn);// fonts/late layout can move card boxes; redraw settled
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){drawConn();});
+drawConn();
 
 </script></body></html>
