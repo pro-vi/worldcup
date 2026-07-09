@@ -30,7 +30,7 @@ purge the repository's history, or delete and recreate the repository instead.
 
 ## Metadata
 
-- **Description:** `Best-of-N selection engine wearing a World Cup-style tournament`
+- **Description:** `Best-of-N selection run as a World Cup bracket — LLM panels judge every match and a fabrication gate disqualifies the fakers. A Claude Code skill.`
 - **Homepage:** `https://pro-vi.github.io/worldcup/` — the GitHub Pages site that
   serves the rendered interactive reports (Pages source: branch `main`, folder
   `/docs`).
