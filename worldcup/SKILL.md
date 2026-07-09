@@ -143,7 +143,8 @@ context; pick sane defaults for the rest and state them.
    in: the DESIGN (flat flavors, axes for a factorial field, or sections for
    recombination — see design-pass.md), the criteria block + fact ledger, the field
    size, and the domain profile (lenses + gate). Also note the `LIVE_BEACONS` knob
-   (live-view beacon emission, on by default — see Cost, below). The template already encodes the design pass, snake seeding, the
+   (live-view beacon emission, on by default — see Cost, below).
+   Set `REPORT_THEME` to match the live-view theme where a matching report skin exists ('arena' default, 'classic'; unknown falls back to arena). The template already encodes the design pass, snake seeding, the
    group round-robin, the knockout crossings, the multi-lens judge, the fabrication gate,
    the reference challenge, the effects analysis, the trust report, and the HTML report
    (mirror bracket + coordinate view). You are filling holes, not writing orchestration.

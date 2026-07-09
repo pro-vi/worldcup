@@ -33,6 +33,8 @@ const BANS = {                 // FILL: deterministic preflight bans (cheap, run
   vocab: [],                   // the user's voice profile, e.g. { emDash:true, vocab:['delve','tapestry',...] }.
   softPatterns: [],            // profile phrase flags: [{ label, re:'alt|alt2', tail?:N }] — e.g. announced thesis / uplift closer.
 }                              // See references/profiles/ for the profile shape. Style tics belong in lenses, not the gate.
+const REPORT_THEME = 'arena'   // report skin: 'arena' (default) | 'classic'; unknown falls back to arena.
+                               // Set it to match the live-view theme where a matching skin exists (see REPORT_THEMES below).
 const LETTERS = 'ABCDEFGHIJKL'.split('')
 
 // ─── DESIGN — how candidates are created (see references/design-pass.md).
@@ -1373,12 +1375,50 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&am
 // Data-URI trophy favicon (URL-encoded SVG) so the report tab reads as a match page.
 const FAVICON = '<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Ctext y=%2252%22 font-size=%2252%22%3E%F0%9F%8F%86%3C/text%3E%3C/svg%3E">'
 
+// ─── REPORT SKINS — token sets only. There is ONE report layout; a skin is a row of colour tokens
+// the layout reads (never a fork of the markup). REPORT_THEME (see CONFIG) picks the row; an
+// unknown/unmapped value falls back to 'arena' so a typo can never crash or blank a report.
+//   arena   — the flagship: the live view's dark game-console look (deep navy, mint UI accent,
+//             gold strictly for earned outcomes).
+//   classic — the original plum/gold identity re-expressed on the same layout: deepened plum
+//             background, gold = earned outcomes, orange = the verdict's voice, pink = loss/DQ only.
+const REPORT_THEMES = {
+  arena: {
+    bg0: '#05070B', bg1: '#09111A', glow: '#172536', stripe: 'rgba(55,240,192,.025)', veil: 'rgba(4,7,11,.8)',
+    s0: '#0E1722', s1: '#141F2B', s2: '#192633', line: '#2A3542',
+    txt: '#F4F7FA', mut: '#8491A0', dim: '#55606D', soft: '#AEB9C5', ink: '#E6ECF3', code: '#DFE7EF',
+    gold: '#F2C44C', goldRGB: '242,196,76', goldHi: '#FFF0A3', onGold: '#140F02',
+    ui: '#37F0C0', uiRGB: '55,240,192',
+    ver: '#FF683D', verRGB: '255,104,61',            // the verdict chip's voice
+    dq: '#FF683D', dqRGB: '255,104,61', onDq: '#140502',
+    lose: '#66717E', loss: '#F0788F', lossRGB: '240,120,143',
+    draw: '#37F0C0', drawRGB: '55,240,192', bar: '#3E4E60',
+    confetti: ['#F2C44C', '#FFF0A3', '#FFD97A', '#F4F7FA', '#37F0C0'],
+  },
+  classic: {
+    bg0: '#150811', bg1: '#1E0C19', glow: '#31142A', stripe: 'rgba(245,197,66,.02)', veil: 'rgba(16,4,13,.82)',
+    s0: '#251020', s1: '#2F1527', s2: '#3A1A30', line: '#43263C',
+    txt: '#F5EDF3', mut: '#A98FA3', dim: '#84687C', soft: '#CDB9C8', ink: '#ECE0E9', code: '#EFE3EE',
+    gold: '#F5C542', goldRGB: '245,197,66', goldHi: '#FFE9A8', onGold: '#2A1123',
+    ui: '#F5C542', uiRGB: '245,197,66',
+    ver: '#FF7A3C', verRGB: '255,122,60',
+    dq: '#FF6B9D', dqRGB: '255,107,157', onDq: '#1C060F',
+    lose: '#84687C', loss: '#FF6B9D', lossRGB: '255,107,157',
+    draw: '#7FD1FF', drawRGB: '127,209,255', bar: '#9A6C8D',
+    confetti: ['#F5C542', '#FFE9A8', '#FF7A3C', '#F5EDF3', '#7FD1FF'],
+  },
+}
+const THEME = REPORT_THEMES[REPORT_THEME] || REPORT_THEMES.arena   // unknown skin → arena, by contract
+
 // Self-contained World Cup-flavored HTML of the final state graph, returned as `reportHtml`;
-// the main loop writes it to disk and opens it. No external deps, inline CSS. Centered mirror
-// bracket with clickable entries + info sheets, group tables, champion's road, headlines, global
-// rating, trust verdict, DQs. Generic over field size: works for 32 (R16 start) and 48 (R32
-// start) by splitting each round in half.
+// the main loop writes it to disk and opens it. No external deps, inline CSS, one layout skinned
+// by REPORT_THEME tokens. Reads as a scoreboard, not a document: masthead (brand · champion ·
+// verdict chip), one headline ticker, the mirror bracket as the hero with an octagon champion
+// center, a slim fused trust strip, the road chips, groups, the global rating — and per-entry
+// judge reasons live ONLY in DATA, surfacing in the click-through info sheet. Generic over field
+// size: works for 32 (R16 start) and 48 (R32 start) by splitting each round in half.
 function renderReportV2() {
+  const T = THEME
   const ratingById = new Map(globalRating)
   // Null-prototype maps: these are keyed by entrant LABELS, and a label that collides with an
   // Object.prototype name ('toString', 'constructor', '__proto__' — plausible in given mode)
@@ -1398,7 +1438,7 @@ function renderReportV2() {
   // JSON.stringify leaves U+2028/2029 raw; they are line terminators inside a <script> in pre-ES2019
   // parsers, and `<` is escaped so judged prose can't break out with </script>.
   // The client embed is `JSON.parse(<string literal>)`, NOT a bare object literal: in an evaluated
-  // literal a non-computed "__proto__" member is the Annex B.3.1 prototype SETTER \u2014 a '__proto__'
+  // literal a non-computed "__proto__" member is the Annex B.3.1 prototype SETTER — a '__proto__'
   // entrant would silently reparent DATA instead of becoming an entry. JSON.parse has no such
   // special form, so every label lands as an own key. dataJsonLit is dataJson wrapped as a JS
   // string literal (JSON.stringify of a string); dataJson is already free of raw `<`/U+2028/29,
@@ -1406,7 +1446,10 @@ function renderReportV2() {
   const dataJson = JSON.stringify(DATA).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
   const dataJsonLit = JSON.stringify(dataJson)
   const entry = label => `<span class="entry" data-k="${esc(label)}">${esc(label)}</span>`
-  const card = m => m ? `<div class="match"><div class="slot win">${entry(m.winner.label)}<span class="mg">${esc(m.margin || '')}</span></div><div class="slot lose">${entry(m.loser.label)}</div></div>` : `<div class="match empty"></div>`
+  // `road` marks a match the champion WON — every card on the champion's path. The connector
+  // engine (drawConn) reads it to paint the winner rail gold; it is pure tournament data, so the
+  // emitted markup stays deterministic (geometry, by contrast, lives in runtime JS only).
+  const card = m => m ? `<div class="match${m.winner.id === champion.id ? ' road' : ''}"><div class="slot win">${entry(m.winner.label)}<span class="mg">${esc(m.margin || '')}</span></div><div class="slot lose">${entry(m.loser.label)}</div></div>` : `<div class="match empty"></div>`
   const playedRounds = order.filter(k => history[k] && history[k].length)
   const finalKey = playedRounds[playedRounds.length - 1]
   const preRounds = playedRounds.slice(0, -1)
@@ -1414,46 +1457,78 @@ function renderReportV2() {
   const leftCols = preRounds.map(k => colOf(history[k].slice(0, Math.ceil(history[k].length / 2)))).join('')
   const rightCols = preRounds.slice().reverse().map(k => colOf(history[k].slice(Math.ceil(history[k].length / 2)))).join('')
   const finalM = history[finalKey] && history[finalKey][0]
-  const finalLine = finalM ? `${esc(finalM.winner.label)} def. ${esc(finalM.loser.label)} (${esc(finalM.margin)})` : ''
-  const groupCards = groups.map((g, gi) => {
-    const a = adv[gi], qualified = new Set(advancedTeams(a, bestThirdIds).map(t => t.id))
-    const rows = a.ranked.map(t => `<tr class="${qualified.has(t.id) ? 'adv' : ''}"><td>${entry(t.label)}</td><td class="pts">${a.pts.get(t.id)} (${a.w.get(t.id)}-${a.d.get(t.id)}-${a.l.get(t.id)})</td></tr>`).join('')
-    return `<div class="grp"><h4>Group ${LETTERS[gi]}</h4><table>${rows}</table></div>`
-  }).join('')
-  const ratingRows = globalRating.map(([id, r], i) => { const t = pool.find(x => x.id === id); return `<tr><td>${i + 1}</td><td>${entry(t ? t.label : String(id))}</td><td>${Math.round(r)}</td></tr>` }).join('')
-  const dq = pool.filter(t => t.flaw && t.flaw.disqualified)
-  // Soft preflight flags are scrutiny, not death (see judging.md) — but dropped data is a lie of
-  // omission, so the gate panel lists them and the info sheet repeats them per entry.
-  const softFlagged = pool.filter(t => t.flaw && (t.flaw.soft || []).length && !t.flaw.disqualified)
-  const softHtml = softFlagged.length ? `<div class="muted" style="margin-top:6px">soft flags (scrutiny, not DQ): ${softFlagged.map(t => `${entry(t.label)} — ${esc((t.flaw.soft || []).join(', '))}`).join(' &middot; ')}</div>` : ''
-  const dqHtml = dq.length ? `<div class="panel"><h3>Disqualified at the gate (${dq.length})</h3><ul>${dq.map(t => `<li>${entry(t.label)}: <b>${esc(t.flaw.category || '')}</b> ${esc(t.flaw.flaw)}</li>`).join('')}</ul>${softHtml}</div>` : `<div class="panel"><h3>Fabrication gate</h3><div class="muted">0 disqualified.</div>${softHtml}</div>`
-  const refTxt = referenceChallenge ? (referenceChallenge.championBeatOriginal ? `champion beat the original (${esc(referenceChallenge.margin)})` : (referenceChallenge.championWonMatch ? 'champion edged the original but not clearly — keep the original' : 'champion did NOT beat the original')) : 'no incumbent'
+  const finalLine = finalM ? `def. ${esc(finalM.loser.label)} (${esc(finalM.margin)})` : ''
+  // ─── masthead: brand · CHAMPION · one verdict chip. The chip is the recommendation split into
+  // its verdict key and its one-line why; its tone class colours it (orange/ver = keep/do-not-adopt,
+  // gold = runoff, mint/ui = adopt). No duplicated champion statements anywhere else in the header.
+  const recKey = recommendation.split(':')[0]
+  const recTail = recommendation.slice(recKey.length + 1).trim()
+  const recTone = /^ADOPT THE CHAMPION/.test(recommendation) ? 'good' : /^ADOPT ONLY AFTER/.test(recommendation) ? 'warn' : 'bad'
+  const runName = (typeof meta !== 'undefined' && meta.name) ? String(meta.name) : ''
+  const modeLine = runName && runName.toLowerCase() !== 'worldcup' ? runName : 'Final Report'
   // ─── match-day headlines: deterministic, computed from the bracket itself. Display-only —
-  // the drama was already in the data; this just refuses to bury it.
+  // the drama was already in the data; this just refuses to bury it. One single-line ticker,
+  // at most three items, each a bold lead + short tail (tight copy, not full sentences).
   const seedOfT = t => seeded.findIndex(x => x.id === t.id) + 1
   const headlines = []
   const champSeed = seedOfT(champion)
-  headlines.push(champSeed === 1 ? 'THE FAVOURITE DELIVERS — seed #1 lifts the trophy'
-    : champSeed > FIELD / 4 ? `CINDERELLA STORY — seed #${champSeed} lifts the trophy`
-    : `SEED #${champSeed} LIFTS THE TROPHY`)
+  headlines.push(champSeed === 1 ? { lead: 'THE FAVOURITE DELIVERS', tail: 'seed #1 lifts the trophy' }
+    : champSeed > FIELD / 4 ? { lead: 'CINDERELLA STORY', tail: `seed #${champSeed} lifts the trophy` }
+    : { lead: `SEED #${champSeed} LIFTS THE TROPHY`, tail: '' })
   if (seeded[0].id !== champion.id) {
     const top = seeded[0]
-    if (top.flaw && top.flaw.disqualified) headlines.push(`SCANDAL — top seed ${top.label} thrown out at the gate (${top.flaw.category || 'fabrication'})`)
+    if (top.flaw && top.flaw.disqualified) headlines.push({ lead: 'SCANDAL', tail: `top seed ${top.label} thrown out at the gate (${top.flaw.category || 'fabrication'})` })
     else {
       const fell = order.find(k => (history[k] || []).some(m => m.loser.id === top.id))
-      headlines.push(`THE TOP SEED FALLS — ${top.label} ${fell ? `out in the ${fell}` : 'out in the groups'}`)
+      headlines.push({ lead: 'THE TOP SEED FALLS', tail: `${top.label} ${fell ? `out in the ${fell}` : 'out in the groups'}` })
     }
   }
-  if (lastRound[0] && lastRound[0].margin === 'pens') headlines.push('IT WENT TO PENS — the final could not be split in regulation')
+  if (lastRound[0] && lastRound[0].margin === 'pens') headlines.push({ lead: 'IT WENT TO PENS', tail: 'final decided in the shootout' })
   let upset = null
   for (const k of order) for (const m of (history[k] || [])) {
     const gap = seedOfT(m.winner) - seedOfT(m.loser)
     if (gap > 0 && (!upset || gap > upset.gap)) upset = { gap, m, k }
   }
-  if (upset && upset.gap >= Math.max(4, Math.round(FIELD / 8))) headlines.push(`UPSET OF THE TOURNAMENT — #${seedOfT(upset.m.winner)} ${upset.m.winner.label} stuns #${seedOfT(upset.m.loser)} ${upset.m.loser.label} in the ${upset.k}`)
-  const headlineHtml = headlines.slice(0, 3).map(h => `<span class="headline">${esc(h)}</span>`).join('')
-  // ─── road to the title: the champion's full path, round by round, with the deciding reasons.
-  const roadRows = pathOf(champion).map(s => `<li><span class="${s.verb === 'drew' ? 'd' : 'w'}">${esc(s.round)}</span> ${esc(s.verb || 'beat')} ${esc(s.opp || '')} <span class="mg">(${esc(s.margin || '')})</span><div class="why">${esc(s.reason || '')}</div></li>`).join('')
+  if (upset && upset.gap >= Math.max(4, Math.round(FIELD / 8))) headlines.push({ lead: 'UPSET OF THE TOURNAMENT', tail: `#${seedOfT(upset.m.winner)} ${upset.m.winner.label} stuns #${seedOfT(upset.m.loser)} ${upset.m.loser.label} in the ${upset.k}` })
+  const tickerHtml = headlines.slice(0, 3).map(h => `<span class="tkI"><b>${esc(h.lead)}</b>${h.tail ? ` &mdash; ${esc(h.tail)}` : ''}</span>`).join('<span class="tkSep">&#9670;</span>')
+  // ─── trust strip: ONE slim bar fusing verdict sentence · rating leader · avg beaten rating ·
+  // DQ chips (or an explicit clean-gate stat) · soft preflight flags. No trust panel, no DQ panel.
+  const dq = pool.filter(t => t.flaw && t.flaw.disqualified)
+  // Soft preflight flags are scrutiny, not death (see judging.md) — but dropped data is a lie of
+  // omission, so the strip names them and each entry's info sheet repeats its own.
+  const softFlagged = pool.filter(t => t.flaw && (t.flaw.soft || []).length && !t.flaw.disqualified)
+  const dqStrip = dq.length
+    ? dq.map(t => `<span class="stDQ"><span class="dtag">DQ &middot; ${esc(t.flaw.category || 'GATE')}</span>${entry(t.label)}</span>`).join('\n')
+    : `<span class="stat"><span class="sk">Gate</span><span class="sv">0 DQ</span></span>`
+  const softStrip = softFlagged.length ? `\n<span class="stat"><span class="sk">Soft flags</span><span class="sv">${softFlagged.map(t => entry(t.label)).join(', ')}</span></span>` : ''
+  // ─── road to the title: one row of compact chips — round · opponent · margin. No sub-lines;
+  // the deciding reasons stay in DATA and surface in the sheet.
+  const roadAbbr = r => /^group$/i.test(r) ? 'Grp' : /^final$/i.test(r) ? 'Final' : /^reference$/i.test(r) ? 'Ref' : r
+  const shortLbl = s => String(s).replace(/^the\s+/i, '')
+  const roadRow = pathOf(champion).map(s => `<div class="rstep${s.round === 'FINAL' ? ' fin' : ''}"><span class="rr">${esc(roadAbbr(s.round))}</span><span class="ro"><span class="entry" data-k="${esc(s.opp || '')}">${esc(shortLbl(s.opp || ''))}</span></span><span class="mg">${esc(s.margin || '')}</span></div>`).join('\n')
+  // ─── groups: name + points only, advanced rows highlighted. W-D-L detail lives in the sheets.
+  const groupCards = groups.map((g, gi) => {
+    const a = adv[gi], qualified = new Set(advancedTeams(a, bestThirdIds).map(t => t.id))
+    const rows = a.ranked.map(t => `<div class="gr${qualified.has(t.id) ? ' adv' : ''}">${entry(t.label)}<b>${a.pts.get(t.id)}</b></div>`).join('')
+    return `<div class="grp"><div class="gL">${LETTERS[gi]}</div>${rows}</div>`
+  }).join('\n')
+  // ─── global rating: rank / name / bar / number — every name fully legible, champion row gold.
+  const rVals = globalRating.map(([, r]) => r)
+  const rMin = Math.min(...rVals), rRng = Math.max(1, Math.max(...rVals) - rMin)
+  const ratingRows = globalRating.map(([id, r], i) => {
+    const t = pool.find(x => x.id === id)
+    const pct = (6.7 + 90 * (r - rMin) / rRng).toFixed(1)
+    return `<div class="erow${t && t.id === champion.id ? ' champ' : ''}"><span class="epos">${i + 1}</span><span class="enm">${entry(t ? t.label : String(id))}</span><span class="rtrack"><span class="rfill" style="width:${pct}%"></span></span><span class="ept">${Math.round(r)}</span></div>`
+  }).join('\n')
+  // Champion name inside the fixed-width octagon: step the type down as the label grows so any
+  // label stays on one line (the two committed samples pin the 17px and 15px steps).
+  const champLen = String(champion.label).length
+  const champFitCss = champLen <= 14 ? '' : `\n.champcard .entry{font-size:${champLen <= 20 ? '15px' : champLen <= 26 ? '12.5px' : '10.5px'}${champLen > 26 ? ';display:inline-block;max-width:148px;overflow:hidden;text-overflow:ellipsis' : ''}}`
+  // Sheet meta 'at axis=value' line: only for designs where coords carry information (axes /
+  // sections). For flat/given fields coords just echo the label — noise, not signal.
+  const coordsMetaJs = (DESIGN.kind === 'axes' || DESIGN.kind === 'sections')
+    ? `if(d.coords&&Object.keys(d.coords).filter(function(c){return c!=='__rep';}).length)h+='<div class="meta">at '+Object.keys(d.coords).filter(function(c){return c!=='__rep';}).map(function(c){return he(c)+'='+he(d.coords[c]);}).join(', ')+'</div>';\n`
+    : ''
   // ─── coordinate view (axes + sections): parallel coordinates + effects + a 2-axis explorer.
   // For sections it reads as a LINEUP: each axis is a position (slot), each value a player
   // (slot survivor), each polyline a candidate lineup, the champion drawn gold; effects bars
@@ -1472,8 +1547,8 @@ function renderReportV2() {
     const ratingByIdC = new Map(globalRating)
     const axisSvg = cv_axes.map((ax, i) => {
       const x = axX(i)
-      const ticks = ax.values.map(v => `<text x="${x}" y="${valY(ax, v) + 4}" text-anchor="middle" font-size="10" fill="#cdb9c8">${esc(v)}</text>`).join('')
-      return `<line x1="${x}" y1="${padY}" x2="${x}" y2="${H - padY}" stroke="rgba(245,197,66,.3)"/><text x="${x}" y="18" text-anchor="middle" font-size="11" fill="#f5c542" font-weight="700">${esc(ax.name)}</text>${ticks}`
+      const ticks = ax.values.map(v => `<text x="${x}" y="${valY(ax, v) + 4}" text-anchor="middle" font-size="10" fill="${T.soft}">${esc(v)}</text>`).join('')
+      return `<line x1="${x}" y1="${padY}" x2="${x}" y2="${H - padY}" stroke="rgba(${T.goldRGB},.3)"/><text x="${x}" y="18" text-anchor="middle" font-size="11" fill="${T.gold}" font-weight="700">${esc(ax.name)}</text>${ticks}`
     }).join('')
     const poly = (coords, cls) => `<polyline points="${cv_axes.map((ax, i) => `${axX(i)},${valY(ax, coords[ax.name])}`).join(' ')}" fill="none" class="${cls}"/>`
     const lines = pool.filter(t => t.id !== champion.id).map(t => poly(t.coords, 'pc')).join('')
@@ -1482,103 +1557,252 @@ function renderReportV2() {
     const effRows = effects.mainEffects.map(me => {
       const vals = me.byValue.filter(b => b.mean != null), mx = Math.max(...vals.map(v => v.mean)), mn = Math.min(...vals.map(v => v.mean)), rng = Math.max(1, mx - mn)
       const bars = me.byValue.map(b => b.mean == null ? '' : `<div class="ebar"><span class="ev ${b.value === me.best ? 'best' : ''}">${esc(b.value)}</span><span class="etrack"><span class="efill" style="width:${Math.round(15 + 85 * (b.mean - mn) / rng)}%"></span></span><span class="enum">${b.mean}</span></div>`).join('')
-      return `<div class="erow"><div class="eax">${esc(me.axis)} <span class="muted">spread ${me.spread}</span></div>${bars}</div>`
+      return `<div class="efr"><div class="eax">${esc(me.axis)} <span class="muted">spread ${me.spread}</span></div>${bars}</div>`
     }).join('')
     const interTxt = effects.interactions.length ? effects.interactions.slice(0, 4).map(x => `${esc(x.axes.join('&times;'))} ${x.strength}`).join(' &middot; ') : 'none notable'
     const estLabel = effects.estimable === 'none' ? '<span class="warn">empirical, not fitted</span>' : `fitted (${esc(effects.estimable)})`
     const opt = effects.predictedOptimum, optTxt = `${esc(opt.label)} ${opt.inField ? '(in field)' : '(synthesized)'}`
     const axSel = id => `<select id="${id}" onchange="grid()">${cv_axes.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`).join('')}</select>`
-    coordPanel = `<div class="panel coord"><h3>${cvTitle} &middot; ${esc(effects.strategy)} &middot; effects ${estLabel}</h3>
+    coordPanel = `<div class="sec"><b>${isSec ? 'Lineups' : 'Design'}</b></div>
+<div class="coord"><h3>${cvTitle} &middot; ${esc(effects.strategy)} &middot; effects ${estLabel}</h3>
 <div class="pc-wrap">${pcSvg}</div><div class="pc-key"><span class="champ">${cvChampKey}</span>${optLine ? `<span class="opt">${cvOptLbl}</span>` : ''}</div>
-<div class="eff">${effRows}<div class="erow"><div class="eax">${cvOptLbl}</div><div class="muted">${optTxt} &middot; top interactions: ${interTxt}</div></div></div>
+<div class="eff">${effRows}<div class="efr"><div class="eax">${cvOptLbl}</div><div class="muted">${optTxt} &middot; top interactions: ${interTxt}</div></div></div>
 <div class="explorer"><div class="exsel">${cvExplore} &mdash; X ${axSel('gx')} Y ${axSel('gy')}</div><div id="grid"></div></div></div>`
     const J = o => JSON.stringify(o).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
     coordScript = `
 var AXES=${J(cv_axes.map(a => ({ name: a.name, values: a.values })))};
 var PTS=${J(pool.map(t => ({ label: t.label, coords: t.coords, rating: Math.round(ratingByIdC.get(t.id) || 0), champ: t.id === champion.id })))};
-function grid(){var gx=+document.getElementById('gx').value,gy=+document.getElementById('gy').value;if(gx===gy){gy=(gy+1)%AXES.length;document.getElementById('gy').value=gy;}var ax=AXES[gx],ay=AXES[gy],cells={};PTS.forEach(function(p){var k=p.coords[ax.name]+'|'+p.coords[ay.name];(cells[k]=cells[k]||[]).push(p);});var h='<table class="gridtab"><tr><td></td>'+ay.values.map(function(v){return '<th>'+he(v)+'</th>';}).join('')+'</tr>';ax.values.forEach(function(xv){h+='<tr><th>'+he(xv)+'</th>';ay.values.forEach(function(yv){var arr=cells[xv+'|'+yv]||[];var avg=arr.length?Math.round(arr.reduce(function(s,p){return s+p.rating;},0)/arr.length):0;var sh=arr.length?Math.max(0,Math.min(1,(avg-1450)/200)):0;h+='<td style="background:rgba(245,197,66,'+(0.04+0.5*sh).toFixed(2)+')">'+arr.map(function(p){return '<span class="entry'+(p.champ?' gold':'')+'" data-k="'+he(p.label)+'">'+he(p.label)+'</span>';}).join(' ')+(arr.length?'<div class="cavg">'+avg+'</div>':'')+'</td>';});h+='</tr>';});h+='</table>';document.getElementById('grid').innerHTML=h;}
+function grid(){var gx=+document.getElementById('gx').value,gy=+document.getElementById('gy').value;if(gx===gy){gy=(gy+1)%AXES.length;document.getElementById('gy').value=gy;}var ax=AXES[gx],ay=AXES[gy],cells={};PTS.forEach(function(p){var k=p.coords[ax.name]+'|'+p.coords[ay.name];(cells[k]=cells[k]||[]).push(p);});var h='<table class="gridtab"><tr><td></td>'+ay.values.map(function(v){return '<th>'+he(v)+'</th>';}).join('')+'</tr>';ax.values.forEach(function(xv){h+='<tr><th>'+he(xv)+'</th>';ay.values.forEach(function(yv){var arr=cells[xv+'|'+yv]||[];var avg=arr.length?Math.round(arr.reduce(function(s,p){return s+p.rating;},0)/arr.length):0;var sh=arr.length?Math.max(0,Math.min(1,(avg-1450)/200)):0;h+='<td style="background:rgba(${T.goldRGB},'+(0.04+0.5*sh).toFixed(2)+')">'+arr.map(function(p){return '<span class="entry'+(p.champ?' gold':'')+'" data-k="'+he(p.label)+'">'+he(p.label)+'</span>';}).join(' ')+(arr.length?'<div class="cavg">'+avg+'</div>':'')+'</td>';});h+='</tr>';});h+='</table>';document.getElementById('grid').innerHTML=h;}
 if(document.getElementById('gy')){document.getElementById('gy').value=Math.min(1,AXES.length-1);grid();}`
   }
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>World Cup: ${esc(champion.label)}</title>${FAVICON}<style>
-:root{--bg1:#2b0a26;--bg2:#4a1140;--bg3:#5e1650;--gold:#f5c542;--line:rgba(245,197,66,.45);--card:rgba(255,255,255,.06);--cardbd:rgba(255,255,255,.14);--txt:#f3e9f0}
-*{box-sizing:border-box}body{margin:0;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:var(--txt);background:radial-gradient(120% 80% at 50% 0%,var(--bg3),var(--bg2) 45%,var(--bg1));min-height:100vh}
-header{text-align:center;padding:26px 20px 6px}
-header .cup{font-size:11px;letter-spacing:3px;color:var(--gold);font-weight:700;text-transform:uppercase}
-.headlines{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px}
-.headline{background:rgba(245,197,66,.12);border:1px solid var(--line);color:var(--gold);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:4px 12px;border-radius:14px}
-header h1{margin:6px 0 2px;font-size:20px;letter-spacing:1px;font-weight:800}
-header .sub{color:#d9c4d4;font-size:12px}
-.recpill{display:inline-block;margin-top:10px;background:linear-gradient(180deg,#ff7a3c,#e8551f);color:#fff;font-weight:700;padding:7px 16px;border-radius:22px;font-size:12px;box-shadow:0 4px 14px rgba(232,85,31,.4)}
-.hint{text-align:center;color:#b79fb1;font-size:11px;margin-top:4px}
-.wrap{max-width:1280px;margin:0 auto;padding:10px 18px 40px}
-.bracket{display:flex;justify-content:center;align-items:stretch;gap:10px;padding:22px 0;overflow-x:auto}
+:root{--bg0:${T.bg0};--bg1:${T.bg1};--s0:${T.s0};--s1:${T.s1};--s2:${T.s2};--line:${T.line};--txt:${T.txt};--mut:${T.mut};--dim:${T.dim};--soft:${T.soft};--ui:${T.ui};--gold:${T.gold};--goldHi:${T.goldHi};--lose:${T.lose};--loss:${T.loss};--dq:${T.dq};--ver:${T.ver};--draw:${T.draw};--bar:${T.bar};--ink:${T.ink};--code:${T.code};--rail:var(--line);--rdone:var(--bar);--rwin:var(--gold)}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:var(--txt);min-height:100vh;background:radial-gradient(75% 60% at 50% -10%,${T.glow} 0,var(--bg1) 45%,var(--bg0) 78%) fixed,repeating-linear-gradient(115deg,transparent 0 72px,${T.stripe} 73px 74px,transparent 75px 146px)}
+.shell{max-width:1280px;margin:0 auto;padding:18px 20px 48px}
+.entry{cursor:pointer;border-bottom:1px dotted transparent}
+.entry:hover{border-bottom-color:currentColor}
+.muted{color:var(--mut)}
+/* ── masthead: brand + champion + one recommendation chip. nothing else ── */
+.mast{display:flex;flex-wrap:wrap;align-items:center;gap:14px 0;border-bottom:1px solid var(--line);padding-bottom:14px}
+.brand{display:flex;align-items:center;gap:11px;padding-right:24px}
+.bTrophy{font-size:30px;line-height:1;filter:drop-shadow(0 0 6px rgba(${T.goldRGB},.4))}
+.bName{font-size:22px;font-weight:900;font-style:italic;letter-spacing:-.04em;text-transform:uppercase;line-height:.92}
+.bMode{font-size:10px;font-weight:900;letter-spacing:.22em;text-transform:uppercase;color:var(--ui)}
+.mCell{border-left:1px solid var(--line);padding:2px 24px;min-width:0}
+.mk{font-size:9px;font-weight:900;letter-spacing:.24em;text-transform:uppercase;color:var(--ui);margin-bottom:4px}
+.mChampName{font-size:24px;font-weight:900;font-style:italic;letter-spacing:-.03em;text-transform:uppercase;line-height:1}
+.mChampName .entry{color:var(--goldHi)}
+.mRec{margin-left:auto;transform:skewX(-9deg);padding:9px 16px;max-width:320px}
+.mRec>div{transform:skewX(9deg)}
+.mRec.bad{background:rgba(${T.verRGB},.07);box-shadow:inset 0 0 0 1px var(--ver)}
+.mRec.bad .mRecK{color:var(--ver)}
+.mRec.warn{background:rgba(${T.goldRGB},.07);box-shadow:inset 0 0 0 1px var(--gold)}
+.mRec.warn .mRecK{color:var(--gold)}
+.mRec.good{background:rgba(${T.uiRGB},.07);box-shadow:inset 0 0 0 1px var(--ui)}
+.mRec.good .mRecK{color:var(--ui)}
+.mRecK{display:block;font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}
+.mRecT{display:block;font-size:10.5px;color:var(--txt);opacity:.8;margin-top:2px;letter-spacing:.02em}
+/* ── headlines: one strict single-line ticker, at most three items, ellipsis when tight ── */
+.ticker{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line);padding:8px 0;overflow:hidden}
+.tkLab{flex:0 0 auto;transform:skewX(-9deg);background:var(--gold);color:${T.onGold};font-size:9px;font-weight:900;letter-spacing:.18em;text-transform:uppercase;padding:3px 10px}
+.tkLab>span{display:inline-block;transform:skewX(9deg)}
+.tkI{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.tkI b{color:var(--txt);font-weight:900}
+.tkSep{flex:0 0 auto;color:var(--ui);font-size:8px}
+/* ── bracket: mirror layout; winner gold edge, loser struck ── */
+.bracket{position:relative;display:flex;justify-content:center;justify-content:safe center;align-items:stretch;gap:10px;padding:30px 0 20px;overflow-x:auto;min-height:400px}
+/* connector rails: the live view's SVG engine (bracketConn in live-view.js), NOT pseudo-element
+   stubs — a per-gap clip means no stroke can paint onto a card, each feeder+riser is ONE elbow
+   path (linejoin:round, no overshoot nub), a junction dot covers the colour seam at each T.
+   Painted at runtime by drawConn() below (the columns are elastic, so geometry is measured).
+   ca = the champion's road (--rwin gold), cw = decided (--rdone), unclassed = empty (--rail). */
+.conn{position:absolute;left:0;top:0;z-index:0;pointer-events:none}
+.conn line,.conn path{fill:none;stroke-width:3;stroke:var(--rail);stroke-linecap:butt;stroke-linejoin:round}
+.conn line.cw,.conn path.cw{stroke:var(--rdone)}
+.conn line.ca,.conn path.ca{stroke:var(--rwin)}
+.conn circle{stroke:none;fill:var(--rail)}
+.conn circle.cw{fill:var(--rdone)}
+.conn circle.ca{fill:var(--rwin)}
 .half{display:flex}
-.round{display:flex;flex-direction:column;justify-content:space-around;padding:0 16px;min-width:138px}
-.pair{position:relative;display:flex;flex-direction:column;justify-content:space-around;gap:26px;flex:1}
-.match{position:relative;background:var(--card);border:1px solid var(--cardbd);border-radius:8px;overflow:hidden}
-.match.empty{background:transparent;border-style:dashed;min-height:46px}
-.slot{padding:5px 9px;font-size:12.5px;display:flex;justify-content:space-between;align-items:center;gap:6px}
-.slot.win{font-weight:800;color:var(--gold)}.slot.lose{color:#c9b6c4;border-top:1px solid rgba(255,255,255,.08)}
-.mg{font-size:9px;color:#b9a7b4;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
-.entry{cursor:pointer;border-bottom:1px dotted transparent}.entry:hover{border-bottom-color:currentColor}
-.half.left .pair:not(.single)::after{content:"";position:absolute;right:-16px;top:25%;bottom:25%;width:2px;background:var(--line)}
-.half.left .match::after{content:"";position:absolute;right:-16px;top:50%;width:16px;height:2px;background:var(--line)}
-.half.right .pair:not(.single)::after{content:"";position:absolute;left:-16px;top:25%;bottom:25%;width:2px;background:var(--line)}
-.half.right .match::after{content:"";position:absolute;left:-16px;top:50%;width:16px;height:2px;background:var(--line)}
-.center{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 8px;min-width:180px}
-.winnerlbl{font-size:13px;letter-spacing:4px;color:var(--gold);font-weight:800;text-transform:uppercase;margin-bottom:6px}
-.trophy{font-size:74px;line-height:1;filter:drop-shadow(0 6px 18px rgba(245,197,66,.55))}
+.round{display:flex;flex-direction:column;justify-content:space-around;padding:0 13px;width:171px;min-width:171px}
+.pair{position:relative;display:flex;flex-direction:column;justify-content:space-around;flex:1}
+.match{position:relative;background:linear-gradient(180deg,var(--s1),var(--s0));box-shadow:inset 0 0 0 1px var(--line),0 4px 8px -6px rgba(0,0,0,.55);border-radius:3px;z-index:1}
+.match.empty{background:transparent;box-shadow:inset 0 0 0 1px var(--line);opacity:.4;min-height:46px}
+.slot{position:relative;padding:6px 9px;font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:5px;min-height:30px}
+.bracket .mg{position:absolute;top:-7px;right:6px;z-index:3}
+.slot:first-child{border-radius:3px 3px 0 0}
+.slot:last-child{border-radius:0 0 3px 3px}
+.slot+.slot{border-top:1px solid rgba(255,255,255,.05)}
+.slot .entry{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slot.win{background:linear-gradient(90deg,rgba(${T.goldRGB},.14),rgba(${T.goldRGB},.03) 70%,transparent);box-shadow:inset 2px 0 0 var(--gold)}
+.slot.win .entry{font-weight:800;color:var(--goldHi)}
+.slot.lose{color:var(--lose)}
+.slot.lose .entry{text-decoration:line-through;text-decoration-thickness:1px}
+.mg{flex:0 0 auto;font-size:8px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;color:var(--gold);background:var(--bg0);box-shadow:inset 0 0 0 1px rgba(${T.goldRGB},.3);border-radius:2px;padding:2px 4px;white-space:nowrap}
+/* ── winner center: gold octagon ── */
+.center{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 6px;min-width:192px}
+.winnerlbl{font-size:11px;letter-spacing:.42em;text-indent:.42em;color:var(--gold);font-weight:900;text-transform:uppercase;margin-bottom:10px}
+.champOct{position:relative;width:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:26px 12px;background:var(--gold);clip-path:polygon(22% 0,78% 0,100% 22%,100% 78%,78% 100%,22% 100%,0 78%,0 22%);filter:drop-shadow(0 6px 16px rgba(0,0,0,.5))}
+.champOct::before{content:'';position:absolute;inset:2px;clip-path:polygon(22% 0,78% 0,100% 22%,100% 78%,78% 100%,22% 100%,0 78%,0 22%);background:radial-gradient(70% 70% at 50% 38%,var(--s2),var(--bg0))}
+.trophy{position:relative;z-index:1;font-size:44px;line-height:1;filter:drop-shadow(0 2px 6px rgba(0,0,0,.5))}
 .trophy[onclick]{cursor:pointer}
+.champcard{position:relative;z-index:1;text-align:center}
+.champcard .entry{font-size:17px;font-weight:900;font-style:italic;letter-spacing:-.02em;text-transform:uppercase;color:var(--goldHi);line-height:1;white-space:nowrap}${champFitCss}
+.finalline{margin-top:12px;font-size:11px;color:var(--mut);letter-spacing:.02em}
 .fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:45}
-.champcard{margin-top:8px;background:linear-gradient(180deg,rgba(245,197,66,.22),rgba(245,197,66,.08));border:1.5px solid var(--gold);border-radius:10px;padding:8px 18px;font-weight:800;font-size:16px}
-.champcard .entry{color:var(--gold)}
-.finalline{margin-top:8px;font-size:11px;color:#d9c4d4}
-.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:24px}
-.panel{background:var(--card);border:1px solid var(--cardbd);border-radius:12px;padding:14px 16px}
-.panel h3{margin:.1em 0 .7em;color:var(--gold);font-size:13px;text-transform:uppercase;letter-spacing:1px}
-.muted{color:#c9b6c4}.trust{font-weight:700}
-.groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
-.grp{background:rgba(0,0,0,.18);border:1px solid var(--cardbd);border-radius:8px;padding:7px 9px}
-.grp h4{margin:0 0 5px;color:var(--gold);font-size:12px}
-.grp table{width:100%;border-collapse:collapse;font-size:12px}.grp td{padding:2px 3px;border-bottom:1px dotted rgba(255,255,255,.1)}
-.grp td.pts{text-align:right;font-weight:700}.grp tr.adv td{background:rgba(245,197,66,.14)}
-table.rank{width:100%;border-collapse:collapse;font-size:12.5px}table.rank td{padding:3px 7px;border-bottom:1px solid rgba(255,255,255,.08)}
-ul{margin:.2em 0;padding-left:1.1em}
-.modal{position:fixed;inset:0;background:rgba(10,2,9,.74);display:none;align-items:center;justify-content:center;padding:24px;z-index:50}
-.modal.show{display:flex}
-.sheet{background:linear-gradient(180deg,#3a0e33,#2b0a26);border:1px solid var(--cardbd);border-radius:14px;max-width:760px;width:100%;max-height:86vh;overflow:auto;padding:22px 26px;box-shadow:0 24px 60px rgba(0,0,0,.5)}
-.sheet h2{margin:0 0 2px;color:var(--gold)}.sheet .meta{color:#cdb9c8;font-size:12.5px;margin-bottom:8px}
-.sheet h3{color:var(--gold);font-size:12px;text-transform:uppercase;letter-spacing:1px;margin:16px 0 6px}
-.dqtag{background:#b3261e;color:#fff;font-size:10px;padding:2px 7px;border-radius:10px}
-.mlog{list-style:none;padding:0}.mlog li{padding:5px 0;border-bottom:1px solid rgba(255,255,255,.08)}
-.mlog .w{color:var(--gold);font-weight:700}.mlog .l{color:#e58ab0}.mlog .d{color:#9fc7ff;font-weight:700}.why{color:#c2adbd;font-size:12px}
-.essay p{margin:.55em 0;color:#ece0e9}.x{float:right;cursor:pointer;color:#cdb9c8;font-size:22px;line-height:1}
-.essay pre.code{background:rgba(0,0,0,.35);border:1px solid var(--cardbd);border-radius:8px;padding:10px 12px;overflow-x:auto;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#efe3ee;white-space:pre;margin:.55em 0}
-.coord{margin-top:16px}
+/* ── section kickers: one word each ── */
+.sec{font-size:10px;font-weight:900;letter-spacing:.22em;text-transform:uppercase;color:var(--mut);margin:26px 2px 10px;display:flex;align-items:center;gap:10px}
+.sec b{color:var(--ui)}
+.sec::after{content:'';flex:1;height:1px;background:var(--line)}
+/* ── verdict strip: trust sentence + stats + DQ, fused into one slim bar ── */
+.strip{display:flex;align-items:center;flex-wrap:wrap;gap:8px 18px;background:linear-gradient(180deg,var(--s1),var(--s0));box-shadow:inset 0 0 0 1px var(--line),inset 0 2px 0 var(--ui);border-radius:3px;padding:11px 16px;margin-top:4px}
+.stK{flex:0 0 auto;font-size:10px;font-weight:900;letter-spacing:.22em;text-transform:uppercase;color:var(--ui)}
+.stV{flex:1 1 280px;min-width:0;font-size:13.5px;font-weight:700;line-height:1.4}
+.stat{flex:0 0 auto;display:flex;align-items:baseline;gap:7px;white-space:nowrap}
+.sk{color:var(--mut);font-size:9px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}
+.sv{font-weight:800;font-variant-numeric:tabular-nums}
+.dtag{font-size:9px;font-weight:900;letter-spacing:.05em;color:var(--dq);background:var(--bg0);box-shadow:inset 0 0 0 1px rgba(${T.dqRGB},.4);border-radius:2px;padding:1px 5px}
+.stDQ{flex:0 0 auto;display:flex;align-items:baseline;gap:7px;white-space:nowrap;font-size:12.5px}
+.stDQ .entry{font-weight:800}
+/* ── road: compact step chips in one row. round + opponent + margin. done ── */
+.roadRow{display:flex;gap:8px}
+.rstep{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:7px;background:linear-gradient(180deg,var(--s1),var(--s0));box-shadow:inset 0 0 0 1px var(--line);border-radius:3px;padding:7px 10px}
+.rstep .rr{flex:0 0 auto;font-size:8.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);background:var(--bg0);box-shadow:inset 0 0 0 1px rgba(${T.goldRGB},.3);border-radius:2px;padding:2px 5px}
+.rstep .ro{flex:1 1 auto;min-width:0;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rstep.fin{box-shadow:inset 0 0 0 1px rgba(${T.goldRGB},.55)}
+.rstep.fin .rr{background:var(--gold);color:${T.onGold};box-shadow:none}
+/* ── groups: name + points only; highlight = advanced ── */
+.groups{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.grp{background:linear-gradient(180deg,var(--s1),var(--s0));box-shadow:inset 0 0 0 1px var(--line);border-radius:3px;padding:9px 11px}
+.gL{font-size:22px;font-weight:900;font-style:italic;letter-spacing:-.04em;line-height:1;margin-bottom:6px}
+.gr{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:3px 5px;font-size:12px;border-radius:2px}
+.gr .entry{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--soft)}
+.gr b{font-weight:900;font-variant-numeric:tabular-nums}
+.gr.adv{background:rgba(${T.uiRGB},.08)}
+.gr.adv .entry{color:var(--txt);font-weight:700}
+.gr.adv b{color:var(--ui)}
+/* ── rating: rank + name + bar + number. every name plainly readable ── */
+.elo{columns:2;column-gap:30px}
+.erow{display:flex;align-items:center;gap:10px;padding:5px 2px;border-bottom:1px solid rgba(255,255,255,.05);break-inside:avoid;font-size:12.5px}
+.epos{flex:0 0 22px;text-align:right;font-weight:900;font-style:italic;color:var(--mut);font-variant-numeric:tabular-nums}
+.enm{flex:0 0 168px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700;color:var(--txt)}
+.rtrack{flex:1;height:5px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden}
+.rfill{display:block;height:100%;background:var(--bar);border-radius:2px}
+.ept{flex:0 0 40px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;color:var(--soft)}
+.erow.champ .epos{color:var(--gold)}
+.erow.champ .enm .entry{color:var(--goldHi);font-weight:900}
+.erow.champ .rfill{background:var(--gold);box-shadow:0 0 7px rgba(${T.goldRGB},.4)}
+.erow.champ .ept{color:var(--gold)}
+/* ── coordinate view (axes/sections designs only) ── */
+.coord{background:linear-gradient(180deg,var(--s1),var(--s0));box-shadow:inset 0 0 0 1px var(--line);border-radius:3px;padding:12px 14px}
+.coord h3{margin:.1em 0 .7em;color:var(--gold);font-size:11px;text-transform:uppercase;letter-spacing:.14em}
 .pc-wrap{overflow-x:auto}.pc-svg{width:100%;max-width:780px;height:auto;display:block;margin:0 auto}
-.pc{stroke:rgba(255,255,255,.16);stroke-width:1}.pc.champ{stroke:var(--gold);stroke-width:2.5}.pc.opt{stroke:#7fd1ff;stroke-width:2;stroke-dasharray:5 4}
-.pc-key{text-align:center;font-size:11px;color:#cdb9c8;margin-top:2px}.pc-key .champ{color:var(--gold);margin-right:14px}.pc-key .opt{color:#7fd1ff}
-.eff{margin-top:12px}.erow{margin:7px 0;font-size:12px}.eax{color:#f5c542;font-weight:700;margin-bottom:3px}
-.ebar{display:flex;align-items:center;gap:8px;margin:2px 0}.ev{width:96px;color:#d9c4d4}.ev.best{color:var(--gold);font-weight:700}
-.etrack{flex:1;height:8px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden}.efill{display:block;height:100%;background:var(--gold)}.enum{width:44px;text-align:right;color:#cdb9c8}
-.warn{color:#ffb38a}
-.explorer{margin-top:14px}.exsel{font-size:12px;color:#cdb9c8;margin-bottom:6px}.exsel select{background:#2b0a26;color:#f3e9f0;border:1px solid var(--cardbd);border-radius:6px;padding:2px 6px;margin:0 4px}
-.gridtab{border-collapse:collapse;font-size:11px}.gridtab th{color:#f5c542;padding:3px 6px;text-align:left}.gridtab td{border:1px solid rgba(255,255,255,.1);padding:4px 6px;vertical-align:top;min-width:84px}
-.cavg{font-size:9px;color:#b9a7b4;margin-top:2px}.entry.gold{color:var(--gold);font-weight:700}
+.pc{stroke:rgba(255,255,255,.16);stroke-width:1}.pc.champ{stroke:var(--gold);stroke-width:2.5}.pc.opt{stroke:var(--draw);stroke-width:2;stroke-dasharray:5 4}
+.pc-key{text-align:center;font-size:11px;color:var(--mut);margin-top:2px}.pc-key .champ{color:var(--gold);margin-right:14px}.pc-key .opt{color:var(--draw)}
+.eff{margin-top:12px}.efr{margin:7px 0;font-size:12px}.eax{color:var(--gold);font-weight:700;margin-bottom:3px}
+.ebar{display:flex;align-items:center;gap:8px;margin:2px 0}.ev{width:96px;color:var(--soft)}.ev.best{color:var(--gold);font-weight:700}
+.etrack{flex:1;height:8px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden}.efill{display:block;height:100%;background:var(--gold)}.enum{width:44px;text-align:right;color:var(--mut)}
+.warn{color:var(--dq)}
+.explorer{margin-top:14px}.exsel{font-size:12px;color:var(--mut);margin-bottom:6px}.exsel select{background:var(--s0);color:var(--txt);border:1px solid var(--line);border-radius:3px;padding:2px 6px;margin:0 4px}
+.gridtab{border-collapse:collapse;font-size:11px}.gridtab th{color:var(--gold);padding:3px 6px;text-align:left}.gridtab td{border:1px solid rgba(255,255,255,.1);padding:4px 6px;vertical-align:top;min-width:84px}
+.cavg{font-size:9px;color:var(--mut);margin-top:2px}.entry.gold{color:var(--gold);font-weight:700}
+/* ── corner whisper: the only place the click affordance is spelled out ── */
+.whisper{position:fixed;right:12px;bottom:9px;font-size:9.5px;letter-spacing:.04em;color:var(--dim);pointer-events:none;z-index:40}
+/* ── modal info sheet: form strip up top, matches collapsed, the artifact is the hero ── */
+.modal{position:fixed;inset:0;background:${T.veil};display:none;align-items:center;justify-content:center;padding:24px;z-index:50}
+.modal.show{display:flex}
+.sheet{position:relative;display:flex;flex-direction:column;background:linear-gradient(180deg,var(--s1),var(--s0));box-shadow:inset 0 0 0 1px var(--line),inset 0 2px 0 var(--gold),0 24px 60px rgba(0,0,0,.6);border-radius:4px;max-width:880px;width:100%;max-height:88vh;padding:24px 30px 26px;overflow:hidden}
+#mbody{display:flex;flex-direction:column;min-height:0}
+.sheet h2{margin:0 34px 2px 0;color:var(--goldHi);font-size:22px;font-weight:900;font-style:italic;letter-spacing:-.02em;text-transform:uppercase;line-height:1.05;flex:0 0 auto}
+.sheet .meta{color:var(--mut);font-size:12.5px;margin:3px 0 0;flex:0 0 auto}
+.sheet .gate{color:var(--dq);font-size:12.5px;font-weight:700;margin:6px 0 0;flex:0 0 auto}
+.sheet h3{font-size:10px;font-weight:900;letter-spacing:.22em;text-transform:uppercase;color:var(--ui);margin:16px 0 8px;display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.sheet h3::after{content:'';flex:1;height:1px;background:var(--line)}
+.dqtag{background:var(--dq);color:${T.onDq};font-size:10px;font-weight:900;font-style:normal;letter-spacing:.08em;padding:2px 7px;border-radius:2px;vertical-align:middle}
+/* form strip: one chip per match, chronological; gold=win, loss=loss colour, outlined=reference challenge */
+.form{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:12px 0 0;flex:0 0 auto}
+.fchip{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;padding:0 6px;font-size:11.5px;font-weight:900;border-radius:3px;font-variant-numeric:tabular-nums}
+.form .fchip{cursor:default}
+.fchip.w{color:var(--gold);background:rgba(${T.goldRGB},.13);box-shadow:inset 0 0 0 1px rgba(${T.goldRGB},.5)}
+.fchip.l{color:var(--loss);background:rgba(${T.lossRGB},.09);box-shadow:inset 0 0 0 1px rgba(${T.lossRGB},.42)}
+.fchip.d{color:var(--draw);background:rgba(${T.drawRGB},.08);box-shadow:inset 0 0 0 1px rgba(${T.drawRGB},.4)}
+.fchip.ref{background:transparent;box-shadow:none;border:1px dashed currentColor;font-size:9.5px;letter-spacing:.07em;padding:0 9px}
+.fchip.sm{min-width:20px;height:20px;font-size:10px;padding:0 5px}
+.frec{margin-left:8px;font-size:12.5px;font-weight:800;letter-spacing:.03em;font-variant-numeric:tabular-nums;color:var(--txt)}
+/* match history: collapsed by default; A-vs-B rows, judge reason on hover title or row tap */
+.mh{margin:13px 0 0;flex:0 0 auto;min-height:0}
+.mh summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;font-size:10px;font-weight:900;letter-spacing:.22em;text-transform:uppercase;color:var(--ui);user-select:none;-webkit-user-select:none}
+.mh summary::-webkit-details-marker{display:none}
+.mh summary .tri{font-size:8px;transition:transform .15s}
+.mh[open] summary .tri{transform:rotate(90deg)}
+.mh summary::after{content:'';flex:1;height:1px;background:var(--line)}
+.mwrap{max-height:26vh;overflow:auto;margin-top:6px}
+.mlog{list-style:none;padding:0;margin:0}
+.mrow{display:flex;align-items:center;flex-wrap:wrap;gap:7px;padding:6px 2px;border-bottom:1px solid rgba(255,255,255,.06);font-size:12.5px;cursor:pointer}
+.mrow:hover{background:rgba(255,255,255,.025)}
+.mrow .rd{flex:0 0 auto;min-width:40px;text-align:center;font-size:8.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);background:var(--bg0);box-shadow:inset 0 0 0 1px rgba(${T.goldRGB},.3);border-radius:2px;padding:2px 5px}
+.mrow .rd.refR{color:var(--draw);box-shadow:inset 0 0 0 1px rgba(${T.drawRGB},.4)}
+.mrow .me{color:var(--dim);font-size:9px}
+.mrow .vs{color:var(--mut);font-size:9.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+.mrow .opp{font-weight:700;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mrow .sp{flex:1}
+.mrow .mwhy{display:none;flex:0 0 100%;color:var(--mut);font-size:12px;line-height:1.45;padding:0 0 2px 47px}
+.mrow.open .mwhy{display:block}
+/* artifact: the hero — dominant share of the sheet, scrolls internally */
+.art{flex:1 1 auto;min-height:0;overflow:auto;margin-top:2px}
+.essay p{margin:.7em 0;max-width:65ch;color:var(--ink);font-size:16.5px;line-height:1.68}
+.essay pre.code{background:var(--bg0);box-shadow:inset 0 0 0 1px var(--line);border-radius:3px;padding:14px 16px;overflow-x:auto;font:13.5px/1.6 ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;color:var(--code);white-space:pre;margin:.6em 0;tab-size:2}
+.x{position:absolute;top:14px;right:18px;cursor:pointer;color:var(--mut);font-size:24px;line-height:1;z-index:1}
+.x:hover{color:var(--txt)}
+@media(max-width:1080px){
+ .mRec{margin-left:0;transform:none}
+ .mRec>div{transform:none}
+ .roadRow{flex-wrap:wrap}
+ .rstep{flex:1 1 30%}
+ .groups{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:720px){
+ .elo{columns:1}
+ .enm{flex:1 1 auto}
+ .mCell{padding:2px 14px}
+ .brand{padding-right:14px}
+ .rstep{flex:1 1 46%}
+ .sheet{padding:20px 18px}
+ .essay p{font-size:15px}
+}
 </style></head><body>
-<header><div class="cup">&#127942; World Cup</div><h1>${esc((typeof meta !== 'undefined' && meta.name ? meta.name : 'WORLD CUP').toUpperCase())}</h1>
-<div class="sub">champion <b style="color:var(--gold)">${esc(champion.label)}</b> &middot; ${esc(trustVerdict)} &middot; ${refTxt}</div>
-<div class="recpill">${esc(recommendation)}</div>${headlineHtml ? `<div class="headlines">${headlineHtml}</div>` : ''}<div class="hint">click any entry for its info and full text</div></header>
-<div class="wrap"><div class="bracket"><div class="half left">${leftCols}</div>
-<div class="center"><div class="winnerlbl">Winner</div><div class="trophy"${championDQ ? '' : ` role="button" tabindex="0" aria-label="replay the confetti" title="replay the confetti" onclick="party()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();party();}"`}>&#127942;</div><div class="champcard">${entry(champion.label)}</div><div class="finalline">${finalLine}</div></div>
+<div class="shell">
+<header class="mast">
+<div class="brand"><span class="bTrophy">&#127942;</span><div><div class="bName">World Cup</div><div class="bMode">${esc(modeLine)}</div></div></div>
+<div class="mCell"><div class="mk">Champion</div><div class="mChampName">${entry(champion.label)}</div></div>
+<div class="mRec ${recTone}"><div><span class="mRecK">${esc(recKey)}</span>${recTail ? `<span class="mRecT">${esc(recTail)}</span>` : ''}</div></div>
+</header>
+<div class="ticker"><span class="tkLab"><span>Headlines</span></span>${tickerHtml}</div>
+<div class="bracket"><div class="half left">${leftCols}</div>
+<div class="center"><div class="winnerlbl">Champion</div><div class="champOct"><div class="trophy"${championDQ ? '' : ` role="button" tabindex="0" aria-label="replay the confetti" title="replay the confetti" onclick="party()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();party();}"`}>&#127942;</div><div class="champcard">${entry(champion.label)}</div></div><div class="finalline">${finalLine}</div></div>
 <div class="half right">${rightCols}</div></div>
-<div class="panels">
-<div class="panel"><h3>Trust</h3><div class="trust">${esc(trustVerdict)}</div><div class="muted">rating leader: ${esc(pool.find(t => t.id === ratingLeaderId).label)} &middot; avg rating of beaten opponents: ${avgBeatenRating}</div></div>
-<div class="panel"><h3>Road to the title</h3><ul class="mlog">${roadRows}</ul></div>
-<div class="panel"><h3>Group stage</h3><div class="groups">${groupCards}</div></div>
-${dqHtml}
-<div class="panel"><h3>Global rating (Elo)</h3><table class="rank"><tr><td>#</td><td>entry</td><td>rating</td></tr>${ratingRows}</table></div>
-</div>${coordPanel}</div>
+<div class="strip">
+<span class="stK">Trust</span>
+<span class="stV">${esc(trustVerdict)}</span>
+<span class="stat"><span class="sk">Leader</span><span class="sv">${esc(pool.find(t => t.id === ratingLeaderId).label)}</span></span>
+<span class="stat"><span class="sk">Beaten avg</span><span class="sv">${avgBeatenRating}</span></span>${softStrip}
+${dqStrip}
+</div>
+<div class="sec"><b>Road</b></div>
+<div class="roadRow">
+${roadRow}
+</div>
+<div class="sec"><b>Groups</b></div>
+<div class="groups">
+${groupCards}
+</div>
+<div class="sec"><b>Rating</b></div>
+<div class="elo">
+${ratingRows}
+</div>
+${coordPanel}</div>
+<div class="whisper">&#9432; click any name for full info &amp; text</div>
 <div class="modal" id="modal" onclick="if(event.target===this)hide()"><div class="sheet"><span class="x" onclick="hide()">&times;</span><div id="mbody"></div></div></div>
 <script>
 var DATA=JSON.parse(${dataJsonLit});
@@ -1590,13 +1814,42 @@ function he(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return 
 // so an 'If the…' prose line costs at most itself and an 'Iffy…' line costs nothing.
 function looksCode(s){var ls=String(s).split('\\n').filter(function(l){return l.trim();});if(!ls.length)return false;var c=0;ls.forEach(function(l){var t=l.trim();if(/^[ \\t]/.test(l)||/[;{})\\]]$/.test(t)||/^((function|const|let|var|def|class|import|export|return|if|for|while|fn|pub|switch|case|type|interface|SELECT|INSERT|UPDATE|CREATE|WITH)\\b|\\/\\/|})/i.test(t))c++;});return c/ls.length>0.4;}
 function renderArtifact(t){var parts=String(t==null?'':t).split(/\`\`\`\\w*\\n?/),out='';for(var i=0;i<parts.length;i++){if(!parts[i].trim())continue;if(i%2===1||looksCode(parts[i]))out+='<pre class="code">'+he(parts[i].replace(/\\s+$/,''))+'</pre>';else out+=parts[i].split(/\\n\\n+/).filter(function(p){return p.trim();}).map(function(p){return '<p>'+he(p)+'</p>';}).join('');}return out;}
-function show(k){var d=DATA[k];if(!d)return;var h='<h2>'+he(k)+(d.dq?' <span class="dqtag">DISQUALIFIED</span>':'')+'</h2>';
+// The sheet leads with a scannable form strip (one W/L chip per match, chronological; the
+// reference challenge vs the ORIGINAL gets an outlined chip), collapses the match log into a
+// <details> of A-vs-B rows (judge reason on hover title, or tap a row to pin it open), and gives
+// the artifact the dominant share of the sheet. The ORIGINAL is not an entry (no DATA key), so
+// the reference opponent renders as plain text, not a clickable .entry.
+function rdAbbr(r){r=String(r||'');if(/^group$/i.test(r))return'Grp';if(/^final$/i.test(r))return'Final';if(/^reference$/i.test(r))return'Ref';return r;}
+function show(k){var d=DATA[k];if(!d)return;
+var h='<h2>'+he(k)+(d.dq?' <span class="dqtag">DISQUALIFIED</span>':'')+'</h2>';
 h+='<div class="meta">seed #'+d.seed+' &middot; rating '+d.rating+(d.angle?(' &middot; '+he(d.angle)):'')+'</div>';
-if(d.coords&&Object.keys(d.coords).filter(function(k){return k!=='__rep';}).length)h+='<div class="meta">at '+Object.keys(d.coords).filter(function(k){return k!=='__rep';}).map(function(k){return he(k)+'='+he(d.coords[k]);}).join(', ')+'</div>';
-if(d.dq)h+='<div class="meta" style="color:#f3a">gate: '+(d.category?'<b>'+he(d.category)+'</b> ':'')+he(d.flaw)+'</div>';
-if(d.soft&&d.soft.length)h+='<div class="meta" style="color:#d9b24a">preflight flags (soft &mdash; scrutiny, not death): '+d.soft.map(he).join(', ')+'</div>';
-if(d.matches&&d.matches.length){h+='<h3>matches</h3><ul class="mlog">';d.matches.forEach(function(x){var draw=x.won===null;h+='<li><span class="'+(draw?'d':(x.won?'w':'l'))+'">'+(draw?'drew':(x.won?'beat':'lost to'))+' '+he(x.opp)+'</span> <span class="why">&middot; '+he(x.round)+' &middot; '+he(x.margin||'')+'</span><div class="why">'+he(x.reason||'')+'</div></li>';});h+='</ul>';}
-h+='<h3>full text</h3><div class="essay">'+renderArtifact(d.text)+'</div>';
+${coordsMetaJs}if(d.dq)h+='<div class="gate">gate: '+(d.category?'<b>'+he(d.category)+'</b> &mdash; ':'')+he(d.flaw)+'</div>';
+if(d.soft&&d.soft.length)h+='<div class="meta" style="color:var(--gold)">preflight flags (soft &mdash; scrutiny, not death): '+d.soft.map(he).join(', ')+'</div>';
+var ms=d.matches||[];
+if(ms.length){var W=0,L=0,Dr=0,chips='';
+ms.forEach(function(x){var draw=x.won===null,ref=/^reference$/i.test(String(x.round||''));
+if(draw)Dr++;else if(x.won)W++;else L++;
+var cls=draw?'d':(x.won?'w':'l'),ltr=draw?'D':(x.won?'W':'L');
+var tip=rdAbbr(x.round)+' vs '+x.opp+(x.margin?' — '+x.margin:'');
+if(ref)chips+='<span class="fchip '+cls+' ref" title="'+he(tip)+'">'+ltr+' vs ORIGINAL</span>';
+else chips+='<span class="fchip '+cls+'" title="'+he(tip)+'">'+ltr+'</span>';});
+var rec=W+'W'+(Dr?'–'+Dr+'D':'')+'–'+L+'L';
+h+='<div class="form">'+chips+'<span class="frec">'+rec+'</span></div>';
+h+='<details class="mh"><summary><span class="tri">&#9654;</span>Matches &middot; '+ms.length+'</summary><div class="mwrap"><ul class="mlog">';
+ms.forEach(function(x){var draw=x.won===null,ref=/^reference$/i.test(String(x.round||''));
+var cls=draw?'d':(x.won?'w':'l'),ltr=draw?'D':(x.won?'W':'L');
+var opp=ref?he(x.opp):'<span class="entry" data-k="'+he(x.opp)+'">'+he(x.opp)+'</span>';
+h+='<li class="mrow" tabindex="0" title="'+he(x.reason||'')+'"'
++' onclick="if(!(event.target.closest&&event.target.closest(\\'.entry\\')))this.classList.toggle(\\'open\\')"'
++' onkeydown="if(event.key===\\'Enter\\'||event.key===\\' \\'){event.preventDefault();this.classList.toggle(\\'open\\');}">'
++'<span class="rd'+(ref?' refR':'')+'">'+he(rdAbbr(x.round))+'</span>'
++'<span class="me" title="'+he(k)+'">&#9679;</span><span class="vs">vs</span>'
++'<span class="opp">'+opp+'</span><span class="sp"></span>'
++'<span class="fchip sm '+cls+'">'+ltr+'</span>'
++(x.margin?'<span class="mg">'+he(x.margin)+'</span>':'')
++'<div class="mwhy">'+he(x.reason||'')+'</div></li>';});
+h+='</ul></div></details>';}
+h+='<h3>full text</h3><div class="art"><div class="essay">'+renderArtifact(d.text)+'</div></div>';
 document.getElementById('mbody').innerHTML=h;document.getElementById('modal').classList.add('show');}
 function hide(){document.getElementById('modal').classList.remove('show');}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')hide();});
@@ -1604,7 +1857,7 @@ document.addEventListener('click',function(e){var t=e.target;if(t&&t.classList&&
 // Confetti: one gold burst from the trophy when the report opens; the cup replays it (click, or
 // Enter/Space — it's a real role=button). Principle: the page must never create more confidence in
 // the winner than the evaluator earned. Confetti celebrates the BRACKET win (the sporting layer);
-// the verdict pill stays the epistemic voice — "lucky draw" and "keep the original" champions still
+// the verdict chip stays the epistemic voice — "lucky draw" and "keep the original" champions still
 // won their bracket and get their shower. A gate-DQ champion is the one state where celebration
 // would contradict the page itself (DO NOT TRUST), so it gets NO party and NO replay control (the
 // cup renders inert rather than as a dead switch). Auto-fire honors prefers-reduced-motion;
@@ -1624,7 +1877,7 @@ function fit(){var de=document.documentElement;W=de.clientWidth||window.innerWid
 fit();window.addEventListener('resize',fit);
 var src={x:W/2,y:H*0.3},anchor=document.querySelector('.trophy');
 if(anchor){var r=anchor.getBoundingClientRect();if(r.width)src={x:r.left+r.width/2,y:r.top+r.height/2};}
-var COL=['#f5c542','#fff6d8','#ff7a3c','#7fd1ff','#e58ab0'];
+var COL=${JSON.stringify(THEME.confetti)};
 var N=Math.min(240,Math.max(140,Math.round(W/6))),P=[];
 for(var i=0;i<N;i++){var burst=i<N*0.72,a=Math.random()*Math.PI*2,v=4+Math.random()*9;
 P.push({x:burst?src.x:Math.random()*W,y:burst?src.y:-20-Math.random()*H*0.25,
@@ -1648,6 +1901,73 @@ cx.globalAlpha=1;
 if(alive&&ts-t0<9000)requestAnimationFrame(step);else gone();}
 requestAnimationFrame(step);}
 if(PARTY&&!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches))setTimeout(party,350);
+// ── bracket connector rails: the live view's SVG engine (bracketConn in live-view.js) ported to
+// the mirror layout. Same structure, same grammar: measure the DOM boxes -> build the path list ->
+// ONE absolutely-positioned SVG overlay -> junction dots. A per-gap <clipPath> hard-clips every
+// stroke to the gutter (paint-order is NOT clipping), each feeder+riser is ONE elbow <path> with
+// linejoin:round (no overshoot nub to draw), and a <circle> at each T covers the colour seam.
+// Adapted, not reinvented: the live view lays columns on a fixed 184/56 grid and computes geometry
+// server-side; this bracket's columns are ELASTIC (space-around, safe center), so the same math
+// runs client-side against getBoundingClientRect — on load and on debounced resize — and the
+// emitted HTML stays byte-deterministic. The two halves feed INWARD (dir +1 left / -1 right); the
+// last column of each half joins the centre octagon at its vertical middle (at mid-height the
+// octagon clip-path spans its full box, so the rail meets the visible gold edge exactly).
+// Colours: ca = the champion's road (--rwin gold), cw = decided (--rdone), unclassed = empty
+// feeders (--rail). Rails are static — no animation, so prefers-reduced-motion needs nothing.
+function drawConn(){
+var br=document.querySelector('.bracket');if(!br)return;
+var old=br.querySelector('.conn');if(old)old.parentNode.removeChild(old);
+var oct=br.querySelector('.champOct');if(!oct)return;
+var bb=br.getBoundingClientRect();
+var W=br.scrollWidth,H=br.scrollHeight;
+function bx(el){var r=el.getBoundingClientRect();return{l:r.left-bb.left+br.scrollLeft,r:r.right-bb.left+br.scrollLeft,cy:r.top-bb.top+br.scrollTop+r.height/2,road:el.classList.contains('road'),empty:el.classList.contains('empty')};}
+var SW2=1.5,EDGE=2,JPAD=0.4,defs='',groups='',gid=0;
+function cls(c){return c?' class="'+c+'"':'';}
+// gap(): one inter-column gutter. fs feed ts (target j <- feeders 2j, 2j+1); dir is the flow.
+function gap(fs,ts,dir){
+if(!fs.length||!ts.length)return;
+var eF=dir>0?Math.max.apply(null,fs.map(function(m){return m.r;})):Math.min.apply(null,fs.map(function(m){return m.l;}));
+var eT=dir>0?Math.min.apply(null,ts.map(function(m){return m.l;})):Math.max.apply(null,ts.map(function(m){return m.r;}));
+var x0=Math.min(eF,eT)+EDGE,x1=Math.max(eF,eT)-EDGE;
+if(x1-x0<1)return;
+var jx=((eF+eT)/2).toFixed(1);
+defs+='<clipPath id="bk'+gid+'" clipPathUnits="userSpaceOnUse"><rect x="'+x0.toFixed(1)+'" y="0" width="'+(x1-x0).toFixed(1)+'" height="'+H+'"/></clipPath>';
+var g='';
+for(var j=0;j<ts.length;j++){
+var t=ts[j],ff=[fs[2*j],fs[2*j+1]].filter(Boolean);
+if(!ff.length)continue;
+var yM=t.cy.toFixed(1);
+var fwd=t.oct?(ff.some(function(m){return m.road;})?'ca':(ff.some(function(m){return !m.empty;})?'cw':''))
+:(t.empty?'':(t.road?'ca':'cw'));
+ff.forEach(function(f){g+='<path d="M'+(dir>0?f.r:f.l).toFixed(1)+' '+f.cy.toFixed(1)+'H'+jx+'V'+yM+'"'+cls(f.empty?'':(f.road?'ca':'cw'))+'/>';});
+g+='<line x1="'+jx+'" y1="'+yM+'" x2="'+(dir>0?t.l:t.r).toFixed(1)+'" y2="'+yM+'"'+cls(fwd)+'/>'
++'<circle cx="'+jx+'" cy="'+yM+'" r="'+(SW2+JPAD)+'"'+cls(fwd)+'/>';
+}
+groups+='<g clip-path="url(#bk'+gid+')">'+g+'</g>';gid++;
+}
+var ob=bx(oct);ob.oct=true;
+[['.half.left',1],['.half.right',-1]].forEach(function(hv){
+var el=br.querySelector(hv[0]);if(!el)return;
+var dir=hv[1];
+var rounds=[].slice.call(el.children).filter(function(c){return c.classList.contains('round');});
+if(dir<0)rounds.reverse();// the right half renders outward (SF..R16); walk it chronologically
+var cols=rounds.map(function(rd){return [].slice.call(rd.querySelectorAll('.match')).map(bx);});
+for(var r=0;r+1<cols.length;r++)gap(cols[r],cols[r+1],dir);
+if(cols.length)gap(cols[cols.length-1],[ob],dir);
+});
+if(!groups)return;
+var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+svg.setAttribute('class','conn');
+svg.setAttribute('viewBox','0 0 '+W+' '+H);
+svg.setAttribute('width',W);svg.setAttribute('height',H);
+svg.innerHTML='<defs>'+defs+'</defs>'+groups;
+br.insertBefore(svg,br.firstChild);// first child: paints under the z-indexed cards and octagon
+}
+var connT;
+window.addEventListener('resize',function(){clearTimeout(connT);connT=setTimeout(drawConn,120);});
+window.addEventListener('load',drawConn);// fonts/late layout can move card boxes; redraw settled
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){drawConn();});
+drawConn();
 ${coordScript}
 </script></body></html>`
 }
