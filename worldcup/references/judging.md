@@ -392,8 +392,9 @@ preferred; bins are only for cheap seeding.
   ask each juror to name one cuttable sentence — lots of removable material is a weakness. So
   length as such is neither rewarded nor penalized; only whether every part earns its place.
 - **Sycophancy**: blind everything — jurors never see which model wrote an entry, its
-  seed, prior jurors' picks, or that an entry is the original (except the reference
-  challenge). Ask "which should the author publish," never "which better satisfies the user."
+  seed, prior jurors' picks, or that an entry is the original (fielded, it is blind like
+  every other entry — no exception). Ask "which should the author publish," never "which
+  better satisfies the user."
 - **Self-consistency**: track per-juror calibration accuracy, position bias, tie-overuse,
   length bias; downweight unstable jurors. (Maximal only.)
 

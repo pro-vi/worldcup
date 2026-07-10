@@ -1,6 +1,6 @@
 # ADR 0003: Retire the "incumbent" concept; field the original as a contestant
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-10
 - **Deciders:** maintainer; design validated by Fable analysis lanes (patterns / integration /
   representation-integrity) + a Fable simplification pressure-test
@@ -55,8 +55,10 @@ incumbent — it was the fact ledger, and that already lives in `SOURCE_PACKET`,
 ADR 0001's principle ("the simpler, already-shipped design wins under uncertainty") cuts directly
 toward deletion, and the removal is motivated by **observed miscalibration** (frozen length
 exploration + the every-prompt anchor leak), exactly the kind of evidence ADR 0001's revisit
-discipline asks for. Net **−6 concepts, ~−60 lines, +1 boolean**, plus two quality wins: deleting
-`INCUMBENT_CLAUSE` **de-anchors all ~250 lens votes**, and a fielded original that gets DQ'd is a
+discipline asks for. **−6 concepts and +1 boolean** (`INCLUDE_BASE`): ~60 lines of incumbent
+machinery deleted from the engine (net engine change ≈ −18 lines after the base-fielding code that
+replaces it). Plus two quality wins: deleting `INCUMBENT_CLAUSE` **de-anchors all ~250 lens votes**,
+and a fielded original that gets DQ'd is a
 **free gate canary** (the ledger IS the original's truth, so an original DQ means the ledger is
 misconfigured or the gate is broken — a loud trust warning).
 

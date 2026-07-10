@@ -1051,8 +1051,11 @@ if (SOURCE === 'generate') {
   // REPLACES one generated cell (never appends: snakeGroups assumes exactly 4·G teams, so pool.length
   // MUST stay FIELD) by taking that cell's id with pre-baked markdown, so it flows through the same
   // pre-made-markdown seam sections already uses. Cleanest for flat/given fields; in an axes/sections
-  // design the base is a contestant OUTSIDE the coordinate grid (its coords lack the axis keys, so
-  // it is excluded from the effects buckets). 'given' mode needs nothing — include the original there.
+  // design the base is a contestant OUTSIDE the coordinate grid (its coords lack the axis keys), so it
+  // is excluded from the effects buckets and the grid explorer — and in the coordinate view it plots
+  // as a flat polyline at the first tick of each axis and its info sheet labels it by flavor, a
+  // harmless cosmetic artifact of that non-default combo (no effect on draw/judging/determinism).
+  // 'given' mode needs nothing — include the original there.
   if (INCLUDE_BASE) {
     const cell = specs[0]   // the base occupies the first cell; that flavor/axis point is simply not generated
     specs[0] = { id: cell.id, label: BASE_LABEL, coords: { flavor: BASE_LABEL }, markdown: BASE, title: '', oneLineAngle: '' }
