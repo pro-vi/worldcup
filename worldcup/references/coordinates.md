@@ -28,10 +28,11 @@ effects "empirical, not fitted" — do not over-read them.
 ## Predicted-optimum playoff (optional, `PLAYOFF` config, default off)
 
 When the predicted optimum is *not* in the field, the workflow can generate it (from the
-stored fragments) and play it head-to-head against the bracket champion and the incumbent.
-Result: `playoff = { beatChampion, beatOriginal, markdown }`. This tells you whether the
-fitted optimum actually beats what the bracket crowned — the interaction the bracket can
-miss. Off by default because it adds agent calls.
+stored fragments) and play it head-to-head against the bracket champion.
+Result: `playoff = { beatChampion, markdown }`. This tells you whether the fitted optimum
+actually beats what the bracket crowned — the interaction the bracket can miss. Off by
+default because it adds agent calls. (Want it measured against the original too? Field the
+original as one of the N — INCLUDE_BASE — and read their meeting off the bracket.)
 
 ## The coordinate view (report)
 

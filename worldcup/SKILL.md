@@ -15,8 +15,9 @@ description: >
   "best of N", "mass-produce and pick the best", "stage 48 variants and crown a
   winner", "group stage then knockout". Requires the ultracode Workflow tool. The
   judge is the point: domain profiles plug in a fatal-flaw/fabrication gate, a
-  reference-anchor incumbent, calibrated pairwise seeding, diverse-lens panels,
-  Elo rating confirmation, and optional cross-model (agentify) jurors for the finals.
+  fact-ledger truth anchor (the original competes as one of the N when you want it
+  judged), calibrated pairwise seeding, diverse-lens panels, Elo rating confirmation,
+  and optional cross-model (agentify) jurors for the finals.
 ---
 
 # World Cup
@@ -30,8 +31,8 @@ non-determinism lives where it belongs, inside the judges. Every run ends with a
 Cup-flavored HTML report of the final state graph.
 
 Essays are one supported profile, not the shape of the tool. The structure (gates ->
-pairwise taste -> reference challenge -> rating + trust) is domain-general; what swaps
-per domain is the gate and the lenses (see "references/judging.md", Domain profiles).
+pairwise taste -> rating + trust) is domain-general; what swaps per domain is the gate and
+the lenses (see "references/judging.md", Domain profiles).
 
 **What "any artifact" actually requires — settle this before promising a domain.** An
 entry must be (a) text-representable, because it travels inside judge prompts, and
@@ -49,8 +50,8 @@ committed code sample (32 debounce implementations), but have seen less real-wor
 This skill exists because a naive version fails in a specific way. A previous run let an
 essay win by fabricating concrete detail (invented line numbers, a fake stack trace) that
 read as "authentic" to a single tasteless judge. The fix is not a bigger model. It is a
-judging architecture with taste: a truth gate, adversarial lenses, an incumbent to beat,
-escalating panels, and an Elo rating reality check (Bradley-Terry is the maximal upgrade —
+judging architecture with taste: a truth gate, adversarial lenses, the original fielded as
+one of the N, escalating panels, and an Elo rating reality check (Bradley-Terry is the maximal upgrade —
 see references/judging.md). Read "references/judging.md" before
 you build anything. The judge is 80% of this skill.
 
@@ -91,22 +92,30 @@ context; pick sane defaults for the rest and state them.
    others. **The engine ships taste-neutral** — get the rubric from the user in their words
    (or from a voice skill they hand in); see "references/profiles/" for the profile shape. Vague
    criteria produce a tasteless judge, which is the whole failure mode.
-4. **Source packet (incumbent + fact ledger)**: the single most important input for
-   any truth-bearing field. It bundles (a) the reference original the field must beat
-   (the author's real essay, the live tagline), and (b) a fact ledger of what is
-   actually true plus an explicit NOT-ALLOWED list (invented line numbers, names,
-   stack traces, quotes, scenes). Judges cannot tell honest specificity from
-   fabricated specificity without it. The incumbent is also the bar: an entry must
-   beat it on merit, not by sounding flashier. See "references/judging.md" section 1
-   for the template. Skip only when there is no truth to protect and no incumbent.
+4. **Source packet — two separable questions** (the single most important input for any
+   truth-bearing field):
+   - **Is there a truth to protect?** If yes, build a **fact ledger** of what is actually
+     true plus an explicit NOT-ALLOWED list (invented line numbers, names, stack traces,
+     quotes, scenes). This arms the fabrication gate — judges cannot tell honest specificity
+     from fabricated specificity without it. See "references/judging.md" section 1 for the
+     template. Skip only when there is no truth to protect.
+   - **Should the current original compete?** The original is no longer a privileged bar the
+     champion must clear on a supermajority — if you want it judged, **field it as one of the
+     N**: `INCLUDE_BASE = true` in a generate run (it takes one cell of the field, replacing a
+     generated one), or just include it among your `given` items. It is then screened, seeded,
+     and rated like any entry, and "keep the original" is simply the result that it won its
+     bracket or out-rated the field (see Output). Omit it when the current version is not up
+     for head-to-head comparison. (Running worldcup on "improve this draft" usually means the
+     current version IS up for replacement — so fielding it, not privileging it, is the honest
+     default.)
    When the field critiques, responds to, or makes factual claims about a named external
-   work, add a third element: (c) a TARGET built from that work's ACTUAL fetched source
-   (WebFetch the original; WebSearch/exa/grep/context7 to locate and corroborate by domain),
-   not the draft's summary of it. Put it in the template's dedicated `TARGET` field (which is
-   what drives the MISREPRESENTS_TARGET gate), never inline in the criteria text. The draft's
-   characterization of the target is a claim to verify. This is target-truth, the companion to
-   the author-truth ledger; without it a critique can pass the fabrication gate and still
-   misrepresent the work it answers.
+   work, add a TARGET built from that work's ACTUAL fetched source (WebFetch the original;
+   WebSearch/exa/grep/context7 to locate and corroborate by domain), not the draft's summary
+   of it. Put it in the template's dedicated `TARGET` field (which is what drives the
+   MISREPRESENTS_TARGET gate), never inline in the criteria text. The draft's characterization
+   of the target is a claim to verify. This is target-truth, the companion to the author-truth
+   ledger; without it a critique can pass the fabrication gate and still misrepresent the work
+   it answers.
 5. **Hard disqualifiers**: things that auto-kill an entry regardless of appeal. The
    domain-general one is **fabricated specifics presented as real** (a lie against the
    fact ledger). The user may add their own **house-style** hard bans (e.g. a prose profile
@@ -130,10 +139,11 @@ context; pick sane defaults for the rest and state them.
    "references/design-pass.md" (the DESIGN spec + combinatorics) and
    "references/coordinates.md" (coords, effects, the coordinate view). The bracket math
    is load-bearing; do not reconstruct it from memory.
-2. **Assemble the criteria block.** Write the taste spec, the disqualifiers, and the
-   incumbent into a single text block you will embed in every judge prompt. **If the user
-   handed in a voice skill, invoke it and distill its hard rules into this block; otherwise use
-   their stated criteria in their own words.** Ship nothing domain-specific by default — the engine
+2. **Assemble the criteria block.** Write the taste spec and the disqualifiers (and the fact
+   ledger, if any) into a single text block you will embed in every judge prompt — the original
+   is NOT pasted here (it competes as a fielded contestant, not as a clause every juror reads).
+   **If the user handed in a voice skill, invoke it and distill its hard rules into this block;
+   otherwise use their stated criteria in their own words.** Ship nothing domain-specific by default — the engine
    judges on general axes (substance / fit / craft / integrity) and the user's criteria fills in what
    "good" means in their domain (see "references/profiles/" for the profile socket). For a
    critique/response run, fetch the target first and put it in the template's dedicated
@@ -148,8 +158,9 @@ context; pick sane defaults for the rest and state them.
    (live-view beacon emission, on by default — see Cost, below).
    Set `REPORT_THEME` to match the live-view theme where a matching report skin exists ('arena' default, 'classic'; unknown falls back to arena). The template already encodes the design pass, snake seeding, the
    group round-robin, the knockout crossings, the multi-lens judge, the fabrication gate,
-   the reference challenge, the effects analysis, the trust report, and the HTML report
-   (mirror bracket + coordinate view). You are filling holes, not writing orchestration.
+   the effects analysis, the trust report, and the HTML report (mirror bracket + coordinate
+   view). To field the current original as a contestant, set `INCLUDE_BASE = true` (generate
+   mode) or include it among your `given` items. You are filling holes, not writing orchestration.
 4. **Run it** with the Workflow tool. It runs in the background and notifies on
    completion. Watchable via "/workflows" (Tier-0 — free, no setup).
 
@@ -192,7 +203,7 @@ context; pick sane defaults for the rest and state them.
    deliverable of every run, not an optional extra.
 6. **Report in chat** (see Output below). Read the returned result fully before
    summarizing — the champion, the final's deciding reason, the champion's path, the
-   global rating, the reference-challenge result, and the trust verdict.
+   global rating, where the fielded original (if any) placed, and the trust verdict.
 
 ## The judging doctrine (summary)
 
@@ -220,10 +231,13 @@ Full version in "references/judging.md". The non-negotiables:
   judges naming different fabrication subtypes still forfeit it. A vivid fabricated entry
   forfeits; it does not lose "some points."
   This is the rule that flips the previous bad result.
-- **The reference challenge.** Surviving the bracket is not enough: the champion must
-  beat the author's true original head-to-head by a supermajority. If it cannot, the
-  output is "keep the original" — confirming the field never improved on the real thing
-  is a real result, not a failure to force a winner.
+- **The original is one of the N, not a privileged bar.** When you want the original
+  judged, field it as a contestant (`INCLUDE_BASE`, or a `given` item); it is screened,
+  seeded, and rated like any entry. "Keep the original" is simply the result that it won
+  its bracket or out-rated the field — a real, useful outcome, not a failure to force a
+  winner. Fielding it blind also removes a real bias: the retired reference challenge pasted
+  the original's full text into every lens prompt. (Precious original that needs a
+  *guaranteed* head-to-head? Run a post-run exhibition from the main loop — judging.md §12.)
 - **Position and length bias controls.** Alternate A/B order across a panel; instruct
   jurors not to reward length or padding. Re-run split panels rather than coin-flip.
 - **A trust report at the end.** If the bracket champion is not also the
@@ -247,9 +261,11 @@ Always produce, in this order:
   draws count for advancement, not rating).
 - **Trust verdict**: clear winner, or lucky bracket. If lucky, name the entry that
   the global rating says might be stronger, and offer the runoff.
-- For *generate* runs, end with the natural next step: adopt the champion, merge its
-  best move into the incumbent, or keep the incumbent (a tournament can confirm the
-  original was already best — that is a real and useful outcome).
+- For *generate* runs, end with the natural next step: adopt the champion, merge its best
+  move into the original, or keep the original (a tournament can confirm the original was
+  already best — that is a real and useful outcome). **Adoption rule:** if the original was
+  fielded (`INCLUDE_BASE` / a `given` original), recommend adoption only when the champion
+  clearly out-rates it (a rating gap, or a won direct meeting); otherwise keep the original.
 
 ## Cost
 
@@ -258,10 +274,10 @@ Counted from the shipped template defaults (SCREENERS=3; 3-lens panels through R
 
 - **Template default**: 32 generations + 96 gate screens (3 x field) + 48 seeding
   comparisons (~1.5 x field) + 144 group votes (48 matches x 3 lenses) + ~55 knockout
-  votes (8x3 + 4x4 + 2x4 + 1x4, plus the odd tiebreak) + ~4 for the reference
-  challenge. Ballpark **370-400 agent calls**, plus ~26 cheap low-effort beacon agents
-  for the Tier-1 live view — on by default; set `LIVE_BEACONS = false` in your copied
-  template for a Tier-0-only run.
+  votes (8x3 + 4x4 + 2x4 + 1x4, plus the odd tiebreak). Ballpark **360-390 agent calls**,
+  plus ~26 cheap low-effort beacon agents for the Tier-1 live view — on by default; set
+  `LIVE_BEACONS = false` in your copied template for a Tier-0-only run. (`INCLUDE_BASE`
+  adds no calls — the base replaces a generated cell rather than adding one.)
 - **Trimmed MVP**: two exact knobs — set `SCREENERS = 1`, and override `panelFor('GROUP')`
   to a single rotated juror for the group stage. Same arithmetic lands at ballpark
   **210-240 calls**. (See "references/judging.md" section 14 for the doctrine tiers.)

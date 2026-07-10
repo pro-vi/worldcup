@@ -26,9 +26,11 @@ literary virtue. The judging stack is therefore ordered:
 
 ```
 deterministic preflight  ->  fatal-flaw / fabrication gate  ->  (only survivors compete)
-->  pairwise taste panel  ->  calibrated aggregation (Elo / Bradley-Terry)
-->  reference challenge vs the author's true original  ->  champion (or "keep original")
+->  pairwise taste panel  ->  calibrated aggregation (Elo / Bradley-Terry)  ->  champion
 ```
+
+(The original, when you want it judged, is fielded as one of the N — see §12 — so "keep the
+original" is just "the original won"; it is no longer a separate final stage.)
 
 ## 1. The source packet (the most important input)
 
@@ -42,7 +44,8 @@ SOURCE PACKET
 PROJECT: judging variants of the same {artifact}; pick the best publishable version in
 the author's real voice.
 
-REFERENCE ORIGINAL (the incumbent the field must beat):
+REFERENCE ORIGINAL (the truth the fact ledger describes — NOT a bar the field must clear;
+field it as one of the N with INCLUDE_BASE / a `given` item if you want it judged, §12):
 <<< {ORIGINAL} >>>
 
 FACT LEDGER — details that are TRUE / supported (variants may use these):
@@ -80,8 +83,8 @@ NON-NEGOTIABLE: the best essay is the best TRUTHFUL essay in the author's voice.
 vivid true essay beats a more vivid false one.
 ```
 
-For a personal-essay run, the incumbent is the author's real essay and the fact ledger is "only
-what the author actually lived." When the field is generated, the generator must be told the same
+For a personal-essay run, the reference original is the author's real essay and the fact ledger is
+"only what the author actually lived." When the field is generated, the generator must be told the same
 NOT-ALLOWED list so it does not fabricate in the first place — but the gate still runs,
 because generators cheat.
 
@@ -250,9 +253,9 @@ others. Diversity kills shared failure modes; replicas only reduce noise.
 
 ### Domain profiles (the judge is general; the gate and lenses swap)
 
-The pipeline (gates -> pairwise taste -> reference challenge -> rating + trust) is
-domain-general. What you swap per domain is the **gate** and the **lens set**. Essays are
-one profile, not the shape of the tool.
+The pipeline (gates -> pairwise taste -> rating + trust) is domain-general. What you swap
+per domain is the **gate** and the **lens set**. Essays are one profile, not the shape of
+the tool.
 
 > **The ENGINE default is domain-general** (see `workflow-template.js`): lenses `substance` ·
 > `fit` · `craft` · `integrity` (+ `coherence` for assembled artifacts), and hard-DQ categories
@@ -272,19 +275,19 @@ one profile, not the shape of the tool.
     is the load-bearing enforcement.
 - **Code / solutions**: gate = deterministic — does it compile, lint, and pass the test
   suite (run it; non-compiling or failing entries are disqualified, no LLM needed). Lenses
-  = correctness, simplicity/readability, efficiency, API-fit. The reference challenge is
-  the current implementation.
+  = correctness, simplicity/readability, efficiency, API-fit. Field the current
+  implementation as one of the N (INCLUDE_BASE) if you want it judged head to head.
 - **Design / UI**: gate = hard constraints (fits the viewport, uses the design tokens, no
   contrast/overflow violations — checkable mechanically or by a vision pass). Lenses =
-  clarity, aesthetic, usability, brand-fit. Incumbent = the live design.
+  clarity, aesthetic, usability, brand-fit. Field the live design as one of the N if wanted.
 - **Names / taglines**: gate = collision/availability (not already taken, not a trademark,
   not an unfortunate homophone). Lenses = memorability, fit, distinctiveness, say-ability.
 - **Prompts / configs / plans**: gate = validity (parses, satisfies the schema, meets hard
   requirements). Lenses = correctness, robustness, clarity, minimality.
 
 The constants across every profile: a hard gate runs first and truth/validity is a gate
-not a score; lenses are diverse and ruthless on one axis; the incumbent is the bar; the
-champion is provisional until the rating confirms it.
+not a score; lenses are diverse and ruthless on one axis; the champion is provisional
+until the rating confirms it.
 
 ## 6. Vote schedule by stage (prose doctrine — shipped default below the table)
 
@@ -296,7 +299,6 @@ champion is provisional until the rating confirms it.
 | Quarter-final     | + argument + cold-reader                               | 5     |
 | Semi-final        | the 5 lenses, run mirrored (A/B swapped), +cross-model | 5-6   |
 | Final             | the 5 lenses + cross-model, re-run on a split          | 5-7   |
-| Reference challenge | champion vs the true original, full panel            | 5-7   |
 
 This table is the maximal doctrine; the shipped template defaults to substance/fit/craft
 through R16 (groups included) and +integrity from the QF (see `panelFor` in `workflow-template.js`).
@@ -359,9 +361,9 @@ function elo(entries, decided, K = 24) {
 ## 8. Calibration and judge weighting (maximal tier)
 
 Before judging real entries, calibrate jurors on **booby-trapped anchors** with known
-correct outcomes: the true Original (O), a Fabricated-vivid version (F), an
-LLM-uplift version (L), a Performed-vulnerability version (V), a Bland-but-faithful
-version (B). Encode the answer key: O beats F, O beats L, O beats V, B beats F. Score
+correct outcomes: the true Original (O — the BASE / `given` original artifact), a
+Fabricated-vivid version (F), an LLM-uplift version (L), a Performed-vulnerability version
+(V), a Bland-but-faithful version (B). Encode the answer key: O beats F, O beats L, O beats V, B beats F. Score
 each juror's agreement and **heavily downweight any juror that prefers fabricated
 vividness over the faithful original even once.** This trains the panel against the exact
 failure mode. Skip in MVP; use it when the decision matters.
@@ -407,24 +409,49 @@ is exactly how you get fake stack traces and uplift closers. Encode taste as con
 - Voice fidelity is depth (same pressure, certainty, tolerance for unresolvedness), not
   surface mimicry (reusing punctuation, copying paragraph length, bolting on fragments).
 
-## 12. The reference challenge (final stage)
+## 12. Fielding the original (the original as one of the N)
 
-The champion does not win by surviving the bracket. It wins by **beating the author's
-true original** head-to-head, judged by the full panel, by a weighted supermajority. If
-it cannot clearly beat the incumbent, the correct output is **keep the original** — a
-tournament confirming the field never improved on the real thing is a real, useful
-result, not a failure to force a winner.
+There is no separate "beat the incumbent" stage. When you want the original judged, **field it
+as a contestant** — `INCLUDE_BASE = true` in a generate run (it takes one cell of the field), or
+just include it among your `given` items. Then it is screened, seeded, rated, and plays the
+bracket like any entry, and **"keep the original" is simply the result that the original won its
+bracket (or out-rates the champion)** — the same information the old reference challenge produced,
+with none of the special code and none of the anchor bias. (The retired design pasted the
+original's full text into every lens prompt, so a juror could recognize which unlabeled entry was
+the original — a systemic bias, and the single blinding exception §10 used to admit. Fielded, the
+original is blind like everything else.)
+
+- **Gate canary (free).** A fielded original goes through the fabrication gate with no exemption.
+  Since the fact ledger IS defined as the original's truth, an original that gets DQ'd means the
+  ledger is misconfigured or the gate is broken — treat it as a loud trust warning, not a normal
+  result.
+- **Adoption rule (reporting doctrine, not mechanism).** Conservatism ("don't replace unless
+  clearly better") lives in how you READ the result, not in the criteria (which reach every juror
+  and would handicap all entries equally) and not in engine mechanism: recommend adoption only
+  when the champion clearly out-rates the fielded original (a rating gap, or a won direct
+  meeting); otherwise keep the original. The shipped trust machinery already fires "bracket
+  variance → top-4 runoff" when the original out-rates the champion — a guaranteed head-to-head
+  exactly when it matters.
+- **Precious-original exhibition (opt-in, zero engine code).** The one thing fielding gives up is
+  the *guaranteed* champion-vs-original head-to-head (fielded, they meet only by draw luck). When
+  the original is precious enough to demand a certain, supermajority head-to-head, run it as a
+  **post-run exhibition from the main loop** — the exact pattern used for cross-model finals
+  jurors (§15): the Workflow returns the champion and the original text; the main conversational
+  loop fires one full-panel champion-vs-original match and folds the verdict into the
+  recommendation. One paragraph of doctrine, no template change. A tournament confirming the field
+  never improved on the real thing is a real, useful result, not a failure to force a winner.
 
 ## 13. The trust report
 
-After the final and the reference challenge, report:
+After the final, report:
 
 - **Champion vs rating leader.** Bracket champion == Bradley-Terry / Elo leader → robust.
   If they differ, name the divergence; the champion may be a lucky draw.
 - **Bootstrap confidence** (maximal): the win-probability of the champion.
 - **Path strength**: average rating of who the champion beat (coasted a weak quadrant?).
 - **Final margin** and whether it needed a re-run.
-- **Reference-challenge result**: did it actually beat the original, by how much.
+- **The fielded original** (if any): where it seeded and rated, and whether the champion
+  out-rated it or met and beat it — this is what "keep the original" reads off of now.
 - **Offer a runoff** (top-4 round-robin at full panel) whenever champion ≠ rating leader,
   the final was a coin-flip, or the bootstrap win-prob is under ~60%. Never declare a shaky
   winner clean.
@@ -437,12 +464,13 @@ through R16, 4 from the QF, 3 screeners; see SKILL.md's Cost section for the cou
 ballparks and the two knobs that reach MVP).
 
 - **MVP**: preflight + a single fatal-flaw screener + 1-juror groups + best-of-3 knockout
-  (fidelity/taste/anti-gaming) + Elo + reference challenge. Fast, cheap, still has the
-  fabrication gate and the incumbent bar.
+  (fidelity/taste/anti-gaming) + Elo. Fast, cheap, still has the fabrication gate; field the
+  original as one of the N if you want it judged.
 - **Maximal**: full source packet + 3-judge fabrication gate + calibrated, reweighted
   jurors + 5-lens panels scaling to mirrored best-of-7 + cross-model jurors in SF/final +
-  Bradley-Terry with bootstrap + reference challenge + full trust report with offered
-  runoff. Use when the decision matters and the user opted into the cost.
+  Bradley-Terry with bootstrap + full trust report with offered runoff + the fielded original
+  (and, for a precious original, the §12 post-run exhibition). Use when the decision matters
+  and the user opted into the cost.
 
 ## 15. Cross-model jurors
 
