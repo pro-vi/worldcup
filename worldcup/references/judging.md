@@ -386,11 +386,19 @@ preferred; bins are only for cheap seeding.
   A-pick-rate; downweight jurors far from 0.5.
 - **Length / verbosity**: length is a **free dimension**, not a target — the engine pins no
   range, so a short entry and a long entry compete on equal footing (make length an explicit
-  DESIGN axis if you want to *read* which length wins; see design-pass.md). The one guardrail
-  that keeps free length safe is anti-padding: instruct "do not reward the longer entry for
-  more texture; a longer entry must justify its length with real thought, not atmosphere," and
-  ask each juror to name one cuttable sentence — lots of removable material is a weakness. So
-  length as such is neither rewarded nor penalized; only whether every part earns its place.
+  DESIGN axis if you want to *read* which length wins; see design-pass.md). Two guardrails
+  keep free length safe, and both are needed. First, anti-padding: instruct "do not reward the
+  longer entry for more texture; a longer entry must justify its length with real thought, not
+  atmosphere," and ask each juror to name one cuttable sentence — lots of removable material is
+  a weakness. Second, **container intent**: anti-padding blocks only *empty* length, so when
+  the artifact has a container (a README opening block, a tweet, one section of a larger doc)
+  the criteria must state that container's job — what surrounds the artifact, who scans it, and
+  what it must not duplicate. "Earns its place" is judged against the stated goal; an
+  underspecified goal lets fully-earned material escape the artifact's actual job, and pairwise
+  judging then reads comprehensiveness as fit. (Observed: with a length pin removed and the
+  container only named, a ~450-word mini-README honestly won an "opening pitch block" contest.)
+  So length as such is neither rewarded nor penalized; only whether every part earns its place
+  *in the stated container*.
 - **Sycophancy**: blind everything — jurors never see which model wrote an entry, its
   seed, prior jurors' picks, or that an entry is the original (fielded, it is blind like
   every other entry — no exception). Ask "which should the author publish," never "which
