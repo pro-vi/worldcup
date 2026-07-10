@@ -1,6 +1,6 @@
 // WORLD CUP — ultracode Workflow template.
 // Copy this into a Workflow({ script }) call and fill the four FILL blocks:
-//   (1) meta, (2) CONFIG, (3) CRITERIA + INCUMBENT + TARGET, (4) the contestant source.
+//   (1) meta, (2) CONFIG, (3) CRITERIA + TARGET, (4) the contestant source.
 // Everything else (seeding, groups, knockout crossings, the judge pipeline, Elo,
 // trust report) is done. See references/judging.md and references/brackets.md for
 // the why. Workflow scripts are plain JS: no Date.now / Math.random / new Date.
@@ -26,7 +26,9 @@ const FIELD = 32                // 32 or 48
 if (FIELD !== 32 && FIELD !== 48) return { error: `FIELD must be 32 or 48 (got ${FIELD}); the group draw, advancement, and knockout crossings are exact for those two formats only` }
 const GROUPS = FIELD === 48 ? 12 : 8
 const SOURCE = 'generate'      // 'generate' | 'given'
-const USE_INCUMBENT = true     // is there a reference original to beat? (enables the reference challenge)
+const INCLUDE_BASE = false     // generate mode: field the BASE itself as one contestant (the original as one of the N)?
+                               // It REPLACES one generated cell (pool stays FIELD); the fabrication gate judges it like any entry.
+                               // In 'given' mode there is no separate flag — just include the original among your items. See BASE below.
 const SCREENERS = 3            // fabrication-gate judges per entry: 1 = MVP, 3 = maximal (DQ needs same-category majority)
 const BANS = {                 // FILL: deterministic preflight bans (cheap, run before any agent). EMPTY by
   emDash: false,               // default — these are HOUSE-STYLE rules, not universal quality. Fill them from
@@ -61,7 +63,7 @@ const DESIGN = {
   },
 }
 
-// ──────────────────────────────────────────── (3) CRITERIA + INCUMBENT + TARGET (FILL)
+// ──────────────────────────────────────────── (3) CRITERIA + TARGET (FILL)
 // The taste spec + hard disqualifiers, pasted into every juror prompt. Distill the invoking
 // user's voice skill / stated criteria here (see references/profiles/ for the profile shape). Be specific;
 // vagueness = no taste. Ship NOTHING domain-specific by default — the engine is taste-neutral.
@@ -197,18 +199,6 @@ const DQ_FAMILY = {
   HOUSE_STYLE_HARD_BAN: 'style', PLAGIARISTIC_OR_NON_RESPONSIVE: 'responsiveness',
 }
 
-// INCUMBENT is OPERATOR-TRUSTED config, embedded raw (same trust tier as CRITERIA_BASE — the
-// fence tracks provenance, not position). Do NOT paste fetched third-party text here: an
-// incumbent you don't fully trust belongs in TARGET, which rides inside the untrusted fence.
-const INCUMBENT = USE_INCUMBENT ? `FILL: the true original to beat — the reference artifact (essay, design, config, … whatever the field varies).` : ''
-const INCUMBENT_CLAUSE = USE_INCUMBENT ? `
-There is a REFERENCE ORIGINAL (the incumbent the field is trying to beat):
----
-${INCUMBENT}
----
-An entry deserves to win only if it is genuinely better than this incumbent AND keeps
-what makes it honest. Flashier-but-fabricated, or flashier-but-less-honest, loses.` : ''
-
 // ─────────────────────────────────────────────────────── SCHEMAS
 const GEN_SCHEMA = { type: 'object', additionalProperties: false,
   required: ['markdown'],
@@ -275,7 +265,6 @@ const panelFor = stakes => {
 let EVALUATOR = {
   criteriaBlock:    CRITERIA_BLOCK,      // taste spec + fact ledger + disqualifiers the judges read
   sourcePacket:     SOURCE_PACKET,       // structured fact ledger — the single source of truth renderLedger renders from
-  incumbentClause:  INCUMBENT_CLAUSE,    // the "must beat the incumbent" clause seated in lens prompts
   targetGateClause: targetGateClause,    // the MISREPRESENTS_TARGET gate clause ('' when no TARGET)
   hardDqCategories: HARD_DQ_CATEGORIES,  // canonical hard-DQ vocabulary (gate prompt + enum + tally)
   dqFamily:         DQ_FAMILY,           // category -> violation family, for the same-family gate tally
@@ -306,7 +295,7 @@ function validateEvaluatorConfig(ev) {
   // (0) PRESENCE/SHAPE: every runtime-required field must be present and the right type, or a custom
   // config that OMITS one passes here and explodes later (playMatch -> ev.schemas.lens / ev.lensWeight,
   // the seed pre-pass -> ev.schemas.seed). Reject incomplete configs up front.
-  for (const k of ['criteriaBlock', 'incumbentClause', 'targetGateClause', 'preflightHardDqCategory', 'tiebreakLens'])
+  for (const k of ['criteriaBlock', 'targetGateClause', 'preflightHardDqCategory', 'tiebreakLens'])
     if (typeof ev[k] !== 'string') throw new Error(`EVALUATOR.${k} must be a string (incomplete config).`)
   for (const k of ['dqFamily', 'lenses', 'bans', 'agentOptions'])
     if (!ev[k] || typeof ev[k] !== 'object') throw new Error(`EVALUATOR.${k} must be an object (incomplete config).`)
@@ -411,7 +400,6 @@ YOUR LENS: ${lens} — ${ev.lenses[lens]}
 
 CRITERIA (context; judge through your lens):
 ${ev.criteriaBlock}
-${ev.incumbentClause}
 
 Do NOT reward length, density, or more concrete detail for its own sake. A short honest entry beats a long performed one. Suspiciously perfect specificity is a warning sign.
 
@@ -1015,9 +1003,11 @@ async function deriveSections(design, BASE, SPEC) {
 // Every candidate carries `coords` (its point in the design space) for the report + effects.
 const decided = []  // every decided head-to-head, for Elo
 
-// BASE, like INCUMBENT, is OPERATOR-TRUSTED and embedded raw in generation prompts. Fetched
-// third-party text you can't vouch for belongs in TARGET (fenced), never pasted here.
+// BASE is OPERATOR-TRUSTED and embedded raw in generation prompts. Fetched third-party text
+// you can't vouch for belongs in TARGET (fenced), never pasted here. With INCLUDE_BASE (CONFIG),
+// BASE is ALSO fielded verbatim as one contestant — the original competing as one of the N.
 const BASE = `FILL: the base artifact being varied (essay, brief, spec, design, prompt...).`
+const BASE_LABEL = 'the original'   // display label for the fielded base when INCLUDE_BASE (see deriveCandidates use)
 // GENERATION criteria. Bound to CRITERIA_BLOCK (the operator's brief), NOT EVALUATOR.criteriaBlock.
 // At default these are identical. (If a future change lets the judge rubric diverge from the operator
 // brief, decide whether generation should track the rubric or keep the brief — generation reads SPEC.)
@@ -1057,16 +1047,31 @@ if (SOURCE === 'generate') {
   const specs = await deriveCandidates(DESIGN)
   if (specs.length !== FIELD) return { error: `design produced ${specs.length} candidates, need FIELD=${FIELD}` }
   phase('Generate')
+  // INCLUDE_BASE: field the BASE itself as one contestant — the "original as one of the N". It
+  // REPLACES one generated cell (never appends: snakeGroups assumes exactly 4·G teams, so pool.length
+  // MUST stay FIELD) by taking that cell's id with pre-baked markdown, so it flows through the same
+  // pre-made-markdown seam sections already uses. Cleanest for flat/given fields; in an axes/sections
+  // design the base is a contestant OUTSIDE the coordinate grid (its coords lack the axis keys, so
+  // it is excluded from the effects buckets). 'given' mode needs nothing — include the original there.
+  if (INCLUDE_BASE) {
+    const cell = specs[0]   // the base occupies the first cell; that flavor/axis point is simply not generated
+    specs[0] = { id: cell.id, label: BASE_LABEL, coords: { flavor: BASE_LABEL }, markdown: BASE, title: '', oneLineAngle: '' }
+    log(`INCLUDE_BASE: fielding the base verbatim as contestant "${BASE_LABEL}" (replaces one generated cell; pool stays ${FIELD}).`)
+  }
   if (specs.every(s => s.markdown != null)) {
     // sections: candidates are deterministically ASSEMBLED from slot survivors (no per-candidate
     // generation agent) — Stage 1 already spent its agent calls generating + judging the slots.
+    // (An INCLUDE_BASE base carries pre-baked markdown too, so it rides this same seam.)
     log(`Assembled ${specs.length} lineups from slot survivors (DESIGN.kind=sections)..`)
     pool = specs.map(s => ({ id: s.id, label: s.label, coords: s.coords, markdown: s.markdown, title: '', oneLineAngle: '' }))
   } else {
     log(`Generating ${specs.length} variants (DESIGN.kind=${DESIGN.kind})..`)
-    let got = []
+    // Pre-seed `got` with any spec that ALREADY carries markdown (the INCLUDE_BASE base): it is fielded
+    // verbatim, not generated, so the retry loop below only fills the remaining (markdown-less) cells.
+    // With no INCLUDE_BASE this filter is empty and the loop is byte-identical to before.
+    let got = specs.filter(s => s.markdown != null).map(s => ({ id: s.id, label: s.label, coords: s.coords, markdown: s.markdown, title: s.title || '', oneLineAngle: s.oneLineAngle || '' }))
     for (let attempt = 0; got.length < specs.length && attempt < 3; attempt++) {
-      const todo = specs.filter(s => !got.some(g => g.id === s.id))
+      const todo = specs.filter(s => s.markdown == null && !got.some(g => g.id === s.id))
       const r = (await parallel(todo.map(s => () =>
         agent(s.prompt, { label: `gen:${s.label}`, phase: 'Generate', schema: GEN_SCHEMA })
           .then(x => x && ({ id: s.id, label: s.label, coords: s.coords, ...x }))))).filter(Boolean)
@@ -1137,7 +1142,7 @@ groups.forEach((g, gi) => roundRobin(g).forEach(([x, y]) => groupSpecs.push({ gi
 // Live: the group table BUILDS UP as matches resolve (parallel, but they finish in waves under the
 // concurrency cap), so emit a couple of partial-standings snapshots before the final — the group stage
 // fills in rather than jumping from the draw straight to the final table.
-// Determinism: playMatch gets a LOCAL throwaway array (the reference challenge already does this) —
+// Determinism: playMatch gets a LOCAL throwaway array (the knockout playRound does the same) —
 // pushing into the shared `decided` from inside parallel thunks would order Elo's match log by agent
 // latency, and eloRatings applies matches sequentially, so the SAME judge verdicts could yield
 // different ratings (and trust verdicts) run to run. groupResults + decided are rebuilt in
@@ -1250,22 +1255,6 @@ while (pairs.length >= 1) {
 const champion = lastRound[0].winner
 emit({ ev: 'champion', label: champion.label, stakes })
 
-// ─────────────────────────────────────────────────────── REFERENCE CHALLENGE
-// The champion must beat the author's true original head-to-head, or the output is
-// "keep the original". A tournament confirming the field never improved is a real result.
-let referenceChallenge = null
-if (USE_INCUMBENT && INCUMBENT) {
-  const original = { id: -1, label: 'ORIGINAL(incumbent)', markdown: INCUMBENT, rating: 1500, group: '-', flaw: { disqualified: false } }
-  const rc = await playMatch(champion, original, 0, 'FINAL', 'Knockout', []) // throwaway decided: keep the original out of global Elo
-  // Doctrine (judging.md): the champion must beat the original by a SUPERMAJORITY. A narrow panel
-  // (one-vote edge, or the pens/rating fallback) is not "clearly better than the real thing" — the
-  // output stays "keep the original". championWonMatch records the raw match result for the report's
-  // match log; championBeatOriginal is the doctrine verdict that drives the recommendation.
-  const championWonMatch = rc.winner.id === champion.id
-  referenceChallenge = { championBeatOriginal: championWonMatch && rc.margin !== 'narrow' && rc.margin !== 'pens', championWonMatch, margin: rc.margin, reason: rc.reason }
-  log(`Reference challenge: champion ${referenceChallenge.championBeatOriginal ? 'BEAT' : (championWonMatch ? 'edged but did NOT clearly beat (supermajority required) —' : 'did NOT beat')} the original (${rc.margin}).`)
-}
-
 // ─────────────────────────────────────────────────────── TRUST REPORT
 const globalRating = eloRatings(pool, decided)
 const ratingLeaderId = globalRating[0][0]
@@ -1288,15 +1277,16 @@ const trustVerdict = championDQ
   : !championIsLeader ? 'bracket variance: champion is not the rating leader, consider a top-4 round-robin runoff'
   : shakyFinal ? `robust seed, but the final ${finalHow} — offer a top-4 runoff`
   : 'robust: bracket champion is also the rating leader'
+// Note: when the original is fielded (INCLUDE_BASE / a `given` original), "keep the original" is no
+// longer a special code path — it just means the original won its bracket, or out-rates the champion
+// (surfaced by the same trust machinery). See SKILL.md Output for the adoption-rule doctrine.
 const recommendation = championDQ
   ? `DO NOT ADOPT: the champion failed the fabrication gate (${champion.flaw.category || 'gate violation'}) — the whole field is suspect; regenerate`
-  : (USE_INCUMBENT && referenceChallenge && !referenceChallenge.championBeatOriginal)
-  ? 'KEEP THE ORIGINAL: the field did not clearly beat the incumbent'
   : (championIsLeader && !shakyFinal) ? 'ADOPT THE CHAMPION: bracket winner is also the rating leader'
   : `ADOPT ONLY AFTER A TOP-4 RUNOFF: ${championIsLeader ? 'the final was too close to certify' : 'bracket variance, champion is not the rating leader'}`
 
 // ─────────────────────────────────────────────────────── EFFECTS (factorial analysis)
-const PLAYOFF = false  // CONFIG: generate the predicted optimum and play it vs champion + incumbent
+const PLAYOFF = false  // CONFIG: generate the predicted optimum and play it head-to-head vs the champion
 // Deterministic post-hoc effects from coords + Elo. Null for kind:'flat' (one nominal axis).
 function computeEffects(pool, globalRating, resolved) {
   if (!resolved || !resolved.axes || !resolved.axes.length) return null
@@ -1333,7 +1323,7 @@ const effects = computeEffects(pool, globalRating, DESIGN.resolved)
 if (effects) log(`Effects: top axis "${effects.mainEffects[0].axis}" (spread ${effects.mainEffects[0].spread}); predicted optimum ${effects.predictedOptimum.label}${effects.predictedOptimum.inField ? ' (in field)' : ' (synthesized)'}.`)
 
 let playoff = null
-if (PLAYOFF && effects && !effects.predictedOptimum.inField && DESIGN.resolved && DESIGN.resolved.frag && INCUMBENT) {
+if (PLAYOFF && effects && !effects.predictedOptimum.inField && DESIGN.resolved && DESIGN.resolved.frag) {
   const opt = effects.predictedOptimum.coords
   const fragments = DESIGN.resolved.axes.map(a => `- ${a.name} = ${opt[a.name]}: ${DESIGN.resolved.frag[a.name][opt[a.name]]}`).join('\n')
   const optPrompt = `Produce a VARIANT of the artifact below at this exact design point:\n${fragments}\nRealize every setting. Constraints / criteria:\n${SPEC}\nBASE ARTIFACT:\n---\n${BASE}\n---\nReturn JSON { title, oneLineAngle, markdown }.`
@@ -1345,11 +1335,9 @@ if (PLAYOFF && effects && !effects.predictedOptimum.inField && DESIGN.resolved &
       playoff = { disqualified: true, category: optEntry.flaw.category || '', flaw: optEntry.flaw.flaw, markdown: og.markdown }
       log(`Playoff: predicted optimum disqualified at the gate (${optEntry.flaw.category || ''} ${optEntry.flaw.flaw}); skipped.`)
     } else {
-      const incumbentEntry = { id: -1, label: 'ORIGINAL', markdown: INCUMBENT, rating: 1500, group: '-', flaw: { disqualified: false } }
       const m1 = await playMatch(optEntry, champion, 0, 'FINAL', 'Knockout', [])
-      const m2 = await playMatch(optEntry, incumbentEntry, 1, 'FINAL', 'Knockout', [])
-      playoff = { beatChampion: m1.winner.id === optEntry.id, beatOriginal: m2.winner.id === optEntry.id, markdown: og.markdown }
-      log(`Playoff: predicted optimum ${playoff.beatChampion ? 'beat' : 'lost to'} champion; ${playoff.beatOriginal ? 'beat' : 'lost to'} original.`)
+      playoff = { beatChampion: m1.winner.id === optEntry.id, markdown: og.markdown }
+      log(`Playoff: predicted optimum ${playoff.beatChampion ? 'beat' : 'lost to'} champion.`)
     }
   }
 }
@@ -1432,7 +1420,6 @@ function renderReportV2() {
   }
   groupResults.forEach(m => m.winner == null ? addLog('Group', m.a.label, m.b.label, m.margin, m.reason, true) : addLog('Group', m.winner.label, m.loser.label, m.margin, m.reason))
   for (const k of order) (history[k] || []).forEach(m => addLog(k, m.winner.label, m.loser.label, m.margin, m.reason))
-  if (referenceChallenge) addLog('Reference', referenceChallenge.championWonMatch ? champion.label : 'ORIGINAL', referenceChallenge.championWonMatch ? 'ORIGINAL' : champion.label, referenceChallenge.margin, referenceChallenge.reason)
   const DATA = Object.create(null)
   pool.forEach(t => { DATA[t.label] = { title: t.title || '', angle: t.oneLineAngle || '', coords: t.coords || {}, seed: seeded.findIndex(x => x.id === t.id) + 1, rating: Math.round(ratingById.get(t.id) || 0), dq: !!(t.flaw && t.flaw.disqualified), flaw: t.flaw ? (t.flaw.flaw || '') : '', category: t.flaw ? (t.flaw.category || '') : '', soft: t.flaw ? (t.flaw.soft || []) : [], matches: mlog[t.label] || [], text: t.markdown || '' } })
   // JSON.stringify leaves U+2028/2029 raw; they are line terminators inside a <script> in pre-ES2019
@@ -1503,7 +1490,7 @@ function renderReportV2() {
   const softStrip = softFlagged.length ? `\n<span class="stat"><span class="sk">Soft flags</span><span class="sv">${softFlagged.map(t => entry(t.label)).join(', ')}</span></span>` : ''
   // ─── road to the title: one row of compact chips — round · opponent · margin. No sub-lines;
   // the deciding reasons stay in DATA and surface in the sheet.
-  const roadAbbr = r => /^group$/i.test(r) ? 'Grp' : /^final$/i.test(r) ? 'Final' : /^reference$/i.test(r) ? 'Ref' : r
+  const roadAbbr = r => /^group$/i.test(r) ? 'Grp' : /^final$/i.test(r) ? 'Final' : r
   const shortLbl = s => String(s).replace(/^the\s+/i, '')
   const roadRow = pathOf(champion).map(s => `<div class="rstep${s.round === 'FINAL' ? ' fin' : ''}"><span class="rr">${esc(roadAbbr(s.round))}</span><span class="ro"><span class="entry" data-k="${esc(s.opp || '')}">${esc(shortLbl(s.opp || ''))}</span></span><span class="mg">${esc(s.margin || '')}</span></div>`).join('\n')
   // ─── groups: name + points only, advanced rows highlighted. W-D-L detail lives in the sheets.
@@ -1720,14 +1707,13 @@ body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
 .sheet h3{font-size:10px;font-weight:900;letter-spacing:.22em;text-transform:uppercase;color:var(--ui);margin:16px 0 8px;display:flex;align-items:center;gap:10px;flex:0 0 auto}
 .sheet h3::after{content:'';flex:1;height:1px;background:var(--line)}
 .dqtag{background:var(--dq);color:${T.onDq};font-size:10px;font-weight:900;font-style:normal;letter-spacing:.08em;padding:2px 7px;border-radius:2px;vertical-align:middle}
-/* form strip: one chip per match, chronological; gold=win, loss=loss colour, outlined=reference challenge */
+/* form strip: one chip per match, chronological; gold=win, loss=loss colour, mint=draw */
 .form{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:12px 0 0;flex:0 0 auto}
 .fchip{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;padding:0 6px;font-size:11.5px;font-weight:900;border-radius:3px;font-variant-numeric:tabular-nums}
 .form .fchip{cursor:default}
 .fchip.w{color:var(--gold);background:rgba(${T.goldRGB},.13);box-shadow:inset 0 0 0 1px rgba(${T.goldRGB},.5)}
 .fchip.l{color:var(--loss);background:rgba(${T.lossRGB},.09);box-shadow:inset 0 0 0 1px rgba(${T.lossRGB},.42)}
 .fchip.d{color:var(--draw);background:rgba(${T.drawRGB},.08);box-shadow:inset 0 0 0 1px rgba(${T.drawRGB},.4)}
-.fchip.ref{background:transparent;box-shadow:none;border:1px dashed currentColor;font-size:9.5px;letter-spacing:.07em;padding:0 9px}
 .fchip.sm{min-width:20px;height:20px;font-size:10px;padding:0 5px}
 .frec{margin-left:8px;font-size:12.5px;font-weight:800;letter-spacing:.03em;font-variant-numeric:tabular-nums;color:var(--txt)}
 /* match history: collapsed by default; A-vs-B rows, judge reason on hover title or row tap */
@@ -1742,7 +1728,6 @@ body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
 .mrow{display:flex;align-items:center;flex-wrap:wrap;gap:7px;padding:6px 2px;border-bottom:1px solid rgba(255,255,255,.06);font-size:12.5px;cursor:pointer}
 .mrow:hover{background:rgba(255,255,255,.025)}
 .mrow .rd{flex:0 0 auto;min-width:40px;text-align:center;font-size:8.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);background:var(--bg0);box-shadow:inset 0 0 0 1px rgba(${T.goldRGB},.3);border-radius:2px;padding:2px 5px}
-.mrow .rd.refR{color:var(--draw);box-shadow:inset 0 0 0 1px rgba(${T.drawRGB},.4)}
 .mrow .me{color:var(--dim);font-size:9px}
 .mrow .vs{color:var(--mut);font-size:9.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
 .mrow .opp{font-weight:700;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1814,12 +1799,11 @@ function he(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return 
 // so an 'If the…' prose line costs at most itself and an 'Iffy…' line costs nothing.
 function looksCode(s){var ls=String(s).split('\\n').filter(function(l){return l.trim();});if(!ls.length)return false;var c=0;ls.forEach(function(l){var t=l.trim();if(/^[ \\t]/.test(l)||/[;{})\\]]$/.test(t)||/^((function|const|let|var|def|class|import|export|return|if|for|while|fn|pub|switch|case|type|interface|SELECT|INSERT|UPDATE|CREATE|WITH)\\b|\\/\\/|})/i.test(t))c++;});return c/ls.length>0.4;}
 function renderArtifact(t){var parts=String(t==null?'':t).split(/\`\`\`\\w*\\n?/),out='';for(var i=0;i<parts.length;i++){if(!parts[i].trim())continue;if(i%2===1||looksCode(parts[i]))out+='<pre class="code">'+he(parts[i].replace(/\\s+$/,''))+'</pre>';else out+=parts[i].split(/\\n\\n+/).filter(function(p){return p.trim();}).map(function(p){return '<p>'+he(p)+'</p>';}).join('');}return out;}
-// The sheet leads with a scannable form strip (one W/L chip per match, chronological; the
-// reference challenge vs the ORIGINAL gets an outlined chip), collapses the match log into a
-// <details> of A-vs-B rows (judge reason on hover title, or tap a row to pin it open), and gives
-// the artifact the dominant share of the sheet. The ORIGINAL is not an entry (no DATA key), so
-// the reference opponent renders as plain text, not a clickable .entry.
-function rdAbbr(r){r=String(r||'');if(/^group$/i.test(r))return'Grp';if(/^final$/i.test(r))return'Final';if(/^reference$/i.test(r))return'Ref';return r;}
+// The sheet leads with a scannable form strip (one W/L chip per match, chronological), collapses
+// the match log into a <details> of A-vs-B rows (judge reason on hover title, or tap a row to pin
+// it open), and gives the artifact the dominant share of the sheet. Every opponent is a fielded
+// entry (the original, when fielded, is just one of the N), so each renders as a clickable .entry.
+function rdAbbr(r){r=String(r||'');if(/^group$/i.test(r))return'Grp';if(/^final$/i.test(r))return'Final';return r;}
 function show(k){var d=DATA[k];if(!d)return;
 var h='<h2>'+he(k)+(d.dq?' <span class="dqtag">DISQUALIFIED</span>':'')+'</h2>';
 h+='<div class="meta">seed #'+d.seed+' &middot; rating '+d.rating+(d.angle?(' &middot; '+he(d.angle)):'')+'</div>';
@@ -1827,22 +1811,21 @@ ${coordsMetaJs}if(d.dq)h+='<div class="gate">gate: '+(d.category?'<b>'+he(d.cate
 if(d.soft&&d.soft.length)h+='<div class="meta" style="color:var(--gold)">preflight flags (soft &mdash; scrutiny, not death): '+d.soft.map(he).join(', ')+'</div>';
 var ms=d.matches||[];
 if(ms.length){var W=0,L=0,Dr=0,chips='';
-ms.forEach(function(x){var draw=x.won===null,ref=/^reference$/i.test(String(x.round||''));
+ms.forEach(function(x){var draw=x.won===null;
 if(draw)Dr++;else if(x.won)W++;else L++;
 var cls=draw?'d':(x.won?'w':'l'),ltr=draw?'D':(x.won?'W':'L');
 var tip=rdAbbr(x.round)+' vs '+x.opp+(x.margin?' — '+x.margin:'');
-if(ref)chips+='<span class="fchip '+cls+' ref" title="'+he(tip)+'">'+ltr+' vs ORIGINAL</span>';
-else chips+='<span class="fchip '+cls+'" title="'+he(tip)+'">'+ltr+'</span>';});
+chips+='<span class="fchip '+cls+'" title="'+he(tip)+'">'+ltr+'</span>';});
 var rec=W+'W'+(Dr?'–'+Dr+'D':'')+'–'+L+'L';
 h+='<div class="form">'+chips+'<span class="frec">'+rec+'</span></div>';
 h+='<details class="mh"><summary><span class="tri">&#9654;</span>Matches &middot; '+ms.length+'</summary><div class="mwrap"><ul class="mlog">';
-ms.forEach(function(x){var draw=x.won===null,ref=/^reference$/i.test(String(x.round||''));
+ms.forEach(function(x){var draw=x.won===null;
 var cls=draw?'d':(x.won?'w':'l'),ltr=draw?'D':(x.won?'W':'L');
-var opp=ref?he(x.opp):'<span class="entry" data-k="'+he(x.opp)+'">'+he(x.opp)+'</span>';
+var opp='<span class="entry" data-k="'+he(x.opp)+'">'+he(x.opp)+'</span>';
 h+='<li class="mrow" tabindex="0" title="'+he(x.reason||'')+'"'
 +' onclick="if(!(event.target.closest&&event.target.closest(\\'.entry\\')))this.classList.toggle(\\'open\\')"'
 +' onkeydown="if(event.key===\\'Enter\\'||event.key===\\' \\'){event.preventDefault();this.classList.toggle(\\'open\\');}">'
-+'<span class="rd'+(ref?' refR':'')+'">'+he(rdAbbr(x.round))+'</span>'
++'<span class="rd">'+he(rdAbbr(x.round))+'</span>'
 +'<span class="me" title="'+he(k)+'">&#9679;</span><span class="vs">vs</span>'
 +'<span class="opp">'+opp+'</span><span class="sp"></span>'
 +'<span class="fchip sm '+cls+'">'+ltr+'</span>'
@@ -1988,7 +1971,6 @@ return {
     finalMargin: lastRound[0] && lastRound[0].margin,
     verdict: trustVerdict,
   },
-  referenceChallenge,
   recommendation,
   effects,
   playoff,

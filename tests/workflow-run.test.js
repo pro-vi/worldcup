@@ -2,8 +2,8 @@
 
 // End-to-end fake-judge run of worldcup/references/workflow-template.js.
 // The template executes for real (generation -> gate -> seeding -> groups -> knockout ->
-// reference challenge -> report); only the host seams (agent/parallel/log/phase/args) are
-// stubbed, deterministically, by scripts/workflow-harness.js.
+// report); only the host seams (agent/parallel/log/phase/args) are stubbed,
+// deterministically, by scripts/workflow-harness.js.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')

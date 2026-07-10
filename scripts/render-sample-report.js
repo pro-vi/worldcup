@@ -18,7 +18,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { runTournament } = require('./workflow-harness.js')
-const { CODE_LABELS, DQ_LABEL: CODE_DQ, REFERENCE_INCUMBENT, codeArtifact } = require('./sample-code-field.js')
+const { CODE_LABELS, DQ_LABEL: CODE_DQ, REFERENCE_BASE, codeArtifact } = require('./sample-code-field.js')
 
 // 32 product-tagline-flavored variant names (trademark-clean; no countries, no clubs).
 const LABELS = [
@@ -32,25 +32,26 @@ const LABELS = [
   'the golazo', 'the hat-trick', 'the extra-time', 'the overclaimer',
 ]
 
-// A real incumbent per field, so each sample's reference challenge is played against an actual
-// original instead of the template's FILL placeholder — whatever the (hash-decided) outcome, the
-// showcased "beat / keep the original" verdict then describes a real match. Markers are how the
-// deterministic fake judge recovers identity (see workflow-harness.js).
-const TAGLINE_INCUMBENT = [
+// A real BASE per field, FIELDED as one of the contestants (INCLUDE_BASE) so each sample showcases
+// the original-as-contestant pattern that replaced the reference challenge — the original competes
+// as one of the N and wins or loses on merit. Markers are how the deterministic fake judge recovers
+// identity (see workflow-harness.js); the base takes the first cell, displacing that flavor.
+const TAGLINE_BASE = [
   'Team: the original',
   'The tagline that has shipped on the landing page all along: plain, honest, a little dry — the line every variant in this field was asked to beat.',
-  'One sentence, no hype; the incumbent bar the champion must clearly clear, or the recommendation is to keep it.',
+  'One sentence, no hype; fielded as one contestant among the variants, it wins only if it is genuinely the best.',
 ].join('\n\n')
 
 const MEDIA = path.join(__dirname, '..', 'docs', 'media')
 const SAMPLES = [
-  // One scripted gate kill per field so each sample shows the fabrication gate doing its job.
-  { name: 'taglines', out: path.join(MEDIA, 'sample-report.html'), labels: LABELS, dqLabel: 'the overclaimer', artifactFor: null, incumbent: TAGLINE_INCUMBENT },
-  { name: 'code', out: path.join(MEDIA, 'sample-report-code.html'), labels: CODE_LABELS, dqLabel: CODE_DQ, artifactFor: codeArtifact, incumbent: REFERENCE_INCUMBENT },
+  // One scripted gate kill per field so each sample shows the fabrication gate doing its job; the
+  // base is fielded as one contestant (INCLUDE_BASE) so each sample also shows the original competing.
+  { name: 'taglines', out: path.join(MEDIA, 'sample-report.html'), labels: LABELS, dqLabel: 'the overclaimer', artifactFor: null, base: TAGLINE_BASE },
+  { name: 'code', out: path.join(MEDIA, 'sample-report-code.html'), labels: CODE_LABELS, dqLabel: CODE_DQ, artifactFor: codeArtifact, base: REFERENCE_BASE },
 ]
 
-async function renderOne({ name, out, labels, dqLabel, artifactFor, incumbent }, checkMode) {
-  const { result, unknown } = await runTournament({ labels, dqLabel, artifactFor, incumbent })
+async function renderOne({ name, out, labels, dqLabel, artifactFor, base }, checkMode) {
+  const { result, unknown } = await runTournament({ labels, dqLabel, artifactFor, base })
   if (result.error) throw new Error(`[${name}] template returned an error: ${result.error}`)
   if (unknown.length) throw new Error(`[${name}] fake judge missed agent roles:\n  ${unknown.join('\n  ')}`)
   if (checkMode) {
