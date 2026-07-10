@@ -424,8 +424,12 @@ original is blind like everything else.)
 
 - **Gate canary (free).** A fielded original goes through the fabrication gate with no exemption.
   Since the fact ledger IS defined as the original's truth, an original that gets DQ'd means the
-  ledger is misconfigured or the gate is broken — treat it as a loud trust warning, not a normal
-  result.
+  ledger is misconfigured or the gate is misfiring — which makes every gate verdict this run (the
+  champion's clean pass included) suspect. It is not a normal result. For `INCLUDE_BASE` the engine
+  knows which entry is the base and **fails closed automatically** — the trust verdict and
+  recommendation become DO NOT TRUST / DO NOT ADOPT and the champion gets no confetti. For a `given`
+  original the engine can't tell which item it is, so the DQ shows in the report's gate strip for you
+  to read.
 - **Adoption rule (reporting doctrine, not mechanism).** Conservatism ("don't replace unless
   clearly better") lives in how you READ the result, not in the criteria (which reach every juror
   and would handicap all entries equally) and not in engine mechanism: recommend adoption only

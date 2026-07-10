@@ -1036,6 +1036,7 @@ async function deriveCandidates(design) {
 }
 
 let pool
+let baseId = null   // set to the fielded base's pool id when INCLUDE_BASE; the gate-canary trust check reads it
 // RE-VALIDATE the LIVE judge config before the run uses it. The load-time check (where EVALUATOR is
 // defined) only saw the DEFAULT, BEFORE any operator override. An override placed below that definition
 // (the documented way to swap in a profile) would otherwise reach the gate UNVALIDATED — and a PARTIAL
@@ -1059,6 +1060,15 @@ if (SOURCE === 'generate') {
   if (INCLUDE_BASE) {
     const cell = specs[0]   // the base occupies the first cell; that flavor/axis point is simply not generated
     specs[0] = { id: cell.id, label: BASE_LABEL, coords: { flavor: BASE_LABEL }, markdown: BASE, title: '', oneLineAngle: '' }
+    baseId = cell.id
+    // The base is OFF the coordinate grid, so it removes one cell from a design reconcile() balanced to
+    // FIELD — the effects surface is now an unbalanced FIELD-1 fraction. Downgrade its estimability to
+    // empirical so the report cannot claim 'fitted (all-2way)' for a perturbed design. (Flat designs
+    // carry no DESIGN.resolved and no effects panel, so this is a no-op there.)
+    if (DESIGN.resolved && DESIGN.resolved.estimable && DESIGN.resolved.estimable !== 'none') {
+      DESIGN.resolved.estimable = 'none'
+      log(`INCLUDE_BASE removed one coordinate cell; effects downgraded to empirical (not fitted).`)
+    }
     log(`INCLUDE_BASE: fielding the base verbatim as contestant "${BASE_LABEL}" (replaces one generated cell; pool stays ${FIELD}).`)
   }
   if (specs.every(s => s.markdown != null)) {
@@ -1273,10 +1283,20 @@ log(`Champion: ${champion.label}. Rating leader: ${pool.find(t => t.id === ratin
 // would put the fabrication gate's own verdict below the bracket's. Doctrine also flags a final
 // decided by a single vote (or the pens fallback): a one-vote champion is a lucky draw candidate.
 const championDQ = !!(champion.flaw && champion.flaw.disqualified)
+// GATE CANARY: a fielded original (INCLUDE_BASE) that gets DQ'd is not a normal result. The fact
+// ledger IS defined as the original's truth, so an original the gate rejects means the ledger is
+// misconfigured or the gate is misfiring — which makes EVERY gate verdict this run (the champion's
+// clean pass included) suspect. Fail closed: elevate it to DO NOT TRUST / DO NOT ADOPT, right after
+// the champion-DQ check. (Only auto-detected for INCLUDE_BASE, where the engine placed the base; a
+// `given` original's DQ still shows in the report's gate strip for the operator to read.)
+const baseEntry = baseId != null ? pool.find(t => t.id === baseId) : null
+const gateCanary = !championDQ && !!(baseEntry && baseEntry.flaw && baseEntry.flaw.disqualified)
 const shakyFinal = !!(lastRound[0] && (lastRound[0].margin === 'narrow' || lastRound[0].margin === 'pens'))
 const finalHow = lastRound[0] && lastRound[0].margin === 'pens' ? 'went to the shootout' : 'was decided by a single vote'
 const trustVerdict = championDQ
   ? `DO NOT TRUST: the champion itself failed the fabrication gate (${champion.flaw.category || 'gate violation'})`
+  : gateCanary
+  ? `DO NOT TRUST — GATE CANARY: the fielded original was disqualified (${baseEntry.flaw.category || 'gate violation'}); the fact ledger is misconfigured or the gate is misfiring, so every gate verdict this run is suspect. Fix the ledger/gate and rerun.`
   : !championIsLeader ? 'bracket variance: champion is not the rating leader, consider a top-4 round-robin runoff'
   : shakyFinal ? `robust seed, but the final ${finalHow} — offer a top-4 runoff`
   : 'robust: bracket champion is also the rating leader'
@@ -1285,8 +1305,15 @@ const trustVerdict = championDQ
 // (surfaced by the same trust machinery). See SKILL.md Output for the adoption-rule doctrine.
 const recommendation = championDQ
   ? `DO NOT ADOPT: the champion failed the fabrication gate (${champion.flaw.category || 'gate violation'}) — the whole field is suspect; regenerate`
+  : gateCanary
+  ? `DO NOT ADOPT: the fielded original failed the fabrication gate — the ledger/gate is suspect, so this run's verdicts are unreliable; fix the ledger/gate and rerun`
   : (championIsLeader && !shakyFinal) ? 'ADOPT THE CHAMPION: bracket winner is also the rating leader'
   : `ADOPT ONLY AFTER A TOP-4 RUNOFF: ${championIsLeader ? 'the final was too close to certify' : 'bracket variance, champion is not the rating leader'}`
+// No party when the run is untrustworthy at the gate level (DQ'd champion OR the fielded-original gate
+// canary): the page must never create more confidence in the winner than the evaluator earned, and a
+// suspect gate has not earned a celebration. A lucky-draw / keep-the-original champion still won its
+// bracket and gets its shower — only a broken-gate signal silences it. (renderReportV2 reads this.)
+const noParty = championDQ || gateCanary
 
 // ─────────────────────────────────────────────────────── EFFECTS (factorial analysis)
 const PLAYOFF = false  // CONFIG: generate the predicted optimum and play it head-to-head vs the champion
@@ -1768,7 +1795,7 @@ body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
 </header>
 <div class="ticker"><span class="tkLab"><span>Headlines</span></span>${tickerHtml}</div>
 <div class="bracket"><div class="half left">${leftCols}</div>
-<div class="center"><div class="winnerlbl">Champion</div><div class="champOct"><div class="trophy"${championDQ ? '' : ` role="button" tabindex="0" aria-label="replay the confetti" title="replay the confetti" onclick="party()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();party();}"`}>&#127942;</div><div class="champcard">${entry(champion.label)}</div></div><div class="finalline">${finalLine}</div></div>
+<div class="center"><div class="winnerlbl">Champion</div><div class="champOct"><div class="trophy"${noParty ? '' : ` role="button" tabindex="0" aria-label="replay the confetti" title="replay the confetti" onclick="party()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();party();}"`}>&#127942;</div><div class="champcard">${entry(champion.label)}</div></div><div class="finalline">${finalLine}</div></div>
 <div class="half right">${rightCols}</div></div>
 <div class="strip">
 <span class="stK">Trust</span>
@@ -1844,11 +1871,12 @@ document.addEventListener('click',function(e){var t=e.target;if(t&&t.classList&&
 // Enter/Space — it's a real role=button). Principle: the page must never create more confidence in
 // the winner than the evaluator earned. Confetti celebrates the BRACKET win (the sporting layer);
 // the verdict chip stays the epistemic voice — "lucky draw" and "keep the original" champions still
-// won their bracket and get their shower. A gate-DQ champion is the one state where celebration
-// would contradict the page itself (DO NOT TRUST), so it gets NO party and NO replay control (the
-// cup renders inert rather than as a dead switch). Auto-fire honors prefers-reduced-motion;
-// replaying via the cup is user-initiated motion and still plays.
-var PARTY=${championDQ ? 'false' : 'true'};
+// won their bracket and get their shower. Two states silence it (noParty): a gate-DQ champion, and
+// the fielded-original gate canary — both mean the page says DO NOT TRUST, so celebration would
+// contradict the page itself; each gets NO party and NO replay control (the cup renders inert rather
+// than as a dead switch). Auto-fire honors prefers-reduced-motion; replaying via the cup is
+// user-initiated motion and still plays.
+var PARTY=${noParty ? 'false' : 'true'};
 function party(){if(!PARTY)return;
 var cv=document.createElement('canvas');cv.className='fx';
 var cx=cv.getContext&&cv.getContext('2d');if(!cx)return;
@@ -1972,6 +2000,7 @@ return {
     ratingLeader: pool.find(t => t.id === ratingLeaderId).label,
     avgRatingOfOpponentsBeaten: avgBeatenRating,
     finalMargin: lastRound[0] && lastRound[0].margin,
+    gateCanary,   // true when a fielded original (INCLUDE_BASE) was DQ'd — the whole run's gate is suspect
     verdict: trustVerdict,
   },
   recommendation,

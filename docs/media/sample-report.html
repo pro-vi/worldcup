@@ -320,10 +320,11 @@ document.addEventListener('click',function(e){var t=e.target;if(t&&t.classList&&
 // Enter/Space — it's a real role=button). Principle: the page must never create more confidence in
 // the winner than the evaluator earned. Confetti celebrates the BRACKET win (the sporting layer);
 // the verdict chip stays the epistemic voice — "lucky draw" and "keep the original" champions still
-// won their bracket and get their shower. A gate-DQ champion is the one state where celebration
-// would contradict the page itself (DO NOT TRUST), so it gets NO party and NO replay control (the
-// cup renders inert rather than as a dead switch). Auto-fire honors prefers-reduced-motion;
-// replaying via the cup is user-initiated motion and still plays.
+// won their bracket and get their shower. Two states silence it (noParty): a gate-DQ champion, and
+// the fielded-original gate canary — both mean the page says DO NOT TRUST, so celebration would
+// contradict the page itself; each gets NO party and NO replay control (the cup renders inert rather
+// than as a dead switch). Auto-fire honors prefers-reduced-motion; replaying via the cup is
+// user-initiated motion and still plays.
 var PARTY=true;
 function party(){if(!PARTY)return;
 var cv=document.createElement('canvas');cv.className='fx';

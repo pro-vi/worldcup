@@ -31,8 +31,10 @@ When the predicted optimum is *not* in the field, the workflow can generate it (
 stored fragments) and play it head-to-head against the bracket champion.
 Result: `playoff = { beatChampion, markdown }`. This tells you whether the fitted optimum
 actually beats what the bracket crowned — the interaction the bracket can miss. Off by
-default because it adds agent calls. (Want it measured against the original too? Field the
-original as one of the N — INCLUDE_BASE — and read their meeting off the bracket.)
+default because it adds agent calls. (The playoff is generated after the bracket and plays
+ONLY the champion, so it never meets a fielded original in the bracket; to also pit the
+fitted optimum against the original, run a post-run exhibition match from the main loop —
+see judging.md §12.)
 
 ## The coordinate view (report)
 
