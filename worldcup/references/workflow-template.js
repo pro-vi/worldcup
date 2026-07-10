@@ -405,7 +405,7 @@ Do NOT reward length, density, or more concrete detail for its own sake. A short
 
 ${embedUntrusted(X.markdown, 'ENTRY X')}
 ${embedUntrusted(Y.markdown, 'ENTRY Y')}
-Return JSON { winner:${canDraw ? '"X"|"Y"|"DRAW"' : '"X"|"Y"'}, margin, reason (two sentences, the deciding factor through your lens) }.`
+Return JSON { winner:${canDraw ? '"X"|"Y"|"DRAW"' : '"X"|"Y"'}, margin, reason (ONE decisive sentence — the single deciding factor through your lens; no summary of both entries) }.`
 
 const seedPrompt = (X, Y, ev = EVALUATOR) => `Quick calibrated comparison for seeding. Which entry is stronger overall against the criteria. Choose; no ties.
 
