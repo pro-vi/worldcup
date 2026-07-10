@@ -457,11 +457,11 @@ function debounce(fn, wait) {
 const CODE_LABELS = Object.keys(ARTIFACTS)
 const DQ_LABEL = 'the benchmark-bluffer'
 
-// The incumbent for the showcase's reference challenge: the plain original the field was asked to
-// improve on. Deliberately ordinary — correct, minimal, ES5-plain — so "beat the original" is a
-// real bar, not a strawman. NOT one of the 32 teams; it enters only the champion's final challenge.
-const REFERENCE_INCUMBENT = `// Team: the original
-// The incumbent: the plain debounce that has shipped for years — correct, minimal, no frills.
+// The BASE for the showcase, FIELDED as one of the contestants (INCLUDE_BASE): the plain original
+// the field was asked to improve on. Deliberately ordinary — correct, minimal, ES5-plain — so it
+// wins or loses on merit like any entry. It takes one cell of the field (replacing a generated one).
+const REFERENCE_BASE = `// Team: the original
+// The original: the plain debounce that has shipped for years — correct, minimal, no frills.
 function debounce(fn, wait) {
   var timer
   return function () {
@@ -477,7 +477,7 @@ function codeArtifact(label) {
   return artifact
 }
 
-module.exports = { CODE_LABELS, DQ_LABEL, REFERENCE_INCUMBENT, codeArtifact }
+module.exports = { CODE_LABELS, DQ_LABEL, REFERENCE_BASE, codeArtifact }
 
 // Self-check: run directly to validate the field.
 if (require.main === module) {
@@ -507,16 +507,16 @@ if (require.main === module) {
     }
   }
 
-  // The reference incumbent obeys the same contract as the field: marker line, description, parses.
+  // The reference base obeys the same contract as the field: marker line, description, parses.
   {
-    const lines = REFERENCE_INCUMBENT.split('\n')
-    assert.strictEqual(lines[0], '// Team: the original', 'incumbent: line 1 must be the exact team marker')
-    assert.ok(lines[1] && lines[1].startsWith('// '), 'incumbent: line 2 must be a one-line description')
-    assert.ok(!CODE_LABELS.includes('the original'), 'incumbent label must not collide with the field')
+    const lines = REFERENCE_BASE.split('\n')
+    assert.strictEqual(lines[0], '// Team: the original', 'base: line 1 must be the exact team marker')
+    assert.ok(lines[1] && lines[1].startsWith('// '), 'base: line 2 must be a one-line description')
+    assert.ok(!CODE_LABELS.includes('the original'), 'base label must not collide with the field')
     let start = 0
     while (start < lines.length && lines[start].startsWith('//')) start += 1
     new Function(lines.slice(start).join('\n')) // eslint-disable-line no-new-func -- parse check only
   }
 
-  console.log('sample-code-field ok: 32 artifacts + reference incumbent')
+  console.log('sample-code-field ok: 32 artifacts + reference base')
 }

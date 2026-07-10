@@ -2,8 +2,8 @@
 
 // End-to-end fake-judge run of worldcup/references/workflow-template.js.
 // The template executes for real (generation -> gate -> seeding -> groups -> knockout ->
-// reference challenge -> report); only the host seams (agent/parallel/log/phase/args) are
-// stubbed, deterministically, by scripts/workflow-harness.js.
+// report); only the host seams (agent/parallel/log/phase/args) are stubbed,
+// deterministically, by scripts/workflow-harness.js.
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -62,6 +62,25 @@ test('the scripted fabrication DQ lands and the DQ\'d team cannot be champion', 
   assert.equal(dq.category, 'FABRICATION')
   assert.equal(result.disqualified.length, 1, 'only the scripted DQ should be disqualified')
   assert.notEqual(result.champion.label, DQ_LABEL)
+})
+
+test('a DQ\'d fielded original fires the gate canary: DO NOT TRUST / DO NOT ADOPT, no confetti', async () => {
+  // Field the base (INCLUDE_BASE, via `base`) and make the fake gate DQ it (dqLabel matches the base's
+  // Team: marker). Doctrine (judging.md §12): a fielded original the gate rejects means the ledger is
+  // misconfigured or the gate is misfiring, so the WHOLE run is suspect — the engine must fail closed.
+  const CANARY_BASE = ['Team: the original',
+    'A base that the (mis)firing gate rejects even though its own ledger says it is clean.'].join('\n\n')
+  const { result } = await runTournament({ labels: LABELS, dqLabel: 'the original', base: CANARY_BASE })
+  assert.ok(!result.error, `template returned an error: ${result && result.error}`)
+  // the fielded base is the (only) DQ, and it is NOT the champion
+  assert.ok(result.disqualified.some(d => d.label === 'the original'), 'the fielded original should be DQ\'d')
+  assert.notEqual(result.champion.label, 'the original', 'a DQ\'d base cannot win the bracket')
+  // the canary is surfaced structurally and in the verdict/recommendation strings
+  assert.equal(result.trust.gateCanary, true, 'trust.gateCanary must be true when the fielded original is DQ\'d')
+  assert.match(result.trust.verdict, /DO NOT TRUST/, 'a DQ\'d fielded original must produce a DO NOT TRUST verdict, not an ordinary runoff')
+  assert.match(result.recommendation, /DO NOT ADOPT/, 'a DQ\'d fielded original must block adoption')
+  // and the page must not celebrate a run it is telling you not to trust
+  assert.match(result.reportHtml, /var PARTY=false/, 'the gate canary must suppress the champion confetti')
 })
 
 test('a hostile team label cannot break out of the report markup (<script> escaping)', async () => {

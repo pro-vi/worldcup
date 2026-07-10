@@ -35,13 +35,17 @@ function loadTemplate(templatePath = TEMPLATE_PATH) {
   const anchor = 'flavors: ['
   if (!src.includes(anchor)) throw new Error(`${templatePath}: DESIGN 'flavors: [' anchor not found (template mid-edit?)`)
   let patched = src.replace(anchor, 'flavors: __testFlavors || [')
-  // Second hole, same idea: a real INCUMBENT so sample/test reference challenges are played against
-  // an actual original, not the template's FILL placeholder. `a != null ? a : (cond ? b : c)` keeps
-  // the original expression intact when no incumbent is supplied.
-  const incAnchor = 'const INCUMBENT = USE_INCUMBENT ?'
-  if (!patched.includes(incAnchor)) throw new Error(`${templatePath}: INCUMBENT anchor not found (template mid-edit?)`)
-  patched = patched.replace(incAnchor, 'const INCUMBENT = __testIncumbent != null ? __testIncumbent : USE_INCUMBENT ?')
-  return new AsyncFunction('agent', 'parallel', 'log', 'phase', 'args', '__testFlavors', '__testIncumbent', patched)
+  // Second hole, same idea: field a real BASE as a contestant so a sample/test can showcase the
+  // original-as-contestant pattern (the retired reference challenge's replacement). Injecting a
+  // base swaps the FILL placeholder for the supplied text AND flips INCLUDE_BASE on; with no base
+  // the template default stands (no base fielded), so the expressions are left intact.
+  const baseAnchor = 'const BASE = `FILL'
+  if (!patched.includes(baseAnchor)) throw new Error(`${templatePath}: BASE anchor not found (template mid-edit?)`)
+  patched = patched.replace(baseAnchor, 'const BASE = __testBase != null ? __testBase : `FILL')
+  const incBaseAnchor = 'const INCLUDE_BASE = false'
+  if (!patched.includes(incBaseAnchor)) throw new Error(`${templatePath}: INCLUDE_BASE anchor not found (template mid-edit?)`)
+  patched = patched.replace(incBaseAnchor, 'const INCLUDE_BASE = __testBase != null')
+  return new AsyncFunction('agent', 'parallel', 'log', 'phase', 'args', '__testFlavors', '__testBase', patched)
 }
 
 // ─────────────────────────────────────────────────────── deterministic judge core
@@ -75,9 +79,9 @@ function extractTeams(text) {
   while ((m = re.exec(text))) out.push(m[1])
   return out
 }
-// Identity of ENTRY X / ENTRY Y in a pairwise prompt. An entry without a Team: marker (the
-// INCUMBENT fill text is the only such body in a template run) hashes its whole segment, which
-// is still deterministic.
+// Identity of ENTRY X / ENTRY Y in a pairwise prompt. An entry without a Team: marker hashes its
+// whole segment, which is still deterministic (all sample/test bodies carry a marker, including a
+// fielded base — see runTournament's `base`).
 function entryIdentities(prompt) {
   const iY = prompt.indexOf('ENTRY Y')
   const segX = iY === -1 ? prompt : prompt.slice(0, iY)
@@ -160,9 +164,10 @@ async function parallelReverse(thunks) {
 // ─────────────────────────────────────────────────────── one full tournament
 // labels: FIELD (=32) team names -> flat DESIGN flavors. dqLabel: the one team the scripted
 // fabrication gate kills. parallel: one of the implementations above (default parallelAll).
-// incumbent: real reference-original text for the challenge (must carry its own Team: marker,
-// e.g. 'Team: the original' / '// Team: the original'); null keeps the template's FILL placeholder.
-async function runTournament({ labels, dqLabel = null, parallel = parallelAll, templatePath = TEMPLATE_PATH, artifactFor = null, incumbent = null } = {}) {
+// base: real BASE text to field as one contestant (must carry its own Team: marker, e.g.
+// 'Team: the original' / '// Team: the original'); passing it flips INCLUDE_BASE on so the base
+// occupies the first cell (displacing that flavor). null keeps the template default (no base fielded).
+async function runTournament({ labels, dqLabel = null, parallel = parallelAll, templatePath = TEMPLATE_PATH, artifactFor = null, base = null } = {}) {
   if (!Array.isArray(labels) || !labels.length) throw new Error('runTournament: labels[] is required')
   const run = loadTemplate(templatePath)
   const flavors = labels.map(name => ({ name, brief: `the "${name}" take on the artifact` }))
@@ -171,7 +176,7 @@ async function runTournament({ labels, dqLabel = null, parallel = parallelAll, t
   const agent = makeFakeAgent({ labels, dqLabel, unknown, artifactFor })
   const log = m => { logs.push(String(m)) }
   const phase = () => {}
-  const result = await run(agent, parallel, log, phase, undefined, flavors, incumbent)
+  const result = await run(agent, parallel, log, phase, undefined, flavors, base)
   return { result, unknown, logs }
 }
 

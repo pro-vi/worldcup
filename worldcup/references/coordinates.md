@@ -14,7 +14,9 @@ response surface. Returns `null` for `kind:'flat'`.
   the best value. Axes are sorted by spread, so `mainEffects[0]` is the most influential knob.
 - **Interactions** — for each binary axis pair, the 2-factor contrast
   `|(m11 − m10) − (m01 − m00)| / 2`. An additive design reports ~0; a real interaction is
-  large. Top 6 returned.
+  large. Top 6 returned. Binary pairs only: an axis with ≥3 values (a 3-level `length` axis,
+  say) contributes main effects but no interaction term — keep length binary if you want its
+  interactions.
 - **Predicted optimum** — take the best value per axis and assemble the coordinate. If that
   point is in the field, `inField:true` and its label; otherwise it is a *synthesized*
   prediction (`inField:false`) that no actual candidate occupies.
@@ -26,10 +28,13 @@ effects "empirical, not fitted" — do not over-read them.
 ## Predicted-optimum playoff (optional, `PLAYOFF` config, default off)
 
 When the predicted optimum is *not* in the field, the workflow can generate it (from the
-stored fragments) and play it head-to-head against the bracket champion and the incumbent.
-Result: `playoff = { beatChampion, beatOriginal, markdown }`. This tells you whether the
-fitted optimum actually beats what the bracket crowned — the interaction the bracket can
-miss. Off by default because it adds agent calls.
+stored fragments) and play it head-to-head against the bracket champion.
+Result: `playoff = { beatChampion, markdown }`. This tells you whether the fitted optimum
+actually beats what the bracket crowned — the interaction the bracket can miss. Off by
+default because it adds agent calls. (The playoff is generated after the bracket and plays
+ONLY the champion, so it never meets a fielded original in the bracket; to also pit the
+fitted optimum against the original, run a post-run exhibition match from the main loop —
+see judging.md §12.)
 
 ## The coordinate view (report)
 

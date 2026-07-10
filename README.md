@@ -49,9 +49,9 @@ run let an essay win by fabricating concrete detail — invented line numbers, a
 fake stack trace — that read as "authentic" to a single tasteless judge. The fix
 is not a bigger model. It is a judging architecture with taste: a fact-ledger
 fabrication gate that disqualifies liars outright, adversarial lenses that each
-attack one axis, an incumbent the champion must beat on merit, panels that scale
-with the stakes, and a global pairwise rating over every decided match (Elo
-in the shipped template) that calls out a lucky bracket.
+attack one axis, the original fielded as one of the N so the champion beats it on
+merit, panels that scale with the stakes, and a global pairwise rating over every
+decided match (Elo in the shipped template) that calls out a lucky bracket.
 
 The tournament shape is not just theater. It makes selection *legible*: instead
 of an opaque "the model liked #17," you get group standings, upsets, a
@@ -85,9 +85,11 @@ the single-call baseline is named future work.
   disqualifications, and the trust verdict. Every entry is clickable, with its
   full text and match log.
 - **The champion** — plus how it won the final, and every opponent it beat.
-- **The reference challenge** — the champion must clearly beat the original it
-  was varied from, or the recommendation is "keep the original." Confirming the
-  field never improved on the real thing is a real result, not a failure.
+- **The original as a contestant** — field the current version as one of the N
+  (`INCLUDE_BASE`, or a `given` item) and it competes like any entry. "Keep the
+  original" is simply the result that it won or out-rated the field — a real
+  outcome, not a failure. (No privileged bar, and no anchor bias from pasting the
+  original into every juror's prompt.)
 - **The trust verdict** — a single-elimination winner can be a lucky draw; the
   report says so and offers a runoff.
 - **The confetti** — the trophy throws a burst when the report opens; click the
@@ -219,13 +221,13 @@ for the runs and [`canary/README.md`](canary/README.md) for the rules.
 - `worldcup/` - the skill itself.
   - `SKILL.md` - triggers, inputs to settle, procedure, judging doctrine, cost tiers.
   - `references/judging.md` - the taste engine: deterministic preflight,
-    fabrication gate, diverse-lens panels, calibration, rating, reference
-    challenge, and domain profile sockets.
+    fabrication gate, diverse-lens panels, calibration, rating, fielding the
+    original as a contestant, and domain profile sockets.
   - `references/brackets.md` - exact 32-team and 48-team bracket math, snake
     seeding, group advancement, and strict-fidelity notes.
   - `references/workflow-template.js` - the ultracode Workflow template the skill
-    copies and fills; it encodes seeding, group->knockout, judging, Elo, the
-    reference challenge, and the final HTML report.
+    copies and fills; it encodes seeding, group->knockout, judging, Elo,
+    `INCLUDE_BASE` (field the original as a contestant), and the final HTML report.
   - `references/live-view.js` and `live-view.md` - the live view and its event
     contract; also home of the `--demo` mode.
   - `references/profiles/` - optional domain/voice taste you plug into the
@@ -245,8 +247,9 @@ for the runs and [`canary/README.md`](canary/README.md) for the rules.
 Shipped: hand-authored flat fields, factorial/axes generation, section
 recombination with a coherence judge, snake seeding, group-stage draws, 32-team
 and 48-team advancement, best-third surfacing, the fabrication gate, Elo,
-reference challenge, live view with demo mode, match-day headlines, and the
-final HTML report — plus a fake-judge e2e harness that keeps all of it honest.
+the original fielded as a contestant (`INCLUDE_BASE`), live view with demo mode,
+match-day headlines, and the final HTML report — plus a fake-judge e2e harness
+that keeps all of it honest.
 
 Deferred: genetic evolve mode, optimal-design solver for mixed-radix fractions,
 and domain-specific bundled profiles.
