@@ -29,6 +29,27 @@ const DESIGN = {
 
 Either way the product `M = ∏ |values|` is reconciled to exactly `FIELD` cells.
 
+### Length is a standard free axis
+
+The engine pins no length range (that anchor is retired — see judging.md §10), so **length is a
+first-class DESIGN axis** like any other, not a constraint inherited from an original. Declare it
+explicitly when you want the report to tell you *which length won*:
+
+```js
+axes: [ { name: 'length', values: { tight: 'compress hard — every clause earns its place',
+                                    full: 'let the argument breathe; more room to develop' } }, ... ]
+```
+
+Two caveats, both mechanical:
+- A **3-level** length axis (e.g. `tight | medium | full`) contributes clean main effects (the
+  per-level Elo means and the winning length), but the interactions panel is **binary-pairs only**
+  (`computeEffects` skips any axis with ≠2 values), so a 3-level length axis shows no interaction
+  term with other axes. Use 2 levels if you need length's interactions.
+- A mixed-radix product (a 3-level length axis combined with 2-level axes) reconciles by
+  `subsample`/`partial-replicate`, whose `estimable` is probe-backed, not `all-2way` — read the
+  effects as empirical when the report flags `none`. Keep the anti-padding juror instruction on
+  (judging.md §10): free length is only safe because padding is still penalized.
+
 ## Combinatorics (deterministic, no RNG)
 
 `reconcile(axes, N)` maps the axis product to exactly `N` cells:

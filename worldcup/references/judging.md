@@ -65,8 +65,8 @@ truth. Attributing to the target claims / concessions / scope its source does no
 a forfeit (gate category MISREPRESENTS_TARGET).
 
 PERMITTED CREATIVE MOVES: reorder the argument, sharpen sentences, cut filler, rephrase
-metaphors, clarify implicit logic, add clearly-marked hypotheticals, compress/expand
-within length.
+metaphors, clarify implicit logic, add clearly-marked hypotheticals, compress or expand
+as the material warrants.
 NOT PERMITTED: invent concrete facts; make the author sound more wounded / wiser /
 more technical / more experienced than the source supports; add fake specificity or
 "lived-in" detail to manufacture authenticity; swap the author's real argument for a
@@ -75,7 +75,6 @@ more marketable one.
 VOICE SPEC (deep traits, not a checklist): {how the author thinks, withholds, ends}.
 HOUSE-STYLE HARD BANS (optional — the USER'S own, never engine defaults; e.g. {punctuation
 rules; a banned-vocab list; announced thesis}. Prefer lens penalties over gate kills for style tics).
-LENGTH: {min}-{max} words, preferred {range}.
 
 NON-NEGOTIABLE: the best essay is the best TRUTHFUL essay in the author's voice. A less
 vivid true essay beats a more vivid false one.
@@ -383,10 +382,13 @@ preferred; bins are only for cheap seeding.
 - **Position**: randomize/alternate which entry is shown as A (vary by index parity).
   For high-stakes pairs, run **mirrored** (A=X,B=Y and A=Y,B=X) and measure each juror's
   A-pick-rate; downweight jurors far from 0.5.
-- **Length / verbosity**: show word counts; instruct "do not reward the longer essay for
-  more texture; a longer essay must justify its length with truthful thought, not
-  atmosphere." Ask each juror to name one cuttable sentence; lots of removable material is
-  a weakness. Length is a tiebreaker, never a main signal, unless it breaks the range.
+- **Length / verbosity**: length is a **free dimension**, not a target — the engine pins no
+  range, so a short entry and a long entry compete on equal footing (make length an explicit
+  DESIGN axis if you want to *read* which length wins; see design-pass.md). The one guardrail
+  that keeps free length safe is anti-padding: instruct "do not reward the longer entry for
+  more texture; a longer entry must justify its length with real thought, not atmosphere," and
+  ask each juror to name one cuttable sentence — lots of removable material is a weakness. So
+  length as such is neither rewarded nor penalized; only whether every part earns its place.
 - **Sycophancy**: blind everything — jurors never see which model wrote an entry, its
   seed, prior jurors' picks, or that an entry is the original (except the reference
   challenge). Ask "which should the author publish," never "which better satisfies the user."

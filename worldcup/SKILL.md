@@ -69,6 +69,8 @@ context; pick sane defaults for the rest and state them.
        - *axes (forced)* — you give orthogonal axes (e.g. lead x spine x closer x length x
          register); the cross-product is reconciled to N. Candidates become points in a
          coordinate system, and the report gains a coordinate view + axis-effects analysis.
+         **Length is a first-class free axis** (the engine pins no length range) — declare it
+         when you want the report to show which length won (see design-pass.md).
        - *axes (dynamic)* — an axis-finder agent proposes the axes from the base + criteria
          (one extra call), then the field is fit to N. Best when you do not know the axes yet.
        - *sections (recombination)* — the artifact is S declared slots; each slot fields its

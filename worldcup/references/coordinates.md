@@ -14,7 +14,9 @@ response surface. Returns `null` for `kind:'flat'`.
   the best value. Axes are sorted by spread, so `mainEffects[0]` is the most influential knob.
 - **Interactions** — for each binary axis pair, the 2-factor contrast
   `|(m11 − m10) − (m01 − m00)| / 2`. An additive design reports ~0; a real interaction is
-  large. Top 6 returned.
+  large. Top 6 returned. Binary pairs only: an axis with ≥3 values (a 3-level `length` axis,
+  say) contributes main effects but no interaction term — keep length binary if you want its
+  interactions.
 - **Predicted optimum** — take the best value per axis and assemble the coordinate. If that
   point is in the field, `inField:true` and its label; otherwise it is a *synthesized*
   prediction (`inField:false`) that no actual candidate occupies.
