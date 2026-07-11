@@ -18,6 +18,7 @@
   "run": {
     "id": "wf_fbf2b7a4-f80",
     "workflowName": "worldcup",
+    "status": "completed",
     "timestamp": "2026-07-10T21:34:56.372Z",
     "stateSha256": "c86d689dd5f8c9a68a5250430a3f58dccfbe3b842746ef413e948265f525d0f9",
     "transcriptSetSha256": "b07d77c7a7a889f05a231658d88e61ca6996c48bd3bd38e9016aad257def622c"

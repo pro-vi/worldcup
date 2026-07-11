@@ -17,6 +17,7 @@ test('dated records carry canonical replay inputs and reproduce both official fi
   assert.equal(records.length, 2)
   for (const { name, value } of records) {
     assert.equal(value.schema, SCHEMA, name)
+    assert.equal(value.run.status, 'completed', name)
     assert.equal(value.entrants.length, 32, name)
     assert.equal(value.matches.length, 48, name)
     assert.equal(value.official.qualifiers.length, 16, name)

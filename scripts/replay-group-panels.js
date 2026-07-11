@@ -15,6 +15,22 @@ const SCHEMA = 'worldcup-group-panel-replay/v1'
 const POLICY_VERSION = '2026-07-11'
 const DRAW = 'DRAW'
 const DEFAULT_SEATS = ['substance', 'fit', 'craft']
+const HELP = `Replay recorded worldcup group-panel votes without model calls.
+
+Usage:
+  node scripts/replay-group-panels.js <transcript-dir> [--state <workflow.json>] [--record <file>] [--json]
+
+Examples:
+  node scripts/replay-group-panels.js ./wf_run --state ./wf_run.json
+  node scripts/replay-group-panels.js ./wf_run --state ./wf_run.json --json
+  node scripts/replay-group-panels.js ./wf_run --state ./wf_run.json --record evidence/group-panel-replay/records/2026-07-10-run.json
+
+Options:
+  --state <file>   Workflow snapshot; inferred from the transcript directory when omitted.
+  --record <file>  Atomically create an immutable dated evidence record; never overwrites.
+  --json           Emit the full machine-readable bundle (bulk output).
+  -h, --help       Show this help.
+`
 
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex')
@@ -229,6 +245,7 @@ function buildVoteBundle(runDir, { statePath = discoverStatePath(runDir) } = {})
     run: {
       id: state.runId || path.basename(runDir),
       workflowName: state.workflowName || '',
+      status: state.status || '',
       timestamp: state.timestamp || state.startTime || null,
       stateSha256: sha256(fs.readFileSync(statePath)),
       transcriptSetSha256: transcriptHash.digest('hex'),
@@ -395,16 +412,23 @@ function parseArgs(argv) {
   let runDir
   let statePath
   let recordPath
+  let json = false
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--state') statePath = argv[++i]
-    else if (argv[i] === '--record') recordPath = argv[++i]
+    if (argv[i] === '-h' || argv[i] === '--help') return { help: true }
+    if (argv[i] === '--json') json = true
+    else if (argv[i] === '--state') {
+      if (!argv[i + 1] || argv[i + 1].startsWith('-')) throw new Error(`--state requires a file argument\n\n${HELP}`)
+      statePath = argv[++i]
+    } else if (argv[i] === '--record') {
+      if (!argv[i + 1] || argv[i + 1].startsWith('-')) throw new Error(`--record requires a file argument\n\n${HELP}`)
+      recordPath = argv[++i]
+    }
+    else if (argv[i].startsWith('-')) throw new Error(`unknown option: ${argv[i]}\n\n${HELP}`)
     else if (!runDir) runDir = argv[i]
     else throw new Error(`unexpected argument: ${argv[i]}`)
   }
-  if (!runDir) throw new Error('usage: node scripts/replay-group-panels.js <transcript-dir> [--state <workflow.json>] [--record <file>]')
-  if (argv.includes('--state') && !statePath) throw new Error('--state requires a file argument')
-  if (argv.includes('--record') && !recordPath) throw new Error('--record requires a file argument')
-  return { runDir: path.resolve(runDir), statePath: statePath && path.resolve(statePath), recordPath: recordPath && path.resolve(recordPath) }
+  if (!runDir) throw new Error(HELP)
+  return { runDir: path.resolve(runDir), statePath: statePath && path.resolve(statePath), recordPath: recordPath && path.resolve(recordPath), json }
 }
 
 function writeRecordAtomic(file, record) {
@@ -420,14 +444,36 @@ function writeRecordAtomic(file, record) {
   }
 }
 
+function formatSummary(record, recordPath = null) {
+  const majority = record.analysis.policies.filter(policy => policy.kind === 'majority-lock')
+  const cheap = record.analysis.policies.filter(policy => ['fixed-seat', 'rotating-seat', 'margin-trigger'].includes(policy.kind))
+  const saved = majority.map(policy => policy.callsSaved)
+  return [
+    `Group-panel replay: ${record.run.id}`,
+    `Baseline: standings ${record.analysis.baseline.standingsMatch ? 'MATCH' : 'MISMATCH'} · qualifiers ${record.analysis.baseline.qualifiersMatch ? 'MATCH' : 'MISMATCH'} · ${record.analysis.baseline.calls} calls`,
+    `Reduced one-seat/margin policies: ${cheap.filter(policy => policy.qualifierChanges > 0).length}/${cheap.length} changed at least one qualifier`,
+    `Majority lock: ${majority.length}/${majority.length} exact · saved ${Math.min(...saved)}-${Math.max(...saved)} calls`,
+    `Warnings: ${record.warnings.length}`,
+    ...(recordPath ? [`Record: ${recordPath}`] : ['Full bundle: rerun with --json; persist with --record <file>.']),
+  ].join('\n') + '\n'
+}
+
 function main() {
   try {
     const args = parseArgs(process.argv.slice(2))
+    if (args.help) {
+      process.stdout.write(HELP)
+      return
+    }
     const bundle = buildVoteBundle(args.runDir, args.statePath ? { statePath: args.statePath } : {})
     const analysis = replayBundle(bundle)
     const record = { ...bundle, analysis }
-    if (args.recordPath) writeRecordAtomic(args.recordPath, record)
-    process.stdout.write(`${JSON.stringify(args.recordPath ? { record: args.recordPath, analysis } : record, null, 2)}\n`)
+    if (args.recordPath) {
+      if (record.run.status !== 'completed') throw new Error(`refusing to publish evidence for workflow status ${JSON.stringify(record.run.status)}; wait for a completed snapshot`)
+      writeRecordAtomic(args.recordPath, record)
+    }
+    if (args.json) process.stdout.write(`${JSON.stringify(args.recordPath ? { record: args.recordPath, analysis } : record, null, 2)}\n`)
+    else process.stdout.write(formatSummary(record, args.recordPath))
   } catch (error) {
     console.error(error.message || error)
     process.exitCode = 1
@@ -440,7 +486,9 @@ module.exports = {
   DRAW,
   SCHEMA,
   buildVoteBundle,
+  formatSummary,
   majorityLockDecision,
+  parseArgs,
   replayBundle,
   replayPolicy,
   standings,

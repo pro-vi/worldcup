@@ -8,7 +8,9 @@ const path = require('node:path')
 const {
   DRAW,
   SCHEMA,
+  formatSummary,
   majorityLockDecision,
+  parseArgs,
   replayBundle,
   standings,
   tallyWinner,
@@ -110,4 +112,20 @@ test('evidence writes are atomic and immutable', t => {
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { schema: SCHEMA, ok: true })
   assert.throws(() => writeRecordAtomic(file, { schema: SCHEMA, ok: false }), /refusing to overwrite/)
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { schema: SCHEMA, ok: true })
+})
+
+test('replay CLI is bounded by default and exposes explicit bulk JSON plus actionable help', () => {
+  assert.deepEqual(parseArgs(['run', '--state', 'state.json', '--json']), {
+    runDir: path.resolve('run'), statePath: path.resolve('state.json'), recordPath: undefined, json: true,
+  })
+  assert.equal(parseArgs(['--help']).help, true)
+  assert.throws(() => parseArgs(['--wat']), /unknown option: --wat[\s\S]*Examples:/)
+  assert.throws(() => parseArgs(['run', '--record']), /--record requires a file argument[\s\S]*Usage:/)
+  const bundle = syntheticBundle()
+  bundle.run = { id: 'wf_test' }
+  bundle.warnings = []
+  bundle.analysis = replayBundle(bundle)
+  const summary = formatSummary(bundle)
+  assert.ok(summary.split('\n').length < 10)
+  assert.match(summary, /Full bundle: rerun with --json/)
 })
