@@ -16,9 +16,11 @@ code solutions — runs through the same machinery. Full disclosure: prose
 (essays, taglines) is where it has real mileage; the non-prose path is exercised
 by the test harness and a committed code sample, not yet by battle.
 
-**The judge, in one line:** a vivid fabricated entry forfeits; it does not lose
-"some points." Truth and authorial fidelity are gates. Taste begins only after
-an entry proves it is not cheating.
+**The judge is the point:** a vivid fabricated entry forfeits; it does not lose
+"some points." Truth and authorial fidelity are gates; seeding is calibrated
+pairwise with an Elo rating, not 0–100 scores; and the trust verdict says
+plainly when the bracket winner looks like a lucky draw. Taste begins only
+after an entry proves it is not cheating.
 
 ![A live worldcup bracket in the arena theme, champion crowned](docs/media/hero-arena.png)
 
