@@ -94,11 +94,105 @@ test('analyzeRun joins labels by agentId and counts each API request once', t =>
   // usage reads 3 / writes 2 across all three judge agents; picking r2 (read 6, write 0) or a
   // pre-replacement record would fail this.
   assert.deepEqual(report.judgeInitialCache, {
-    invocations: 3, cacheReadMode: 3, cacheReadModeCount: 3, cacheWriteMode: 2, cacheWriteModeCount: 3,
+    invocations: 3, sampled: 3, requestless: 0,
+    cacheReadMode: 3, cacheReadModeCount: 3, cacheWriteMode: 2, cacheWriteModeCount: 3,
   })
   const rendered = formatReport(report)
   assert.match(rendered, /TOTAL\s+8\s+16/)
   assert.match(rendered, /read 3 tokens \(3\/3 calls\); write 2 tokens \(3\/3 calls\)/)
   assert.match(rendered, /WARNING: 1 transcript agent\(s\) had no workflow label/)
   assert.match(rendered, /WARNING: 1 transcript file\(s\) skipped as unreadable/)
+})
+
+// Post-mortem paths: a partial/failed/retried run must yield honest numbers, not an abort or a
+// misleading zero. One fixture carries all three review findings at once.
+test('analyzeRun survives retries, truncated journals, and requestless judges', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'worldcup-cost-pm-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const runDir = path.join(root, 'subagents', 'workflows', 'wf_pm')
+  const stateDir = path.join(root, 'workflows')
+  fs.mkdirSync(runDir, { recursive: true })
+  fs.mkdirSync(stateDir, { recursive: true })
+
+  // workflowProgress holds only the LATEST attempt per logical agent: a2 is attempt 2 of the
+  // logical agent whose attempt 1 was a1 (journal key k1). a4 is a cancelled judge (no requests).
+  fs.writeFileSync(path.join(stateDir, 'wf_pm.json'), JSON.stringify({
+    runId: 'wf_pm', agentCount: 3,
+    workflowProgress: [
+      { type: 'workflow_agent', agentId: 'a2', label: 'GROUP:fit:x>y', phaseTitle: 'Groups', attempt: 2 },
+      { type: 'workflow_agent', agentId: 'a3', label: 'QF:integrity:x>y', phaseTitle: 'Knockout', attempt: 1 },
+      { type: 'workflow_agent', agentId: 'a4', label: 'QF:craft:x>y', phaseTitle: 'Knockout', attempt: 1 },
+    ],
+  }))
+  // Journal: one 'started' row PER attempt (k1 twice), plus a line truncated mid-write.
+  fs.writeFileSync(path.join(runDir, 'journal.jsonl'), [
+    JSON.stringify({ type: 'started', key: 'v2:k1', agentId: 'a1' }),
+    JSON.stringify({ type: 'started', key: 'v2:k1', agentId: 'a2' }),
+    JSON.stringify({ type: 'result', key: 'v2:k1', agentId: 'a2' }),
+    JSON.stringify({ type: 'started', key: 'v2:k2', agentId: 'a3' }),
+    JSON.stringify({ type: 'started', key: 'v2:k3', agentId: 'a4' }),
+    '{"type":"resu',
+  ].join('\n'))
+  const usageRow = (agentId, rid, read, out) => ({ type: 'assistant', agentId, requestId: rid,
+    message: { usage: { input_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: read, output_tokens: out } } })
+  // a1: retried attempt with dominant usage AND a truncated trailing line (salvaged, not skipped).
+  fs.writeFileSync(path.join(runDir, 'agent-a1.jsonl'),
+    `${JSON.stringify(usageRow('a1', 'r1', 9657, 5000))}\n{"type":"assist`)
+  writeJsonLines(path.join(runDir, 'agent-a2.jsonl'), [usageRow('a2', 'r2', 9657, 1)])
+  writeJsonLines(path.join(runDir, 'agent-a3.jsonl'), [usageRow('a3', 'r3', 5, 1)])
+  writeJsonLines(path.join(runDir, 'agent-a4.jsonl'), [{ type: 'user', agentId: 'a4', message: { role: 'user', content: 'p' } }])
+
+  const report = analyzeRun(runDir)
+  // F1: attempt 1 inherits the logical agent's label via the journal key — not 'other'.
+  assert.deepEqual(report.unmappedAgents, [])
+  assert.equal(report.byRole.other.invocations, 0)
+  assert.equal(report.byRole['group-lens'].invocations, 2)
+  assert.equal(report.byRole['group-lens'].output, 5001)
+  // F2: the truncated journal line is tolerated and surfaced, never an abort.
+  assert.equal(report.journalBadLines, 1)
+  assert.equal(report.journalStarted, 4)
+  // Salvage: a1's valid usage row is counted despite its truncated trailing line.
+  assert.deepEqual(report.salvagedFiles, ['agent-a1.jsonl'])
+  // F3: the requestless judge is excluded from cache samples and denominator, kept in invocations.
+  assert.deepEqual(report.judgeInitialCache, {
+    invocations: 4, sampled: 3, requestless: 1,
+    cacheReadMode: 9657, cacheReadModeCount: 2, cacheWriteMode: 0, cacheWriteModeCount: 3,
+  })
+  const rendered = formatReport(report)
+  assert.match(rendered, /read 9,657 tokens \(2\/3 calls\)/)
+  assert.match(rendered, /1 judge invocation\(s\) had no completed request \(excluded from the modes\)/)
+  assert.match(rendered, /WARNING: 1 transcript file\(s\) had unparseable line\(s\)/)
+  assert.match(rendered, /WARNING: journal\.jsonl had 1 unparseable line\(s\)/)
+})
+
+// A parseable non-object row (bare `null` — a writer bug, not truncation) must count as a bad
+// line, not crash the report or void the file; and with ZERO sampled judges the report must say
+// there is nothing to sample rather than print a fabricated 0-token mode.
+test('non-object rows are bad lines; zero sampled judges never fabricate a mode', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'worldcup-cost-nul-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const runDir = path.join(root, 'subagents', 'workflows', 'wf_nul')
+  fs.mkdirSync(runDir, { recursive: true })
+  fs.mkdirSync(path.join(root, 'workflows'), { recursive: true })
+  fs.writeFileSync(path.join(root, 'workflows', 'wf_nul.json'), JSON.stringify({
+    runId: 'wf_nul', agentCount: 1,
+    workflowProgress: [{ type: 'workflow_agent', agentId: 'a1', label: 'GROUP:fit:x>y', phaseTitle: 'Groups', attempt: 1 }],
+  }))
+  fs.writeFileSync(path.join(runDir, 'journal.jsonl'),
+    `null\n${JSON.stringify({ type: 'started', key: 'v2:k1', agentId: 'a1' })}\n`)
+  fs.writeFileSync(path.join(runDir, 'agent-a1.jsonl'),
+    `null\n${JSON.stringify({ type: 'user', agentId: 'a1', message: { role: 'user', content: 'p' } })}\n`)
+
+  const report = analyzeRun(runDir)
+  assert.equal(report.journalBadLines, 1)
+  assert.equal(report.journalStarted, 1)
+  // The null row is a bad line inside a still-usable file: salvaged, not unreadable.
+  assert.deepEqual(report.unreadableFiles, [])
+  assert.deepEqual(report.salvagedFiles, ['agent-a1.jsonl'])
+  // The only judge has no completed request: nothing to sample.
+  assert.equal(report.judgeInitialCache.sampled, 0)
+  assert.equal(report.judgeInitialCache.requestless, 1)
+  const rendered = formatReport(report)
+  assert.match(rendered, /no completed judge requests to sample \(1 invocation\(s\) had no completed request\)/)
+  assert.doesNotMatch(rendered, /read 0 tokens/)
 })

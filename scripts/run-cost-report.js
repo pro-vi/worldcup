@@ -36,18 +36,26 @@ function roleForLabel(label) {
   return 'other'
 }
 
+// Tolerant by design: a run killed mid-write (or read while still streaming) leaves a truncated
+// trailing line. A post-mortem cost tool must salvage the valid records and WARN, never abort —
+// the crashed run is exactly the one whose spend needs accounting.
 function parseJsonLines(file) {
   const text = fs.readFileSync(file, 'utf8')
   const rows = []
+  const badLines = []
   for (const [index, line] of text.split('\n').entries()) {
     if (!line.trim()) continue
     try {
-      rows.push(JSON.parse(line))
-    } catch (error) {
-      throw new Error(`${file}:${index + 1}: invalid JSON: ${error.message}`)
+      // Only object rows are records; a parseable non-object (a bare `null`, number, string —
+      // a writer bug, not truncation) would crash `row.type` reads downstream and void the file.
+      const value = JSON.parse(line)
+      if (value && typeof value === 'object') rows.push(value)
+      else badLines.push(index + 1)
+    } catch {
+      badLines.push(index + 1)
     }
   }
-  return rows
+  return { rows, badLines }
 }
 
 function discoverStatePath(runDir) {
@@ -65,7 +73,7 @@ function addUsage(target, source) {
 }
 
 function analyzeAgentFile(file, progressByAgent) {
-  const rows = parseJsonLines(file)
+  const { rows, badLines } = parseJsonLines(file)
   const agentId = rows.find(row => row.agentId)?.agentId
   if (!agentId) throw new Error(`${file}: no agentId found`)
   const progress = progressByAgent.get(agentId)
@@ -93,6 +101,7 @@ function analyzeAgentFile(file, progressByAgent) {
     role: roleForLabel(label),
     usage,
     firstUsage,
+    badLines: badLines.length,
   }
 }
 
@@ -113,18 +122,50 @@ function analyzeRun(runDir, { statePath = discoverStatePath(runDir) } = {}) {
   const state = JSON.parse(fs.readFileSync(statePath, 'utf8'))
   const progressRows = (state.workflowProgress || []).filter(row => row.agentId)
   const progressByAgent = new Map(progressRows.map(row => [row.agentId, row]))
+
+  // Retries: workflowProgress keeps only the LATEST attempt's agentId per logical agent, but the
+  // journal writes one 'started' row PER attempt sharing the logical key, and every attempt's
+  // transcript stays on disk. Alias each earlier attempt's agentId to the logical agent's
+  // progress row, or its (possibly dominant) usage lands in 'other' and escapes cache analysis.
+  const journalPath = path.join(runDir, 'journal.jsonl')
+  const journalParsed = fs.existsSync(journalPath) ? parseJsonLines(journalPath) : { rows: [], badLines: [] }
+  const journal = journalParsed.rows
+  const attemptsByKey = new Map()
+  for (const row of journal) {
+    if (row.type !== 'started' || !row.key || !row.agentId) continue
+    if (!attemptsByKey.has(row.key)) attemptsByKey.set(row.key, [])
+    attemptsByKey.get(row.key).push(row.agentId)
+  }
+  // Anchor each group against a SNAPSHOT of the original progress map, so an alias created for
+  // one group can never anchor another (order-independent join). If a corrupted journal ever put
+  // two in-progress agents in one key group, each keeps its own row (the has() guard) and any
+  // orphan member takes the first anchor in journal order — a defensible tiebreak for role-level
+  // tables, since same-key siblings share a role by construction.
+  const originalProgress = new Set(progressByAgent.keys())
+  for (const attemptIds of attemptsByKey.values()) {
+    const mapped = attemptIds.find(id => originalProgress.has(id))
+    if (!mapped) continue
+    const row = progressByAgent.get(mapped)
+    for (const id of attemptIds) if (!progressByAgent.has(id)) progressByAgent.set(id, row)
+  }
+
   const agentFiles = fs.readdirSync(runDir)
     .filter(name => /^agent-.*\.jsonl$/.test(name))
     .sort()
     .map(name => path.join(runDir, name))
 
   // A truncated/empty transcript (a partially crashed run — exactly when a cost post-mortem is
-  // wanted) must not abort the whole report; skip it LOUDLY via the WARNING path below.
+  // wanted) must not abort the whole report; skip it LOUDLY via the WARNING path below. A file
+  // with a truncated TRAILING line but valid earlier records is salvaged (usage counted) + warned.
   const agents = []
   const unreadableFiles = []
+  const salvagedFiles = []
   for (const file of agentFiles) {
-    try { agents.push(analyzeAgentFile(file, progressByAgent)) }
-    catch (error) { unreadableFiles.push(`${path.basename(file)}: ${error.message}`) }
+    try {
+      const agent = analyzeAgentFile(file, progressByAgent)
+      agents.push(agent)
+      if (agent.badLines) salvagedFiles.push(path.basename(file))
+    } catch (error) { unreadableFiles.push(`${path.basename(file)}: ${error.message}`) }
   }
 
   const byRole = Object.fromEntries(ROLE_ORDER.map(role => [role, usageZero()]))
@@ -133,15 +174,17 @@ function analyzeRun(runDir, { statePath = discoverStatePath(runDir) } = {}) {
     for (const key of Object.keys(target)) target[key] += agent.usage[key]
   }
 
-  const journalPath = path.join(runDir, 'journal.jsonl')
-  const journal = fs.existsSync(journalPath) ? parseJsonLines(journalPath) : []
   const journalStarted = journal.filter(row => row.type === 'started').length
   const journalResults = journal.filter(row => row.type === 'result').length
   const unmappedAgents = agents.filter(agent => !agent.label).map(agent => agent.agentId)
 
   const judgeAgents = agents.filter(agent => ['group-lens', 'knockout-lens', 'tiebreak'].includes(agent.role))
-  const firstReads = judgeAgents.map(agent => agent.firstUsage?.cache_read_input_tokens || 0)
-  const firstWrites = judgeAgents.map(agent => agent.firstUsage?.cache_creation_input_tokens || 0)
+  // A failed/cancelled judge leaves a transcript with no completed request. That is a MISSING
+  // sample, not a zero-token one — exclude it from the mode and the denominator (a fabricated
+  // zero could become the reported mode), keep it in invocation totals, and report the exclusion.
+  const judgesSampled = judgeAgents.filter(agent => agent.firstUsage)
+  const firstReads = judgesSampled.map(agent => agent.firstUsage.cache_read_input_tokens || 0)
+  const firstWrites = judgesSampled.map(agent => agent.firstUsage.cache_creation_input_tokens || 0)
   const [firstReadMode, firstReadModeCount] = mode(firstReads)
   const [firstWriteMode, firstWriteModeCount] = mode(firstWrites)
 
@@ -157,6 +200,8 @@ function analyzeRun(runDir, { statePath = discoverStatePath(runDir) } = {}) {
     transcriptAgents: agents.length,
     unmappedAgents,
     unreadableFiles,
+    salvagedFiles,
+    journalBadLines: journalParsed.badLines.length,
     byRole,
     total: Object.values(byRole).reduce((sum, row) => {
       for (const key of Object.keys(sum)) sum[key] += row[key]
@@ -164,6 +209,8 @@ function analyzeRun(runDir, { statePath = discoverStatePath(runDir) } = {}) {
     }, usageZero()),
     judgeInitialCache: {
       invocations: judgeAgents.length,
+      sampled: judgesSampled.length,
+      requestless: judgeAgents.length - judgesSampled.length,
       cacheReadMode: firstReadMode,
       cacheReadModeCount: firstReadModeCount,
       cacheWriteMode: firstWriteMode,
@@ -216,13 +263,20 @@ function formatReport(report) {
   for (const row of data) lines.push(lineFor(row))
 
   const cache = report.judgeInitialCache
-  lines.push(
-    '',
-    `Judge initial-request cache modes: read ${formatInt(cache.cacheReadMode)} tokens (${cache.cacheReadModeCount}/${cache.invocations} calls); write ${formatInt(cache.cacheWriteMode)} tokens (${cache.cacheWriteModeCount}/${cache.invocations} calls).`,
-    'Interpretation: a flat read mode across repeated same-lens calls indicates system/tool-prefix caching only; user-prompt prefix reuse should raise cache reads after the first call in a prefix class.',
-  )
+  // With zero sampled judges there is no observation — never print a fabricated "0 tokens" mode.
+  if (cache.sampled === 0) {
+    lines.push('', `Judge initial-request cache modes: no completed judge requests to sample${cache.requestless ? ` (${cache.requestless} invocation(s) had no completed request)` : ''}.`)
+  } else {
+    lines.push(
+      '',
+      `Judge initial-request cache modes: read ${formatInt(cache.cacheReadMode)} tokens (${cache.cacheReadModeCount}/${cache.sampled} calls); write ${formatInt(cache.cacheWriteMode)} tokens (${cache.cacheWriteModeCount}/${cache.sampled} calls).${cache.requestless ? ` ${cache.requestless} judge invocation(s) had no completed request (excluded from the modes).` : ''}`,
+      'Interpretation: a flat read mode across repeated same-lens calls indicates system/tool-prefix caching only; user-prompt prefix reuse should raise cache reads after the first call in a prefix class.',
+    )
+  }
   if (report.unmappedAgents.length) lines.push(`WARNING: ${report.unmappedAgents.length} transcript agent(s) had no workflow label.`)
   if (report.unreadableFiles.length) lines.push(`WARNING: ${report.unreadableFiles.length} transcript file(s) skipped as unreadable: ${report.unreadableFiles.join('; ')}`)
+  if (report.salvagedFiles.length) lines.push(`WARNING: ${report.salvagedFiles.length} transcript file(s) had unparseable line(s) (truncated mid-write?); usage counted from their valid records — a truncated final streaming record can leave that request's usage partial: ${report.salvagedFiles.join('; ')}`)
+  if (report.journalBadLines) lines.push(`WARNING: journal.jsonl had ${report.journalBadLines} unparseable line(s) (truncated mid-write?); journal counts use the valid records.`)
   return `${lines.join('\n')}\n`
 }
 
