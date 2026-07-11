@@ -225,7 +225,9 @@ Full version in "references/judging.md". The non-negotiables:
   template): a 3-lens panel (substance / fit / craft) for the groups, R32, and R16;
   +integrity from the quarter-finals on. An even split seats a tiebreak juror, then
   the rating decides ("pens"). Vote counts scale with stakes; the budget knob is to
-  override `panelFor('GROUP')` to a single rotated juror for the group stage.
+  override `panelFor('GROUP')` to one fixed, domain-chosen lens for the group stage.
+  The current seam receives only the stakes name, not a match index, so it cannot
+  rotate seats per match. This is a cheaper product tier, not a panel-equivalent mode.
 - **Diverse lenses, not replicas.** Panelists wear different hats — the general default set is
   substance, fit, craft, integrity (a profile swaps in domain lenses, e.g. prose →
   fidelity/taste/anti-gaming/argument/cold-reader, code → correctness/simplicity) — and each is told
@@ -288,8 +290,20 @@ Counted from the shipped template defaults (SCREENERS=3; 3-lens panels through R
   `LIVE_BEACONS = false` in your copied template for a Tier-0-only run. (`INCLUDE_BASE`
   adds no calls — the base replaces a generated cell rather than adding one.)
 - **Trimmed MVP**: two exact knobs — set `SCREENERS = 1`, and override `panelFor('GROUP')`
-  to a single rotated juror for the group stage. Same arithmetic lands at ballpark
-  **210-240 calls**. (See "references/judging.md" section 14 for the doctrine tiers.)
+  to one fixed, domain-chosen juror for the group stage. Same arithmetic lands at
+  ballpark **210-240 agent calls**. This deliberately gives up both majorities:
+  `SCREENERS=1` lets one screener disqualify an entry, and one-juror groups let one lens
+  decide advancement. Historical Run 1/Run 2 margin-trigger rotations changed 1-6 of
+  16 advancement positions; a fixed lens has no equivalence guarantee and may move as
+  many or more. Once the field changes, the counterfactual champion, Elo order, and trust
+  verdict are unknowable without running the downstream bracket. (See
+  "references/judging.md" section 14.)
+
+Generation discipline is the largest measured free lever: work from the inline brief and
+artifact. Do not call tools merely to measure length or word count, and do not iteratively
+redraft toward an unstated length target; length is free unless the criteria explicitly
+impose a hard limit. This instruction is part of every candidate-generation brief in the
+shipped template.
 
 A 48-team run is roughly 1.6x (72 group matches, 31 knockout matches). This is an
 ultracode-scale operation: only run it when the user has opted into multi-agent

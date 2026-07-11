@@ -109,6 +109,7 @@ function transcriptOutputsByLabel(artifacts) {
       const progress = artifacts.progressByAgent.get(transcript.agentId)
       if (!progress?.label) continue
       const outputs = structuredOutputs(transcript.rows)
+      if (transcript.badLines.length) warnings.push(`${path.basename(file)}: ignored ${transcript.badLines.length} invalid line(s)`)
       if (!outputs.length) continue
       const candidate = {
         agentId: transcript.agentId,
@@ -117,7 +118,6 @@ function transcriptOutputsByLabel(artifacts) {
       }
       const prior = result.get(progress.label)
       if (!prior || (!prior.current && candidate.current)) result.set(progress.label, candidate)
-      if (transcript.badLines.length) warnings.push(`${path.basename(file)}: ignored ${transcript.badLines.length} invalid line(s)`)
     } catch (error) {
       warnings.push(`${path.basename(file)}: ${error.message}`)
     }
@@ -141,6 +141,13 @@ function buildVoteBundle(runDir, { statePath = discoverStatePath(runDir) } = {})
   const finalGroups = events.filter(event => event.ev === 'groups').at(-1)
   if (!draw || !gate || !finalGroups) throw new Error('run lacks final gate/draw/groups events')
   const { result: outputs, warnings } = transcriptOutputsByLabel(artifacts)
+  const transcriptHash = crypto.createHash('sha256')
+  for (const file of artifacts.agentFiles) {
+    transcriptHash.update(path.basename(file))
+    transcriptHash.update('\0')
+    transcriptHash.update(fs.readFileSync(file))
+    transcriptHash.update('\0')
+  }
 
   const entrantCount = draw.groups.reduce((sum, group) => sum + group.teams.length, 0)
   const seedRows = (state.workflowProgress || []).filter(row => typeof row.label === 'string' && row.label.startsWith('seed:'))
@@ -223,7 +230,8 @@ function buildVoteBundle(runDir, { statePath = discoverStatePath(runDir) } = {})
       id: state.runId || path.basename(runDir),
       workflowName: state.workflowName || '',
       timestamp: state.timestamp || state.startTime || null,
-      stateSha256: sha256(JSON.stringify(state)),
+      stateSha256: sha256(fs.readFileSync(statePath)),
+      transcriptSetSha256: transcriptHash.digest('hex'),
     },
     entrants,
     matches,
@@ -275,6 +283,18 @@ function majorityLockDecision(firstVotes, a, b) {
   return outcomes.size === 1 ? { locked: true, winner: [...outcomes][0] } : { locked: false, winner: null }
 }
 
+function marginEvidence(bundle) {
+  const rows = Object.fromEntries(['narrow', 'clear', 'decisive', 'missing'].map(margin => [margin, { votes: 0, disagreements: 0 }]))
+  for (const match of bundle.matches.filter(match => !match.walkover)) {
+    for (const vote of match.votes.filter(vote => vote.status === 'valid')) {
+      const key = rows[vote.margin] ? vote.margin : 'missing'
+      rows[key].votes++
+      if (vote.winner !== match.officialWinner) rows[key].disagreements++
+    }
+  }
+  return rows
+}
+
 function replayPolicy(bundle, policy) {
   let calls = 0
   let outcomeMismatches = 0
@@ -297,6 +317,7 @@ function replayPolicy(bundle, policy) {
     } else if (policy.kind === 'margin-trigger') {
       const primary = match.votes[(match.ordinal + policy.offset) % match.votes.length]
       calls += primary?.status === 'valid' ? 1 : 0
+      if (!primary || primary.status !== 'valid') incomplete = true
       const escalate = !primary || primary.status !== 'valid' || !primary.margin || primary.margin === 'narrow' || primary.winner === DRAW
       votes = escalate ? match.votes : [primary]
       if (escalate) calls += match.votes.filter(vote => vote !== primary && vote.status === 'valid').length
@@ -350,6 +371,7 @@ function replayBundle(bundle) {
       schema: SCHEMA,
       policyVersion: POLICY_VERSION,
       baseline: { standingsMatch, qualifiersMatch, calls: baseline.calls },
+      marginEvidence: marginEvidence(bundle),
       counterfactual: { supported: false, reason: 'non-default panel shape, sections mode, or custom weights require the full panel' },
       policies: [],
     }
@@ -363,6 +385,7 @@ function replayBundle(bundle) {
     schema: SCHEMA,
     policyVersion: POLICY_VERSION,
     baseline: { standingsMatch, qualifiersMatch, calls: baseline.calls },
+    marginEvidence: marginEvidence(bundle),
     counterfactual: { supported: true },
     policies,
   }

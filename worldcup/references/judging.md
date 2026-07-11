@@ -294,7 +294,7 @@ until the rating confirms it.
 | Stage             | Panel                                                  | Votes |
 |-------------------|--------------------------------------------------------|-------|
 | Seeding pre-pass  | pairwise comparisons, sampled (Swiss-like), then a rating | ~k·N |
-| Group round-robin | 1 rotated juror per match (round-robin averages noise) | 1     |
+| Group round-robin | 1 fixed, domain-chosen juror (lean tier only; not panel-equivalent) | 1 |
 | R32 / R16         | fidelity + taste + anti-gaming                         | 3     |
 | Quarter-final     | + argument + cold-reader                               | 5     |
 | Semi-final        | the 5 lenses, run mirrored (A/B swapped), +cross-model | 5-6   |
@@ -302,6 +302,9 @@ until the rating confirms it.
 
 This table is the maximal doctrine; the shipped template defaults to substance/fit/craft
 through R16 (groups included) and +integrity from the QF (see `panelFor` in `workflow-template.js`).
+The one-juror row names the explicit lean tier, not the shipped default. `panelFor` receives
+only the stakes name today, so an override selects one fixed lens for all group matches; it
+cannot rotate a seat by match without a new runtime seam.
 
 For the **section / recombination route** (assembled candidates), a **coherence** juror is
 seated in *every* panel above (+1 vote per match): an assembly is stapled from independently
@@ -476,9 +479,14 @@ lens names as the example. The shipped template default sits between them (3-len
 through R16, 4 from the QF, 3 screeners; see SKILL.md's Cost section for the counted
 ballparks and the two knobs that reach MVP).
 
-- **MVP**: preflight + a single fatal-flaw screener + 1-juror groups + best-of-3 knockout
-  (fidelity/taste/anti-gaming) + Elo. Fast, cheap, still has the fabrication gate; field the
-  original as one of the N if you want it judged.
+- **MVP**: preflight + a single fatal-flaw screener + one fixed, domain-chosen group juror
+  + best-of-3 knockout (fidelity/taste/anti-gaming) + Elo. Fast and cheap, but explicitly a
+  different product tier: `SCREENERS=1` loses the fabrication gate's majority protection,
+  and one group lens is not equivalent to the default panel. In dated Run 1/Run 2 replay,
+  historical margin-trigger rotations changed 1-6 of 16 advancement positions; a fixed lens
+  has no equivalence guarantee and may shift as many or more. If advancement changes, the
+  counterfactual champion, Elo ranking, and trust verdict are unknowable without playing that
+  downstream bracket. Field the original as one of the N if you want it judged.
 - **Maximal**: full source packet + 3-judge fabrication gate + calibrated, reweighted
   jurors + 5-lens panels scaling to mirrored best-of-7 + cross-model jurors in SF/final +
   Bradley-Terry with bootstrap + full trust report with offered runoff + the fielded original
