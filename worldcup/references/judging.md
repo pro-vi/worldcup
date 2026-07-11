@@ -406,6 +406,17 @@ preferred; bins are only for cheap seeding.
   seed, prior jurors' picks, or that an entry is the original (fielded, it is blind like
   every other entry — no exception). Ask "which should the author publish," never "which
   better satisfies the user."
+- **Repository blinding**: inline evidence is the judge's whole world. A juror
+  that reads the working tree can recover hidden provenance—for example, reading
+  `README.md` while the field contains that README block identifies the fielded
+  original—and can import facts that other jurors never saw. On Claude Code,
+  install `references/agents/worldcup-judge.md`, start a new session, and set
+  `EVALUATOR.agentOptions.agentType = 'worldcup-judge'`. The custom type has no
+  ordinary tools; `StructuredOutput` is supplied independently by the Workflow
+  schema. The template sentinel tests type availability plus schema compliance
+  before generation. Do not apply this restriction to candidate generation or
+  the phase-0 fetch-agent pattern: those are evidence-producing roles, not blind
+  consumers of an already-complete inline record.
 - **Self-consistency**: track per-juror calibration accuracy, position bias, tie-overuse,
   length bias; downweight unstable jurors. (Maximal only.)
 

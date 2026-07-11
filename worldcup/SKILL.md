@@ -170,6 +170,19 @@ context; pick sane defaults for the rest and state them.
    the effects analysis, the trust report, and the HTML report (mirror bracket + coordinate
    view). To field the current original as a contestant, set `INCLUDE_BASE = true` (generate
    mode) or include it among your `given` items. You are filling holes, not writing orchestration.
+   **Recommended on Claude Code: make judges hermetic.** Copy
+   `references/agents/worldcup-judge.md` to `.claude/agents/worldcup-judge.md`
+   in the project (or `~/.claude/agents/worldcup-judge.md`), start a **new
+   session** so Claude Code discovers it, then set
+   `EVALUATOR.agentOptions.agentType = 'worldcup-judge'`. This applies only to
+   screeners, seeders, slot judges, group/knockout jurors, and tiebreakers;
+   generation and phase-0 fetch/research agents keep their tools. The template's
+   validator rejects any substituted type name, and the pre-generation sentinel
+   fails closed if the configured type is missing or cannot return the required
+   schema. The paired probe separately verifies that this host version does not
+   silently fall back when a named type is absent. For a new host/version,
+   run `references/workflow-judge-agent-probe.js` first and inspect the run with
+   `scripts/run-cost-report.js`; custom-agent discovery happens at session start.
 4. **Run it** with the Workflow tool. It runs in the background and notifies on
    completion. Watchable via "/workflows" (Tier-0 — free, no setup).
 
@@ -289,6 +302,13 @@ Counted from the shipped template defaults (SCREENERS=3; 3-lens panels through R
   plus ~26 cheap low-effort beacon agents for the Tier-1 live view — on by default; set
   `LIVE_BEACONS = false` in your copied template for a Tier-0-only run. (`INCLUDE_BASE`
   adds no calls — the base replaces a generated cell rather than adding one.)
+- **Hermetic-judge opt-in**: adds one pre-generation sentinel call. In the
+  recorded Claude Code 2.1.207 / Fable 5 paired probe, all 8 typed judges used
+  the exact `worldcup-judge` type, made zero ordinary tool calls, and completed
+  their schemas in one request; typed logical input was 61.8% lower than the
+  byte-matched control, and 5x-output input-equivalent cost was 31.0% lower.
+  Treat that as a dated capability record, not a universal price promise: rerun
+  the probe when the host, model, or agent definition changes.
 - **Trimmed MVP**: two exact knobs — set `SCREENERS = 1`, and override `panelFor('GROUP')`
   to one fixed, domain-chosen juror for the group stage. Same arithmetic lands at
   ballpark **210-240 agent calls**. This deliberately gives up both majorities:

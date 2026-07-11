@@ -8,6 +8,7 @@ const path = require('node:path')
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const PROBE = path.join(__dirname, '..', 'worldcup', 'references', 'workflow-judge-agent-probe.js')
 const RECORD = path.join(__dirname, 'fixtures', 'judge-probe', '2026-07-11-fable-5.json')
+const DOGFOOD = path.join(__dirname, 'fixtures', 'judge-probe', '2026-07-11-run2-field-dogfood.json')
 
 test('judge-agent probe pairs byte-identical realistic prompts across typed and control arms', async () => {
   const raw = fs.readFileSync(PROBE, 'utf8')
@@ -59,4 +60,19 @@ test('recorded host probe satisfies the graduation contract', () => {
     capability: 'PASS', schema: 'PASS', cost: 'PASS',
     notes: record.verdict.notes,
   })
+})
+
+test('dogfood record separates execution evidence from rate-limited quality evidence', () => {
+  const record = JSON.parse(fs.readFileSync(DOGFOOD, 'utf8'))
+  assert.equal(record.schemaVersion, 1)
+  assert.equal(record.observed.status, 'completed')
+  assert.deepEqual(record.observed.observedAgentTypes, { 'worldcup-judge': record.observed.invocations })
+  assert.equal(record.observed.ordinaryToolCalls, 0)
+  assert.ok(record.observed.structuredOutputCalls < record.observed.invocations, 'fixture must retain the session-limit caveat')
+  assert.ok(record.observed.requests < record.run2JudgeBaseline.requests)
+  assert.ok(record.observed.logicalInput < record.run2JudgeBaseline.logicalInput)
+  assert.ok(record.observed.inputEquivalentAt5xOutput < record.run2JudgeBaseline.inputEquivalentAt5xOutput)
+  assert.equal(record.verdict.capability, 'PASS')
+  assert.equal(record.verdict.cost, 'PASS_WITH_CAVEAT')
+  assert.equal(record.verdict.quality, 'INCONCLUSIVE')
 })

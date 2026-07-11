@@ -173,6 +173,25 @@ Claude Code v2.1.154 or later on a paid plan — enable it with `/effort
 ultracode`, or just ask for a workflow in any prompt. The skill fills that
 script in from `worldcup/references/workflow-template.js`.
 
+### Optional hermetic judges
+
+Claude Code operators can prevent tournament judges from reading the repository,
+running shell commands, or using the web. Copy
+`worldcup/references/agents/worldcup-judge.md` to either
+`.claude/agents/worldcup-judge.md` in the project or
+`~/.claude/agents/worldcup-judge.md`, then **start a new Claude session** so the
+agent registry reloads. In the copied Workflow template set:
+
+```js
+EVALUATOR.agentOptions = { ...EVALUATOR.agentOptions, agentType: 'worldcup-judge' }
+```
+
+This is judge-only: generation and any phase-0 fetch/research agent keep their
+normal tools. The template runs a schema-bound sentinel before generation; a
+missing definition, stale session, or schema-incompatible agent fails the run
+before it spends calls generating the field. The default remains `{}` for
+portable orchestrators that do not implement Claude Code custom agent types.
+
 Honest cost note: a real 32-team run is hundreds of judge and generation agent
 calls — the skill states the ballpark and the tier before launching (see the
 Cost section of `worldcup/SKILL.md`).
@@ -230,6 +249,8 @@ for the runs and [`canary/README.md`](canary/README.md) for the rules.
   - `references/workflow-template.js` - the ultracode Workflow template the skill
     copies and fills; it encodes seeding, group->knockout, judging, Elo,
     `INCLUDE_BASE` (field the original as a contestant), and the final HTML report.
+  - `references/agents/worldcup-judge.md` and `workflow-judge-agent-probe.js` -
+    optional Claude Code judge-hermeticity definition and its paired host probe.
   - `references/live-view.js` and `live-view.md` - the live view and its event
     contract; also home of the `--demo` mode.
   - `references/profiles/` - optional domain/voice taste you plug into the
