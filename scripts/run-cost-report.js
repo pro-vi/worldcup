@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 'use strict'
 
-const fs = require('node:fs')
 const path = require('node:path')
+const {
+  discoverStatePath,
+  loadWorkflowArtifacts,
+  readTranscript,
+} = require('./workflow-transcript-reader.js')
 
 const ROLE_ORDER = [
   'gen',
@@ -36,34 +40,6 @@ function roleForLabel(label) {
   return 'other'
 }
 
-// Tolerant by design: a run killed mid-write (or read while still streaming) leaves a truncated
-// trailing line. A post-mortem cost tool must salvage the valid records and WARN, never abort —
-// the crashed run is exactly the one whose spend needs accounting.
-function parseJsonLines(file) {
-  const text = fs.readFileSync(file, 'utf8')
-  const rows = []
-  const badLines = []
-  for (const [index, line] of text.split('\n').entries()) {
-    if (!line.trim()) continue
-    try {
-      // Only object rows are records; a parseable non-object (a bare `null`, number, string —
-      // a writer bug, not truncation) would crash `row.type` reads downstream and void the file.
-      const value = JSON.parse(line)
-      if (value && typeof value === 'object') rows.push(value)
-      else badLines.push(index + 1)
-    } catch {
-      badLines.push(index + 1)
-    }
-  }
-  return { rows, badLines }
-}
-
-function discoverStatePath(runDir) {
-  const runId = path.basename(runDir)
-  const sessionDir = path.resolve(runDir, '..', '..', '..')
-  return path.join(sessionDir, 'workflows', `${runId}.json`)
-}
-
 function addUsage(target, source) {
   target.requests += 1
   target.input += source.input_tokens || 0
@@ -73,9 +49,7 @@ function addUsage(target, source) {
 }
 
 function analyzeAgentFile(file, progressByAgent) {
-  const { rows, badLines } = parseJsonLines(file)
-  const agentId = rows.find(row => row.agentId)?.agentId
-  if (!agentId) throw new Error(`${file}: no agentId found`)
+  const { rows, badLines, agentId } = readTranscript(file)
   const progress = progressByAgent.get(agentId)
 
   // Claude transcripts can emit several streaming records for one API request. The last
@@ -112,47 +86,9 @@ function mode(values) {
 }
 
 function analyzeRun(runDir, { statePath = discoverStatePath(runDir) } = {}) {
-  if (!fs.statSync(runDir, { throwIfNoEntry: false })?.isDirectory()) {
-    throw new Error(`transcript directory not found: ${runDir}`)
-  }
-  if (!fs.existsSync(statePath)) {
-    throw new Error(`workflow snapshot not found: ${statePath} (pass --state <file> if it moved)`)
-  }
-
-  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'))
-  const progressRows = (state.workflowProgress || []).filter(row => row.agentId)
-  const progressByAgent = new Map(progressRows.map(row => [row.agentId, row]))
-
-  // Retries: workflowProgress keeps only the LATEST attempt's agentId per logical agent, but the
-  // journal writes one 'started' row PER attempt sharing the logical key, and every attempt's
-  // transcript stays on disk. Alias each earlier attempt's agentId to the logical agent's
-  // progress row, or its (possibly dominant) usage lands in 'other' and escapes cache analysis.
-  const journalPath = path.join(runDir, 'journal.jsonl')
-  const journalParsed = fs.existsSync(journalPath) ? parseJsonLines(journalPath) : { rows: [], badLines: [] }
+  const artifacts = loadWorkflowArtifacts(runDir, { statePath })
+  const { state, progressRows, progressByAgent, journalParsed, agentFiles } = artifacts
   const journal = journalParsed.rows
-  const attemptsByKey = new Map()
-  for (const row of journal) {
-    if (row.type !== 'started' || !row.key || !row.agentId) continue
-    if (!attemptsByKey.has(row.key)) attemptsByKey.set(row.key, [])
-    attemptsByKey.get(row.key).push(row.agentId)
-  }
-  // Anchor each group against a SNAPSHOT of the original progress map, so an alias created for
-  // one group can never anchor another (order-independent join). If a corrupted journal ever put
-  // two in-progress agents in one key group, each keeps its own row (the has() guard) and any
-  // orphan member takes the first anchor in journal order — a defensible tiebreak for role-level
-  // tables, since same-key siblings share a role by construction.
-  const originalProgress = new Set(progressByAgent.keys())
-  for (const attemptIds of attemptsByKey.values()) {
-    const mapped = attemptIds.find(id => originalProgress.has(id))
-    if (!mapped) continue
-    const row = progressByAgent.get(mapped)
-    for (const id of attemptIds) if (!progressByAgent.has(id)) progressByAgent.set(id, row)
-  }
-
-  const agentFiles = fs.readdirSync(runDir)
-    .filter(name => /^agent-.*\.jsonl$/.test(name))
-    .sort()
-    .map(name => path.join(runDir, name))
 
   // A truncated/empty transcript (a partially crashed run — exactly when a cost post-mortem is
   // wanted) must not abort the whole report; skip it LOUDLY via the WARNING path below. A file
