@@ -92,6 +92,15 @@ context; pick sane defaults for the rest and state them.
    others. **The engine ships taste-neutral** — get the rubric from the user in their words
    (or from a voice skill they hand in); see "references/profiles/" for the profile shape. Vague
    criteria produce a tasteless judge, which is the whole failure mode.
+   **If the artifact lives in a container, write the container's intent as checkable
+   properties, not a label.** Judges are blinded to everything but the criteria block, so a
+   fit juror can only enforce intent that is written down: what surrounds the artifact, the
+   job it does for its reader, and what it must NOT duplicate (an above-the-fold README pitch
+   hands off to the sections below it; it does not absorb them). Naming the container
+   ("the opening pitch block") is not enough — a freed dimension optimizes into whatever
+   intent was left unstated. Observed in a real run: with the length pin removed and the
+   container merely named, a ~450-word mini-README honestly out-earned the field in an
+   "opening pitch block" contest, duplicating the very sections it was meant to hand off to.
 4. **Source packet — two separable questions** (the single most important input for any
    truth-bearing field):
    - **Is there a truth to protect?** If yes, build a **fact ledger** of what is actually

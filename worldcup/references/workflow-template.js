@@ -67,6 +67,10 @@ const DESIGN = {
 // The taste spec + hard disqualifiers, pasted into every juror prompt. Distill the invoking
 // user's voice skill / stated criteria here (see references/profiles/ for the profile shape). Be specific;
 // vagueness = no taste. Ship NOTHING domain-specific by default — the engine is taste-neutral.
+// CONTAINER INTENT: if the artifact lives inside something larger (a README block, a tweet, one
+// section of a doc), state that container's job as CHECKABLE properties — what surrounds it, who
+// scans it, what it must NOT duplicate. Judges see only this block; naming the container is not
+// enough, and a freed dimension (e.g. length) optimizes into whatever intent you leave unstated.
 //
 // CRITIQUE / RESPONSE RUNS: if the field critiques, responds to, or makes factual claims
 // about a NAMED EXTERNAL WORK, do not trust the draft's summary of that work. FETCH it
@@ -405,7 +409,7 @@ Do NOT reward length, density, or more concrete detail for its own sake. A short
 
 ${embedUntrusted(X.markdown, 'ENTRY X')}
 ${embedUntrusted(Y.markdown, 'ENTRY Y')}
-Return JSON { winner:${canDraw ? '"X"|"Y"|"DRAW"' : '"X"|"Y"'}, margin, reason (two sentences, the deciding factor through your lens) }.`
+Return JSON { winner:${canDraw ? '"X"|"Y"|"DRAW"' : '"X"|"Y"'}, margin, reason (ONE decisive sentence — the single deciding factor through your lens; no summary of both entries) }.`
 
 const seedPrompt = (X, Y, ev = EVALUATOR) => `Quick calibrated comparison for seeding. Which entry is stronger overall against the criteria. Choose; no ties.
 
