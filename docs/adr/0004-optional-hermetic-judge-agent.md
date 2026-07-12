@@ -111,5 +111,8 @@ Negative:
 - Agent definition and probe:
   `worldcup/references/agents/worldcup-judge.md` and
   `worldcup/references/workflow-judge-agent-probe.js`.
-- Recorded probe: `tests/fixtures/judge-probe/2026-07-11-fable-5.json`.
+- Recorded probe:
+  `tests/fixtures/judge-probe/2026-07-12-claude-code-2.1.207-fable-5.json`.
+- Interrupted dogfood record:
+  `tests/fixtures/judge-probe/2026-07-11-run2-field-dogfood.json`.
 - Doctrine: `worldcup/SKILL.md`, `worldcup/references/judging.md` §10.

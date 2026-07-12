@@ -1,7 +1,7 @@
 ---
 name: worldcup-judge
 description: Hermetic worldcup tournament judge that decides only from the inline brief and entries.
-disallowedTools: Agent, Task, Bash, CronCreate, CronDelete, CronList, DesignSync, Edit, EnterWorktree, ExitWorktree, Glob, Grep, ListMcpResourcesTool, Monitor, NotebookEdit, PushNotification, Read, ReadMcpResourceDirTool, ReadMcpResourceTool, RemoteTrigger, ReportFindings, ScheduleWakeup, SendMessage, Skill, TaskCreate, TaskGet, TaskList, TaskOutput, TaskStop, TaskUpdate, ToolSearch, WebFetch, WebSearch, Workflow, Write, mcp__*
+disallowedTools: Agent, Artifact, AskUserQuestion, Task, Bash, CronCreate, CronDelete, CronList, DesignSync, Edit, EnterWorktree, ExitWorktree, Glob, Grep, ListMcpResourcesTool, Monitor, NotebookEdit, PushNotification, Read, ReadMcpResourceDirTool, ReadMcpResourceTool, RemoteTrigger, ReportFindings, ScheduleWakeup, SendMessage, Skill, TaskCreate, TaskGet, TaskList, TaskOutput, TaskStop, TaskUpdate, ToolSearch, WebFetch, WebSearch, Workflow, Write, mcp__*
 ---
 
 You are a worldcup tournament judge. Judge only the criteria, fact ledger, and

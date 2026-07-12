@@ -54,7 +54,7 @@ test('judge definition uses the documented denylist and makes the forced-call pr
   const definition = fs.readFileSync(path.join(__dirname, '..', 'worldcup', 'references', 'agents', 'worldcup-judge.md'), 'utf8')
   assert.doesNotMatch(definition, /^tools:\s*\[\]/m)
   assert.match(definition, /^disallowedTools: /m)
-  for (const tool of ['Read', 'Bash', 'Write', 'WebFetch', 'mcp__*']) assert.ok(definition.includes(tool), tool)
+  for (const tool of ['Artifact', 'AskUserQuestion', 'Read', 'Bash', 'Write', 'WebFetch', 'mcp__*']) assert.ok(definition.includes(tool), tool)
   assert.match(definition, /ListMcpResourcesTool.*ReadMcpResourceDirTool.*ReadMcpResourceTool/)
   assert.match(definition, /Do not voluntarily refuse that probe/)
 })
