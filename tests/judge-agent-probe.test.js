@@ -7,7 +7,7 @@ const path = require('node:path')
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const PROBE = path.join(__dirname, '..', 'worldcup', 'references', 'workflow-judge-agent-probe.js')
-const RECORD = path.join(__dirname, 'fixtures', 'judge-probe', '2026-07-11-fable-5.json')
+const RECORD = path.join(__dirname, 'fixtures', 'judge-probe', '2026-07-12-claude-code-2.1.207-fable-5.json')
 const DOGFOOD = path.join(__dirname, 'fixtures', 'judge-probe', '2026-07-11-run2-field-dogfood.json')
 
 test('judge-agent probe pairs byte-identical realistic prompts across typed and control arms', async () => {
@@ -25,13 +25,13 @@ test('judge-agent probe pairs byte-identical realistic prompts across typed and 
   }
   const result = await run(agent, thunks => Promise.all(thunks.map(thunk => thunk())), () => {})
 
-  assert.equal(result.calls, 16)
-  assert.equal(result.completed, 16)
+  assert.equal(result.calls, 18)
+  assert.equal(result.completed, 18)
   assert.equal(result.missingTypeHardFailed, true)
-  assert.equal(calls.length, 17)
+  assert.equal(calls.length, 19)
   for (const chars of Object.values(result.promptChars)) assert.ok(chars >= 10000 && chars <= 15000, `probe prompt length ${chars} is outside 10–15k chars`)
 
-  for (let i = 1; i < calls.length; i += 2) {
+  for (let i = 1; i < 17; i += 2) {
     const control = calls[i]
     const typed = calls[i + 1]
     assert.equal(control.prompt, typed.prompt, 'paired prompt bytes drifted between arms')
@@ -41,11 +41,27 @@ test('judge-agent probe pairs byte-identical realistic prompts across typed and 
     assert.match(control.prompt, /Do not inspect README\.md/)
     assert.match(control.prompt, /private benchmark files prove/)
   }
+  const denialControl = calls[17]
+  const denialTyped = calls[18]
+  assert.equal(denialControl.prompt, denialTyped.prompt)
+  assert.match(denialControl.prompt, /^MECHANICAL_DENIAL_PROBE/)
+  assert.equal(denialControl.opts.agentType, undefined)
+  assert.equal(denialTyped.opts.agentType, 'worldcup-judge')
+  assert.deepEqual(denialControl.opts.schema, denialTyped.opts.schema)
+})
+
+test('judge definition uses the documented denylist and makes the forced-call probe override prompt refusal', () => {
+  const definition = fs.readFileSync(path.join(__dirname, '..', 'worldcup', 'references', 'agents', 'worldcup-judge.md'), 'utf8')
+  assert.doesNotMatch(definition, /^tools:\s*\[\]/m)
+  assert.match(definition, /^disallowedTools: /m)
+  for (const tool of ['Read', 'Bash', 'Write', 'WebFetch', 'mcp__*']) assert.ok(definition.includes(tool), tool)
+  assert.match(definition, /ListMcpResourcesTool.*ReadMcpResourceDirTool.*ReadMcpResourceTool/)
+  assert.match(definition, /Do not voluntarily refuse that probe/)
 })
 
 test('recorded host probe satisfies the graduation contract', () => {
   const record = JSON.parse(fs.readFileSync(RECORD, 'utf8'))
-  assert.equal(record.schemaVersion, 1)
+  assert.equal(record.schemaVersion, 2)
   assert.equal(record.probe.missingTypeHardFailed, true)
   for (const chars of Object.values(record.probe.promptChars)) assert.ok(chars >= 10000 && chars <= 15000)
   assert.equal(record.probe.promptSha256.length, 4)
@@ -57,9 +73,13 @@ test('recorded host probe satisfies the graduation contract', () => {
   assert.ok(record.typed.requestsMedian <= record.control.requestsMedian * 1.2)
   assert.ok(record.typed.inputEquivalentAt5xOutput < record.control.inputEquivalentAt5xOutput)
   assert.deepEqual(record.verdict, {
-    capability: 'PASS', schema: 'PASS', cost: 'PASS',
+    capability: 'PASS', schema: 'PASS', denial: 'PASS', cost: 'INCONCLUSIVE',
     notes: record.verdict.notes,
   })
+  assert.ok(record.denial.control.ordinaryToolCalls >= 1)
+  assert.equal(record.denial.typed.ordinaryToolCalls, 0)
+  assert.equal(record.denial.control.observation, 'tool-succeeded')
+  assert.equal(record.denial.typed.observation, 'tool-unavailable')
 })
 
 test('dogfood record separates execution evidence from rate-limited quality evidence', () => {
@@ -72,7 +92,7 @@ test('dogfood record separates execution evidence from rate-limited quality evid
   assert.ok(record.observed.requests < record.run2JudgeBaseline.requests)
   assert.ok(record.observed.logicalInput < record.run2JudgeBaseline.logicalInput)
   assert.ok(record.observed.inputEquivalentAt5xOutput < record.run2JudgeBaseline.inputEquivalentAt5xOutput)
-  assert.equal(record.verdict.capability, 'PASS')
-  assert.equal(record.verdict.cost, 'PASS_WITH_CAVEAT')
+  assert.equal(record.verdict.capability, 'INCONCLUSIVE')
+  assert.equal(record.verdict.cost, 'INCONCLUSIVE')
   assert.equal(record.verdict.quality, 'INCONCLUSIVE')
 })

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { analyzeRun, formatReport, parseArgs, roleForLabel } = require('../scripts/run-cost-report.js')
+const { analyzeRun, formatReport, parseArgs, roleForLabel, summarizeDenialProbe } = require('../scripts/run-cost-report.js')
 
 function writeJsonLines(file, rows) {
   fs.writeFileSync(file, `${rows.map(row => JSON.stringify(row)).join('\n')}\n`)
@@ -23,6 +23,8 @@ test('roleForLabel classifies every workflow cost role', () => {
   assert.equal(roleForLabel('wc-live:match'), 'beacon')
   assert.equal(roleForLabel('probe:control:group:1'), 'judge-probe-control')
   assert.equal(roleForLabel('probe:typed:group:1'), 'judge-probe-typed')
+  assert.equal(roleForLabel('probe:denial-control:read:1'), 'judge-probe-denial-control')
+  assert.equal(roleForLabel('probe:denial-typed:read:1'), 'judge-probe-denial-typed')
   assert.equal(roleForLabel('judge-sentinel'), 'judge-sentinel')
   // Sections/axes-mode labels: generation-side cost lands in gen; the slot judge is seed-like.
   assert.equal(roleForLabel('slot:hook:v2'), 'gen')
@@ -30,6 +32,17 @@ test('roleForLabel classifies every workflow cost role', () => {
   assert.equal(roleForLabel('predicted-optimum'), 'gen')
   assert.equal(roleForLabel('slotjudge:hook:a>b'), 'seed')
   assert.equal(roleForLabel('mystery-agent'), 'other')
+})
+
+test('mechanical denial summary distinguishes a successful control tool call from typed absence', () => {
+  const agents = [
+    { role: 'judge-probe-denial-control', firstUsage: {}, ordinaryToolCalls: 1, structuredOutputCalls: 1, agentType: 'workflow-subagent', structuredObservations: ['tool-succeeded'] },
+    { role: 'judge-probe-denial-typed', firstUsage: {}, ordinaryToolCalls: 0, structuredOutputCalls: 1, agentType: 'worldcup-judge', structuredObservations: ['tool-unavailable'] },
+  ]
+  assert.deepEqual(summarizeDenialProbe(agents), {
+    control: { invocations: 1, completed: 1, ordinaryToolCalls: 1, structuredOutputCalls: 1, agentTypes: { 'workflow-subagent': 1 }, observations: { 'tool-succeeded': 1 } },
+    typed: { invocations: 1, completed: 1, ordinaryToolCalls: 0, structuredOutputCalls: 1, agentTypes: { 'worldcup-judge': 1 }, observations: { 'tool-unavailable': 1 } },
+  })
 })
 
 test('analyzeRun reports observed probe agent types and excludes StructuredOutput from ordinary tools', t => {

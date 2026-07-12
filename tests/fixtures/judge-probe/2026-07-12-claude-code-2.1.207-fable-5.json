@@ -1,11 +1,11 @@
 {
-  "schemaVersion": 1,
-  "recordedAt": "2026-07-11",
+  "schemaVersion": 2,
+  "recordedAt": "2026-07-12",
   "host": {
     "claudeCode": "2.1.207",
     "model": "claude-fable-5",
-    "sessionId": "8f95997f-b422-4ad4-9fc6-ce2b7fcc6cf4",
-    "runId": "wf_251a43be-1c6"
+    "sessionId": "93eb54fb-31d1-4bb2-b549-8644b2991a40",
+    "runId": "wf_ea7c42d6-26a"
   },
   "probe": {
     "agentType": "worldcup-judge",
@@ -32,9 +32,9 @@
     "structuredOutputCalls": 8,
     "requestsMedian": 1,
     "firstUncachedInputMedian": 2,
-    "logicalInput": 191628,
-    "output": 26121,
-    "inputEquivalentAt5xOutput": 322233
+    "logicalInput": 215511,
+    "output": 7700,
+    "inputEquivalentAt5xOutput": 254011
   },
   "typed": {
     "invocations": 8,
@@ -44,14 +44,33 @@
     "structuredOutputCalls": 8,
     "requestsMedian": 1,
     "firstUncachedInputMedian": 2,
-    "logicalInput": 73212,
-    "output": 29801,
-    "inputEquivalentAt5xOutput": 222217
+    "logicalInput": 73876,
+    "output": 3938,
+    "inputEquivalentAt5xOutput": 93566
+  },
+  "denial": {
+    "control": {
+      "invocations": 1,
+      "completed": 1,
+      "observedAgentTypes": { "workflow-subagent": 1 },
+      "ordinaryToolCalls": 1,
+      "structuredOutputCalls": 1,
+      "observation": "tool-succeeded"
+    },
+    "typed": {
+      "invocations": 1,
+      "completed": 1,
+      "observedAgentTypes": { "worldcup-judge": 1 },
+      "ordinaryToolCalls": 0,
+      "structuredOutputCalls": 1,
+      "observation": "tool-unavailable"
+    }
   },
   "verdict": {
     "capability": "PASS",
     "schema": "PASS",
-    "cost": "PASS",
-    "notes": "Typed logical input fell 61.8%; 5x-output input-equivalent cost fell 31.0%. The 9,222-token uncached tail observed in prior default judges did not survive either probe arm on this host build, so this record does not attribute that tail to agentType alone."
+    "denial": "PASS",
+    "cost": "INCONCLUSIVE",
+    "notes": "The forced control called Read successfully; the typed arm had only StructuredOutput and could not call any ordinary tool. Both paired judging arms completed their schemas. Input totals differ sharply, but cache attribution between interleaved arms makes that delta unsuitable as an agent-type savings claim."
   }
 }

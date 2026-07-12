@@ -34,9 +34,9 @@
     "inputEquivalentAt5xOutput": 25313317
   },
   "verdict": {
-    "capability": "PASS",
-    "cost": "PASS_WITH_CAVEAT",
+    "capability": "INCONCLUSIVE",
+    "cost": "INCONCLUSIVE",
     "quality": "INCONCLUSIVE",
-    "notes": "Every persisted sidecar reported worldcup-judge and no ordinary tools ran. Judge requests fell 15.6%, logical input fell 84.9%, and 5x-output input-equivalent cost fell 25.7%. The cumulative Claude session limit was reached late in the run; 157 invocations did not produce StructuredOutput and 37 zero-usage tiebreaks were scheduled, so the champion/trust result is not quality evidence."
+    "notes": "Every persisted sidecar reported worldcup-judge and no ordinary tools ran. Requests and token totals were lower than the Run-2 baseline, but the arms were not controlled for cache attribution and the cumulative Claude session limit interrupted 157 invocations and scheduled 37 zero-usage tiebreaks. Cost and quality are therefore both inconclusive; the champion/trust result is not evidence."
   }
 }

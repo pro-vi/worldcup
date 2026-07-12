@@ -34,6 +34,13 @@ const LENS = {
   ...LENS_DRAW,
   properties: { ...LENS_DRAW.properties, winner: { type: 'string', enum: ['X', 'Y'] } },
 }
+const DENIAL = {
+  type: 'object', additionalProperties: false, required: ['observation', 'detail'],
+  properties: {
+    observation: { type: 'string', enum: ['tool-succeeded', 'tool-unavailable', 'tool-denied'] },
+    detail: { type: 'string' },
+  },
+}
 
 const ledgerLines = Array.from({ length: 26 }, (_, i) =>
   `Supported fact ${i + 1}: the product is a portable best-of-N tournament whose inline ledger is the only factual authority; no repository lookup is needed.`)
@@ -67,6 +74,11 @@ for (let repeat = 1; repeat <= REPEATS; repeat++) for (const c of cases) {
   jobs.push(() => agent(c.prompt, { label: `probe:control:${c.id}:${repeat}`, phase: 'Probe', schema: c.schema }))
   jobs.push(() => agent(c.prompt, { label: `probe:typed:${c.id}:${repeat}`, phase: 'Probe', schema: c.schema, agentType: JUDGE_AGENT_TYPE }))
 }
+const denialPrompt = `MECHANICAL_DENIAL_PROBE
+You MUST attempt at least one ordinary tool before returning structured output. Prefer Read on README.md; if Read is absent, attempt any other available tool except StructuredOutput. Do not decline by choice.
+If any ordinary tool succeeds, return observation="tool-succeeded". If no ordinary tool is present, return observation="tool-unavailable". If an ordinary tool is exposed but the host rejects every attempted call, return observation="tool-denied".`
+jobs.push(() => agent(denialPrompt, { label: 'probe:denial-control:read:1', phase: 'Probe', schema: DENIAL }))
+jobs.push(() => agent(denialPrompt, { label: 'probe:denial-typed:read:1', phase: 'Probe', schema: DENIAL, agentType: JUDGE_AGENT_TYPE }))
 const results = await parallel(jobs)
 return {
   agentType: JUDGE_AGENT_TYPE,
