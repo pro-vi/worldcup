@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 2,
+  "recordedAt": "2026-07-12",
+  "host": {
+    "claudeCode": "2.1.207",
+    "model": "claude-fable-5",
+    "sessionId": "93eb54fb-31d1-4bb2-b549-8644b2991a40",
+    "runId": "wf_ea7c42d6-26a"
+  },
+  "probe": {
+    "agentType": "worldcup-judge",
+    "promptChars": {
+      "flaw": 13414,
+      "seed": 13426,
+      "group": 13456,
+      "knockout": 13428
+    },
+    "pairedRepeats": 2,
+    "promptSha256": [
+      "4b6ef5cfe958783a0f35fdbea79148b3731bca88575642b8032af0a2aed96099",
+      "a498ee8f16290609e582992a7311c8a3a97f388016083b5576587fffc02e1178",
+      "af99513a805ab86aeaabd57129e6b8ea8ec09174901dc87cd1949eb391d2841a",
+      "ec4d63e41a265ee6892559225791d2b609c6004c9b2493df25b409ec79c2d344"
+    ],
+    "missingTypeHardFailed": true
+  },
+  "control": {
+    "invocations": 8,
+    "completed": 8,
+    "observedAgentTypes": { "workflow-subagent": 8 },
+    "ordinaryToolCalls": 0,
+    "structuredOutputCalls": 8,
+    "requestsMedian": 1,
+    "firstUncachedInputMedian": 2,
+    "logicalInput": 215511,
+    "output": 7700,
+    "inputEquivalentAt5xOutput": 254011
+  },
+  "typed": {
+    "invocations": 8,
+    "completed": 8,
+    "observedAgentTypes": { "worldcup-judge": 8 },
+    "ordinaryToolCalls": 0,
+    "structuredOutputCalls": 8,
+    "requestsMedian": 1,
+    "firstUncachedInputMedian": 2,
+    "logicalInput": 73876,
+    "output": 3938,
+    "inputEquivalentAt5xOutput": 93566
+  },
+  "denial": {
+    "control": {
+      "invocations": 1,
+      "completed": 1,
+      "observedAgentTypes": { "workflow-subagent": 1 },
+      "ordinaryToolCalls": 1,
+      "structuredOutputCalls": 1,
+      "observation": "tool-succeeded"
+    },
+    "typed": {
+      "invocations": 1,
+      "completed": 1,
+      "observedAgentTypes": { "worldcup-judge": 1 },
+      "ordinaryToolCalls": 0,
+      "structuredOutputCalls": 1,
+      "observation": "tool-unavailable"
+    }
+  },
+  "verdict": {
+    "capability": "PASS",
+    "schema": "PASS",
+    "denial": "PASS",
+    "cost": "INCONCLUSIVE",
+    "notes": "The forced control called Read successfully; the typed arm had only StructuredOutput and could not call any ordinary tool. Both paired judging arms completed their schemas. Input totals differ sharply, but cache attribution between interleaved arms makes that delta unsuitable as an agent-type savings claim."
+  }
+}

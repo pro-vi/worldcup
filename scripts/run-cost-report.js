@@ -2,6 +2,8 @@
 'use strict'
 
 const path = require('node:path')
+const crypto = require('node:crypto')
+const fs = require('node:fs')
 const {
   discoverStatePath,
   loadWorkflowArtifacts,
@@ -15,6 +17,11 @@ const ROLE_ORDER = [
   'group-lens',
   'knockout-lens',
   'tiebreak',
+  'judge-probe-control',
+  'judge-probe-typed',
+  'judge-probe-denial-control',
+  'judge-probe-denial-typed',
+  'judge-sentinel',
   'beacon',
   'other',
 ]
@@ -24,6 +31,11 @@ function usageZero() {
 }
 
 function roleForLabel(label) {
+  if (label.startsWith('probe:denial-control:')) return 'judge-probe-denial-control'
+  if (label.startsWith('probe:denial-typed:')) return 'judge-probe-denial-typed'
+  if (label.startsWith('probe:control:')) return 'judge-probe-control'
+  if (label.startsWith('probe:typed:')) return 'judge-probe-typed'
+  if (label === 'judge-sentinel') return 'judge-sentinel'
   if (label.startsWith('gen:')) return 'gen'
   if (/^flaw\d*:/.test(label)) return 'screen'
   if (label.startsWith('seed:')) return 'seed'
@@ -67,6 +79,18 @@ function analyzeAgentFile(file, progressByAgent) {
   for (const request of requests.values()) addUsage(usage, request)
 
   const firstUsage = requestOrder.length ? requests.get(requestOrder[0]) : null
+  const firstPrompt = rows.find(row => row.type === 'user' && typeof row.message?.content === 'string')?.message.content || ''
+  const toolUses = new Map()
+  const structuredObservations = []
+  for (const row of rows) for (const block of (row.type === 'assistant' && Array.isArray(row.message?.content) ? row.message.content : [])) {
+    if (block?.type === 'tool_use' && block.id) {
+      toolUses.set(block.id, block.name || '')
+      if (block.name === 'StructuredOutput' && typeof block.input?.observation === 'string') structuredObservations.push(block.input.observation)
+    }
+  }
+  const metaPath = file.replace(/\.jsonl$/, '.meta.json')
+  let agentType = ''
+  try { agentType = String(JSON.parse(fs.readFileSync(metaPath, 'utf8')).agentType || '') } catch { /* older/partial runs may have no readable sidecar */ }
   const label = progress?.label || ''
   return {
     agentId,
@@ -75,8 +99,62 @@ function analyzeAgentFile(file, progressByAgent) {
     role: roleForLabel(label),
     usage,
     firstUsage,
+    promptHash: firstPrompt ? crypto.createHash('sha256').update(firstPrompt).digest('hex') : '',
+    agentType,
+    structuredOutputCalls: [...toolUses.values()].filter(name => name === 'StructuredOutput').length,
+    ordinaryToolCalls: [...toolUses.values()].filter(name => name !== 'StructuredOutput').length,
+    structuredObservations,
     badLines: badLines.length,
   }
+}
+
+function median(values) {
+  if (!values.length) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+function summarizeProbe(agents) {
+  const summary = {}
+  for (const [arm, role] of [['control', 'judge-probe-control'], ['typed', 'judge-probe-typed']]) {
+    const selected = agents.filter(agent => agent.role === role)
+    const completed = selected.filter(agent => agent.firstUsage)
+    const typeCounts = {}
+    for (const agent of selected) typeCounts[agent.agentType || '(missing)'] = (typeCounts[agent.agentType || '(missing)'] || 0) + 1
+    summary[arm] = {
+      invocations: selected.length,
+      completed: completed.length,
+      requestless: selected.length - completed.length,
+      agentTypes: typeCounts,
+      ordinaryToolCalls: selected.reduce((n, agent) => n + agent.ordinaryToolCalls, 0),
+      structuredOutputCalls: selected.reduce((n, agent) => n + agent.structuredOutputCalls, 0),
+      requestsMedian: median(completed.map(agent => agent.usage.requests)),
+      logicalInputMedian: median(completed.map(agent => agent.usage.input + agent.usage.cacheWrite + agent.usage.cacheRead)),
+      firstUncachedInputMedian: median(completed.map(agent => agent.firstUsage.input_tokens || 0)),
+      outputMedian: median(completed.map(agent => agent.usage.output)),
+      promptHashes: [...new Set(selected.map(agent => agent.promptHash).filter(Boolean))].sort(),
+      inputEquivalentAt5xOutput: selected.reduce((n, agent) => n + agent.usage.input + agent.usage.cacheWrite + agent.usage.cacheRead + 5 * agent.usage.output, 0),
+    }
+  }
+  return summary.control.invocations || summary.typed.invocations ? summary : null
+}
+
+function summarizeDenialProbe(agents) {
+  const summarize = role => {
+    const selected = agents.filter(agent => agent.role === role)
+    return {
+      invocations: selected.length,
+      completed: selected.filter(agent => agent.firstUsage).length,
+      ordinaryToolCalls: selected.reduce((n, agent) => n + agent.ordinaryToolCalls, 0),
+      structuredOutputCalls: selected.reduce((n, agent) => n + agent.structuredOutputCalls, 0),
+      agentTypes: Object.fromEntries([...new Set(selected.map(agent => agent.agentType || '(missing)'))].sort().map(type => [type, selected.filter(agent => (agent.agentType || '(missing)') === type).length])),
+      observations: Object.fromEntries([...new Set(selected.flatMap(agent => agent.structuredObservations))].sort().map(observation => [observation, selected.filter(agent => agent.structuredObservations.includes(observation)).length])),
+    }
+  }
+  const control = summarize('judge-probe-denial-control')
+  const typed = summarize('judge-probe-denial-typed')
+  return control.invocations || typed.invocations ? { control, typed } : null
 }
 
 function mode(values) {
@@ -152,6 +230,8 @@ function analyzeRun(runDir, { statePath = discoverStatePath(runDir) } = {}) {
       cacheWriteMode: firstWriteMode,
       cacheWriteModeCount: firstWriteModeCount,
     },
+    judgeProbe: summarizeProbe(agents),
+    judgeDenialProbe: summarizeDenialProbe(agents),
   }
 }
 
@@ -209,6 +289,17 @@ function formatReport(report) {
       'Interpretation: a flat read mode across repeated same-lens calls indicates system/tool-prefix caching only; user-prompt prefix reuse should raise cache reads after the first call in a prefix class.',
     )
   }
+  if (report.judgeProbe) {
+    lines.push('', 'Judge agent probe:')
+    for (const arm of ['control', 'typed']) {
+      const p = report.judgeProbe[arm]
+      lines.push(`  ${arm}: ${p.completed}/${p.invocations} completed · median ${p.requestsMedian ?? 'n/a'} requests · median first uncached ${p.firstUncachedInputMedian ?? 'n/a'} tokens · ordinary tools ${p.ordinaryToolCalls} · schema calls ${p.structuredOutputCalls} · agent types ${JSON.stringify(p.agentTypes)}`)
+    }
+  }
+  if (report.judgeDenialProbe) {
+    const { control, typed } = report.judgeDenialProbe
+    lines.push('', `Mechanical denial probe: control ordinary tools ${control.ordinaryToolCalls} ${JSON.stringify(control.observations)}; typed ordinary tools ${typed.ordinaryToolCalls} ${JSON.stringify(typed.observations)}; typed schema calls ${typed.structuredOutputCalls}.`)
+  }
   if (report.unmappedAgents.length) lines.push(`WARNING: ${report.unmappedAgents.length} transcript agent(s) had no workflow label.`)
   if (report.unreadableFiles.length) lines.push(`WARNING: ${report.unreadableFiles.length} transcript file(s) skipped as unreadable: ${report.unreadableFiles.join('; ')}`)
   if (report.salvagedFiles.length) lines.push(`WARNING: ${report.salvagedFiles.length} transcript file(s) had unparseable line(s) (truncated mid-write?); usage counted from their valid records — a truncated final streaming record can leave that request's usage partial: ${report.salvagedFiles.join('; ')}`)
@@ -247,4 +338,4 @@ function main() {
 
 if (require.main === module) main()
 
-module.exports = { analyzeRun, discoverStatePath, formatReport, parseArgs, roleForLabel }
+module.exports = { analyzeRun, discoverStatePath, formatReport, parseArgs, roleForLabel, summarizeDenialProbe, summarizeProbe }

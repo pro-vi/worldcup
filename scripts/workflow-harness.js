@@ -100,13 +100,16 @@ function entryIdentities(prompt) {
 //   schema has `winner`           pairwise seeding juror-> hash('seed', labelA, labelB) picks
 // Anything else throws (and is recorded in `unknown`), so a template change that adds a judge
 // role fails the test loudly instead of silently degrading into null votes.
-function makeFakeAgent({ labels = [], dqLabel = null, unknown = [], artifactFor = null } = {}) {
+function makeFakeAgent({ labels = [], dqLabel = null, unknown = [], artifactFor = null, calls = [], failLabel = null } = {}) {
   const indexOfLabel = new Map(labels.map((l, i) => [l, i + 1]))
   return function agent(prompt, opts = {}) {
     try {
       const text = String(prompt)
       const label = String(opts.label || '')
+      calls.push({ prompt: text, opts })
+      if (label === failLabel) throw new Error(`scripted agent failure for ${label}`)
       const props = (opts.schema && opts.schema.properties) || {}
+      if (label === 'judge-sentinel') return Promise.resolve({ winner: 'X', confidence: 'clear' })
       if (label.startsWith('wc-live:')) {
         // Beacon: the template discards the result; echo the event object it asked us to emit.
         return Promise.resolve(JSON.parse(text.slice(text.indexOf('\n') + 1)))
@@ -167,17 +170,18 @@ async function parallelReverse(thunks) {
 // base: real BASE text to field as one contestant (must carry its own Team: marker, e.g.
 // 'Team: the original' / '// Team: the original'); passing it flips INCLUDE_BASE on so the base
 // occupies the first cell (displacing that flavor). null keeps the template default (no base fielded).
-async function runTournament({ labels, dqLabel = null, parallel = parallelAll, templatePath = TEMPLATE_PATH, artifactFor = null, base = null } = {}) {
+async function runTournament({ labels, dqLabel = null, parallel = parallelAll, templatePath = TEMPLATE_PATH, artifactFor = null, base = null, failLabel = null } = {}) {
   if (!Array.isArray(labels) || !labels.length) throw new Error('runTournament: labels[] is required')
   const run = loadTemplate(templatePath)
   const flavors = labels.map(name => ({ name, brief: `the "${name}" take on the artifact` }))
   const unknown = []
   const logs = []
-  const agent = makeFakeAgent({ labels, dqLabel, unknown, artifactFor })
+  const calls = []
+  const agent = makeFakeAgent({ labels, dqLabel, unknown, artifactFor, calls, failLabel })
   const log = m => { logs.push(String(m)) }
   const phase = () => {}
   const result = await run(agent, parallel, log, phase, undefined, flavors, base)
-  return { result, unknown, logs }
+  return { result, unknown, logs, calls }
 }
 
 module.exports = {

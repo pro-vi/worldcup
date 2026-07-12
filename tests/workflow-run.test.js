@@ -7,6 +7,9 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
 const { runTournament, parallelForward, parallelReverse } = require('../scripts/workflow-harness.js')
 
 const HOSTILE = '</script><script>alert(1)</script>'
@@ -33,6 +36,60 @@ test('run completes end-to-end and returns the tournament object', async () => {
   assert.equal(typeof result.trust.verdict, 'string')
   // the stub judge covered every role the template called — no silent null votes
   assert.deepEqual(unknown, [])
+})
+
+function typedTemplate(t) {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'worldcup', 'references', 'workflow-template.js'), 'utf8')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'worldcup-typed-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const file = path.join(root, 'workflow-template.js')
+  const changed = source.replace('agentOptions:     {},                  // advanced opt-in:', 'agentOptions:     { agentType: JUDGE_AGENT_TYPE }, // advanced opt-in:')
+  assert.notEqual(changed, source, 'typed-template test anchor missed')
+  fs.writeFileSync(file, changed)
+  return file
+}
+
+test('default evaluator remains portable and spends no sentinel call', async () => {
+  const { result, calls } = await baseRun()
+  assert.ok(!result.error)
+  assert.notEqual(calls[0].opts.label, 'judge-sentinel')
+  assert.ok(calls.every(call => call.opts.agentType === undefined))
+})
+
+test('configured hermetic judge sentinel runs before generation and policy cannot leak onto generators', async t => {
+  const { result, calls } = await runTournament({ labels: LABELS, dqLabel: DQ_LABEL, templatePath: typedTemplate(t) })
+  assert.ok(!result.error)
+  assert.equal(calls[0].opts.label, 'judge-sentinel')
+  assert.equal(calls[0].opts.agentType, 'worldcup-judge')
+  const judges = calls.filter(call => call.opts.label === 'judge-sentinel' || /^(?:flaw\d*:|seed:|slotjudge:|(?:GROUP|R32|R16|QF|SF|FINAL):)/.test(call.opts.label))
+  assert.ok(judges.length > 1)
+  assert.ok(judges.every(call => call.opts.agentType === 'worldcup-judge'))
+  const generators = calls.filter(call => call.opts.label.startsWith('gen:') || call.opts.label.startsWith('slot:') || call.opts.label === 'axis-finder' || call.opts.label === 'predicted-optimum')
+  assert.ok(generators.length > 0)
+  assert.ok(generators.every(call => call.opts.agentType === undefined), 'judge agentType leaked onto generation')
+})
+
+test('configured judge sentinel failure aborts before spending any generation calls', async t => {
+  const { result, calls } = await runTournament({ labels: LABELS, failLabel: 'judge-sentinel', templatePath: typedTemplate(t) })
+  assert.match(result.error, /Judge preflight failed before field generation/)
+  assert.match(result.error, /start a new Claude session/)
+  assert.deepEqual(calls.map(call => call.opts.label), ['judge-sentinel'])
+})
+
+test('evaluator rejects a substituted hermetic judge type or malformed options at config validation', async t => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'worldcup', 'references', 'workflow-template.js'), 'utf8')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'worldcup-judge-config-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  for (const [name, replacement, message] of [
+    ['substituted', "{ agentType: 'general-purpose' }", /agentType must equal "worldcup-judge"/],
+    ['array', '[]', /plain object, not an array/],
+  ]) {
+    const file = path.join(root, `${name}.js`)
+    const changed = source.replace('agentOptions:     {},                  // advanced opt-in:', `agentOptions:     ${replacement}, // advanced opt-in:`)
+    assert.notEqual(changed, source, `test anchor missed for ${name}`)
+    fs.writeFileSync(file, changed)
+    await assert.rejects(runTournament({ labels: LABELS, templatePath: file }), message)
+  }
 })
 
 test('reportHtml is a non-empty string containing the champion label', async () => {

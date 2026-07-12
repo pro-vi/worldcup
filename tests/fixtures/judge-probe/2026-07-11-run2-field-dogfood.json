@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-07-11",
+  "host": {
+    "claudeCode": "2.1.207",
+    "model": "claude-sonnet-5",
+    "sessionId": "2e3a9976-1438-49fe-a31e-4ba91fe1f10a",
+    "runId": "wf_423827b1-866"
+  },
+  "field": {
+    "source": "given",
+    "entries": 32,
+    "provenance": "The exact Run-2 generated field plus its fielded original; generation was skipped so the run isolated judge execution policy.",
+    "beacons": false
+  },
+  "observed": {
+    "status": "completed",
+    "invocations": 369,
+    "observedAgentTypes": { "worldcup-judge": 369 },
+    "ordinaryToolCalls": 0,
+    "structuredOutputCalls": 212,
+    "journalResults": 211,
+    "requests": 370,
+    "logicalInput": 1949407,
+    "output": 3370712,
+    "inputEquivalentAt5xOutput": 18802967,
+    "extraTiebreakInvocations": 37
+  },
+  "run2JudgeBaseline": {
+    "invocations": 334,
+    "requests": 437,
+    "logicalInput": 12869132,
+    "output": 2488837,
+    "inputEquivalentAt5xOutput": 25313317
+  },
+  "verdict": {
+    "capability": "INCONCLUSIVE",
+    "cost": "INCONCLUSIVE",
+    "quality": "INCONCLUSIVE",
+    "notes": "Every persisted sidecar reported worldcup-judge and no ordinary tools ran. Requests and token totals were lower than the Run-2 baseline, but the arms were not controlled for cache attribution and the cumulative Claude session limit interrupted 157 invocations and scheduled 37 zero-usage tiebreaks. Cost and quality are therefore both inconclusive; the champion/trust result is not evidence."
+  }
+}

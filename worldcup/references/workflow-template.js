@@ -30,6 +30,7 @@ const INCLUDE_BASE = false     // generate mode: field the BASE itself as one co
                                // It REPLACES one generated cell (pool stays FIELD); the fabrication gate judges it like any entry.
                                // In 'given' mode there is no separate flag — just include the original among your items. See BASE below.
 const SCREENERS = 3            // fabrication-gate judges per entry: 1 = MVP, 3 = maximal (DQ needs same-category majority)
+const JUDGE_AGENT_TYPE = 'worldcup-judge' // optional advanced mode; when configured, the pre-generation sentinel fails closed
 const BANS = {                 // FILL: deterministic preflight bans (cheap, run before any agent). EMPTY by
   emDash: false,               // default — these are HOUSE-STYLE rules, not universal quality. Fill them from
   vocab: [],                   // the user's voice profile, e.g. { emDash:true, vocab:['delve','tapestry',...] }.
@@ -280,7 +281,7 @@ let EVALUATOR = {
   screeners:        SCREENERS,           // independent fabrication-gate judges per entry
   bans:             BANS,                // deterministic preflight policy (em dash, banned vocab) — part of the gate, in the config too
   schemas:          { flaw: FLAW_SCHEMA, lens: LENS_SCHEMA, lensDraw: LENS_DRAW_SCHEMA, seed: SEED_SCHEMA },
-  agentOptions:     {},                  // merged into every judge agent() call (e.g. { model }); {} = inherit. NEVER overrides label/phase/schema (spread FIRST at call sites)
+  agentOptions:     {},                  // advanced opt-in: { agentType: JUDGE_AGENT_TYPE }; judge-only (generation/fetch/beacons stay on host default)
   lensWeight:       () => 1,             // (lens) -> weight in the tally; ()=>1 is the default 1:1 (a custom config may override)
 }
 // Guarded weight read: a config's lensWeight is untrusted (could return undefined/NaN/negative/zero, OR
@@ -289,10 +290,14 @@ let EVALUATOR = {
 // and a buggy operator weight (lookup miss, bad table) must degrade to the default tally, never crash the run.
 const lensW = (ev, lens) => { let w; try { w = ev.lensWeight(lens) } catch { return 1 } return (Number.isFinite(w) && w > 0) ? w : 1 }
 // Reserved-key-safe judge agent options. Spread the config's agentOptions FIRST so it can set model/
-// effort but can NEVER override the protected per-call fields (label, phase, schema). Centralized here
+// effort but can NEVER override the protected per-call fields (agentType, label, phase, schema). Centralized here
 // so the invariant lives in ONE place — every judge call site (gate, lens panel, tiebreak, seed
 // pre-pass, slot judge) routes through this and can't drift.
-const judgeOpts = (ev, schemaKey, label, phase) => ({ ...ev.agentOptions, label, phase, schema: ev.schemas[schemaKey] })
+const judgeOpts = (ev, schemaKey, label, phase) => ({
+  ...ev.agentOptions,
+  ...(ev.agentOptions.agentType ? { agentType: JUDGE_AGENT_TYPE } : {}),
+  label, phase, schema: ev.schemas[schemaKey],
+})
 // Integrity check for a judge config — the contract that a config has NO hole a fabrication can slip
 // through. Run on the default config at load; any operator-supplied config must pass it too.
 const EVAL_STAKES = ['GROUP', 'R32', 'R16', 'QF', 'SF', 'FINAL']
@@ -304,6 +309,9 @@ function validateEvaluatorConfig(ev) {
     if (typeof ev[k] !== 'string') throw new Error(`EVALUATOR.${k} must be a string (incomplete config).`)
   for (const k of ['dqFamily', 'lenses', 'bans', 'agentOptions'])
     if (!ev[k] || typeof ev[k] !== 'object') throw new Error(`EVALUATOR.${k} must be an object (incomplete config).`)
+  if (Array.isArray(ev.agentOptions)) throw new Error('EVALUATOR.agentOptions must be a plain object, not an array.')
+  if (ev.agentOptions.agentType !== undefined && ev.agentOptions.agentType !== JUDGE_AGENT_TYPE)
+    throw new Error(`EVALUATOR.agentOptions.agentType must equal "${JUDGE_AGENT_TYPE}" — every decision judge must use the installed hermetic judge type.`)
   if (!Array.isArray(ev.hardDqCategories)) throw new Error('EVALUATOR.hardDqCategories must be an array.')
   if (typeof ev.panelFor !== 'function') throw new Error('EVALUATOR.panelFor must be a function.')
   if (typeof ev.lensWeight !== 'function') throw new Error('EVALUATOR.lensWeight must be a callable function (tally calls it every vote).')
@@ -420,6 +428,18 @@ ${ev.criteriaBlock}
 ${embedUntrusted(X.markdown, 'ENTRY X')}
 ${embedUntrusted(Y.markdown, 'ENTRY Y')}
 Return JSON { winner:"X"|"Y", confidence }.`
+
+const JUDGE_SENTINEL_PROMPT = `Judge-agent readiness sentinel. Use only this inline instruction; do not inspect files, shell, repository, or web. Return winner X with confidence clear through the requested structured schema.`
+async function requireJudgeAgent(ev = EVALUATOR) {
+  if (!ev.agentOptions.agentType) return null
+  try {
+    const ready = await agent(JUDGE_SENTINEL_PROMPT, judgeOpts(ev, 'seed', 'judge-sentinel', 'Preflight'))
+    if (!ready || ready.winner !== 'X') throw new Error('sentinel did not return the required schema-bound X verdict')
+    return null
+  } catch (error) {
+    return `Judge preflight failed before field generation: install ${JUDGE_AGENT_TYPE}.md in .claude/agents/ or ~/.claude/agents/, start a new Claude session, and rerun (${error && error.message ? error.message : error}).`
+  }
+}
 
 // ─────────────────────────────────────────────────────── JUDGE PIPELINE
 // Deterministic preflight: cheap regex gate, runs before any agent. Reads the ban policy from the
@@ -1052,6 +1072,8 @@ let baseId = null   // set to the fielded base's pool id when INCLUDE_BASE; the 
 // screeners can never emit the new category, so that fabrication subtype silently never disqualifies.
 // Object-spread assignment never validates on its own; this is the catch-all, wherever the override sits.
 validateEvaluatorConfig(EVALUATOR)
+const judgeAgentError = await requireJudgeAgent(EVALUATOR)
+if (judgeAgentError) return { error: judgeAgentError }
 if (SOURCE === 'generate') {
   const specs = await deriveCandidates(DESIGN)
   if (specs.length !== FIELD) return { error: `design produced ${specs.length} candidates, need FIELD=${FIELD}` }

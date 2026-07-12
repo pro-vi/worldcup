@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { analyzeRun, formatReport, parseArgs, roleForLabel } = require('../scripts/run-cost-report.js')
+const { analyzeRun, formatReport, parseArgs, roleForLabel, summarizeDenialProbe } = require('../scripts/run-cost-report.js')
 
 function writeJsonLines(file, rows) {
   fs.writeFileSync(file, `${rows.map(row => JSON.stringify(row)).join('\n')}\n`)
@@ -21,12 +21,65 @@ test('roleForLabel classifies every workflow cost role', () => {
   // The tiebreak row means ALL tiebreak seats: a group-stage tiebreak must not hide in group-lens.
   assert.equal(roleForLabel('GROUP:tiebreak:a'), 'tiebreak')
   assert.equal(roleForLabel('wc-live:match'), 'beacon')
+  assert.equal(roleForLabel('probe:control:group:1'), 'judge-probe-control')
+  assert.equal(roleForLabel('probe:typed:group:1'), 'judge-probe-typed')
+  assert.equal(roleForLabel('probe:denial-control:read:1'), 'judge-probe-denial-control')
+  assert.equal(roleForLabel('probe:denial-typed:read:1'), 'judge-probe-denial-typed')
+  assert.equal(roleForLabel('judge-sentinel'), 'judge-sentinel')
   // Sections/axes-mode labels: generation-side cost lands in gen; the slot judge is seed-like.
   assert.equal(roleForLabel('slot:hook:v2'), 'gen')
   assert.equal(roleForLabel('axis-finder'), 'gen')
   assert.equal(roleForLabel('predicted-optimum'), 'gen')
   assert.equal(roleForLabel('slotjudge:hook:a>b'), 'seed')
   assert.equal(roleForLabel('mystery-agent'), 'other')
+})
+
+test('mechanical denial summary distinguishes a successful control tool call from typed absence', () => {
+  const agents = [
+    { role: 'judge-probe-denial-control', firstUsage: {}, ordinaryToolCalls: 1, structuredOutputCalls: 1, agentType: 'workflow-subagent', structuredObservations: ['tool-succeeded'] },
+    { role: 'judge-probe-denial-typed', firstUsage: {}, ordinaryToolCalls: 0, structuredOutputCalls: 1, agentType: 'worldcup-judge', structuredObservations: ['tool-unavailable'] },
+  ]
+  assert.deepEqual(summarizeDenialProbe(agents), {
+    control: { invocations: 1, completed: 1, ordinaryToolCalls: 1, structuredOutputCalls: 1, agentTypes: { 'workflow-subagent': 1 }, observations: { 'tool-succeeded': 1 } },
+    typed: { invocations: 1, completed: 1, ordinaryToolCalls: 0, structuredOutputCalls: 1, agentTypes: { 'worldcup-judge': 1 }, observations: { 'tool-unavailable': 1 } },
+  })
+})
+
+test('analyzeRun reports observed probe agent types and excludes StructuredOutput from ordinary tools', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'worldcup-cost-probe-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const runDir = path.join(root, 'subagents', 'workflows', 'wf_probe')
+  const stateDir = path.join(root, 'workflows')
+  fs.mkdirSync(runDir, { recursive: true })
+  fs.mkdirSync(stateDir, { recursive: true })
+  const fixtures = [
+    ['a1', 'probe:control:group:1', 'workflow-subagent'],
+    ['a2', 'probe:typed:group:1', 'worldcup-judge'],
+  ]
+  fs.writeFileSync(path.join(stateDir, 'wf_probe.json'), JSON.stringify({
+    runId: 'wf_probe', agentCount: 2,
+    workflowProgress: fixtures.map(([agentId, label]) => ({ agentId, label, phaseTitle: 'Probe' })),
+  }))
+  writeJsonLines(path.join(runDir, 'journal.jsonl'), fixtures.map(([agentId], i) => ({ type: 'started', key: `k${i}`, agentId })))
+  for (const [agentId, , agentType] of fixtures) {
+    writeJsonLines(path.join(runDir, `agent-${agentId}.jsonl`), [
+      { type: 'assistant', agentId, requestId: `${agentId}-r1`, message: {
+        content: [{ type: 'tool_use', id: `${agentId}-structured`, name: 'StructuredOutput', input: { winner: 'X' } }],
+        usage: { input_tokens: 9222, cache_creation_input_tokens: 7000, cache_read_input_tokens: 9781, output_tokens: 20 },
+      } },
+    ])
+    fs.writeFileSync(path.join(runDir, `agent-${agentId}.meta.json`), JSON.stringify({ agentType }))
+  }
+
+  const report = analyzeRun(runDir)
+  assert.deepEqual(report.judgeProbe.control.agentTypes, { 'workflow-subagent': 1 })
+  assert.deepEqual(report.judgeProbe.typed.agentTypes, { 'worldcup-judge': 1 })
+  assert.equal(report.judgeProbe.typed.ordinaryToolCalls, 0)
+  assert.equal(report.judgeProbe.typed.structuredOutputCalls, 1)
+  assert.equal(report.judgeProbe.typed.firstUncachedInputMedian, 9222)
+  assert.equal(report.judgeProbe.typed.promptHashes.length, 0, 'fixture has no user prompt string')
+  assert.equal(report.judgeProbe.typed.inputEquivalentAt5xOutput, 26103)
+  assert.match(formatReport(report), /Judge agent probe:/)
 })
 
 test('parseArgs rejects --state without a value instead of silently falling back', () => {
