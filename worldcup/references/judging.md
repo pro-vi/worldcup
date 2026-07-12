@@ -411,10 +411,13 @@ preferred; bins are only for cheap seeding.
   `README.md` while the field contains that README block identifies the fielded
   original—and can import facts that other jurors never saw. On Claude Code,
   install `references/agents/worldcup-judge.md`, start a new session, and set
-  `EVALUATOR.agentOptions.agentType = 'worldcup-judge'`. The custom type has no
-  ordinary tools; `StructuredOutput` is supplied independently by the Workflow
-  schema. The template sentinel tests type availability plus schema compliance
-  before generation. Do not apply this restriction to candidate generation or
+  `EVALUATOR.agentOptions.agentType = 'worldcup-judge'`. Its documented
+  `disallowedTools` frontmatter removes built-in, MCP, and MCP-resource tools;
+  `StructuredOutput` is supplied independently by the Workflow schema. The
+  sentinel tests only type availability plus schema compliance. Mechanical denial
+  is a separate release condition: the committed probe orders an ordinary tool,
+  requires the unrestricted control to succeed, and requires the typed arm to
+  expose no ordinary tool. Do not apply this restriction to candidate generation or
   the phase-0 fetch-agent pattern: those are evidence-producing roles, not blind
   consumers of an already-complete inline record.
 - **Self-consistency**: track per-juror calibration accuracy, position bias, tie-overuse,

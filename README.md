@@ -187,7 +187,11 @@ EVALUATOR.agentOptions = { ...EVALUATOR.agentOptions, agentType: 'worldcup-judge
 ```
 
 This is judge-only: generation and any phase-0 fetch/research agent keep their
-normal tools. The template runs a schema-bound sentinel before generation; a
+normal tools. The agent definition uses Claude Code's documented
+`disallowedTools` frontmatter for built-in, MCP, and MCP-resource tools. The
+paired host probe must show an unrestricted control actually using an ordinary
+tool while the typed judge cannot; prompt refusal alone does not count. The
+template runs a schema-bound sentinel before generation; a
 missing definition, stale session, or schema-incompatible agent fails the run
 before it spends calls generating the field. The default remains `{}` for
 portable orchestrators that do not implement Claude Code custom agent types.
