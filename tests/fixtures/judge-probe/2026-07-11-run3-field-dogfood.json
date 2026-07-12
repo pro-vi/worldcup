@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 2,
+  "recordedAt": "2026-07-11",
+  "host": {
+    "claudeCode": "2.1.207",
+    "model": "claude-sonnet-5",
+    "sessionId": "a5f89ca6-df9a-4348-a256-b078e3a4be64",
+    "runId": "wf_9854236a-9f2"
+  },
+  "field": {
+    "source": "generate",
+    "entries": 32,
+    "provenance": "Fresh generation from the exact Run-2 flavor set, criteria, fact ledger, and fielded original (INCLUDE_BASE). Generation agents stayed on the host default type so the run isolates judge execution policy; every judge surface ran as worldcup-judge.",
+    "beacons": false
+  },
+  "observed": {
+    "status": "completed",
+    "invocations": 363,
+    "requests": 419,
+    "observedAgentTypes": { "worldcup-judge": 332, "workflow-subagent": 31 },
+    "typedOrdinaryToolCalls": 0,
+    "typedStructuredOutputCalls": 332,
+    "extraTiebreakInvocations": 0,
+    "logicalInput": 5809297,
+    "output": 2193990
+  },
+  "judgeSurfaces": {
+    "invocations": 331,
+    "requests": 331,
+    "logicalInput": 3194007,
+    "output": 1876173,
+    "inputEquivalentAt5xOutput": 12574872,
+    "firstRequestUncachedInput": {
+      "typedAgentsMeasured": 332,
+      "typedMedian": 2,
+      "typedMin": 2,
+      "typedMax": 2,
+      "defaultTypeGenSameRun": 10513
+    }
+  },
+  "run2JudgeBaseline": {
+    "invocations": 334,
+    "requests": 437,
+    "logicalInput": 12869132,
+    "output": 2488837,
+    "inputEquivalentAt5xOutput": 25313317
+  },
+  "qualityIndicators": {
+    "gate": "origin-failure disqualified for FABRICATION - the same flavor and violation family as Runs 1 and 2",
+    "gateCanary": "clean: the fielded original passed the gate",
+    "trust": "robust: champion gate-headline is also the rating leader (1702); final margin clear",
+    "tiebreaks": "zero tiebreak jurors seated across the knockout",
+    "originalPlacement": "27/32 at rating 1409 (Run 2 unrestricted baseline: 31/32 at 1406)",
+    "champion": "gate-headline"
+  },
+  "verdict": {
+    "capability": "PASS",
+    "cost": "PASS",
+    "quality": "PASS",
+    "notes": "Uninterrupted 363-agent generate-mode run on the Run-2 field family; 0 errors, 0 skipped. Capability: all 332 typed invocations (331 scoring judge surfaces plus the pre-generation sentinel) observed as worldcup-judge in persisted sidecars, 332 StructuredOutput calls, 0 ordinary tool calls counted across every typed transcript. Cost: every judge role ran at exactly 1.0 requests/invocation (Run 2 unrestricted: 1.04-1.41); judge-surface logical input fell 75.2% and output 24.6% vs the Run-2 judge baseline; whole-run logical input 15.44M -> 5.81M (-62.4%), output 2.89M -> 2.19M (-24.0%), requests 521 -> 419. The paired in-run tail measurement attributes the input collapse: all 31 default-type generation agents carried exactly 10,513 uncached input tokens on their first request while all 332 typed agents carried exactly 2 - the default agent's harness/tool-definition tail does not exist for the hermetic type. Quality: behavioral indicators matched the unrestricted baseline on a fresh field (same-flavor FABRICATION DQ for the third consecutive run, gate canary clean, trust verdict robust with champion = rating leader, zero fallback tiebreaks, fielded original in the same bottom quartile). Scope: one completed run, prose field, indicator-level evidence - not a head-to-head judging-quality benchmark (ADR 0001). Numbers are specific to this host, model, and connected-tool registry; the default-agent tail measured 9,222 in Run 1/2 sessions and 10,513 here at the same Claude Code version, so it tracks the session tool registry."
+  }
+}

@@ -1,8 +1,8 @@
 # ADR 0004: Offer a hermetic custom agent for tournament judges
 
-- **Status:** Proposed
-- **Date:** 2026-07-11
-- **Deciders:** maintainer; mechanism probed on Claude Code 2.1.207; tournament-quality evidence remains inconclusive
+- **Status:** Accepted
+- **Date:** 2026-07-11 (proposed and accepted; capability, cost, and quality closed the same day by the completed Run-3 dogfood)
+- **Deciders:** maintainer; mechanism probed on Claude Code 2.1.207; verdicts closed by the uninterrupted Run-3 dogfood (`wf_9854236a-9f2`)
 
 ## Context
 
@@ -85,11 +85,40 @@ Negative:
 - The sentinel adds one agent call to an opted-in run.
 - Capability and cost evidence is version-specific and must be rerun after host,
   model, or custom-agent changes.
-- Cost is inconclusive: interleaved typed/control calls received different cache
-  attribution, so the observed input-token delta is not an agent-type saving.
-- The Run-2-field dogfood quality verdict is **INCONCLUSIVE**: a cumulative
-  session limit interrupted 157 late judgments and scheduled 37 fallback
-  tiebreaks. It proves neither quality preservation nor a trustworthy champion.
+- The probe's cost arms were inconclusive: interleaved typed/control calls
+  received different cache attribution, so the probe's input-token delta is not
+  an agent-type saving. (Superseded — see Measured outcomes.)
+- The first Run-2-field dogfood quality verdict was **INCONCLUSIVE**: a
+  cumulative session limit interrupted 157 late judgments and scheduled 37
+  fallback tiebreaks. (Superseded by the completed Run-3 dogfood — see Measured
+  outcomes; the interrupted record is retained unchanged.)
+
+## Measured outcomes (Run-3 dogfood, 2026-07-11)
+
+An uninterrupted 363-agent generate-mode run on the Run-2 field family
+(`wf_9854236a-9f2`; record
+`tests/fixtures/judge-probe/2026-07-11-run3-field-dogfood.json`) closed all
+three verdicts:
+
+- **Capability PASS.** All 332 typed invocations — the 331 scoring judge
+  surfaces plus the pre-generation sentinel — ran as `worldcup-judge`
+  (persisted sidecars); 332 StructuredOutput calls; zero ordinary tool calls
+  across every typed transcript.
+- **Cost PASS.** Every judge role ran at exactly 1.0 requests/invocation
+  (Run 2 unrestricted: 1.04–1.41). Whole-run logical input fell 15.44M → 5.81M
+  (−62%) and output 2.89M → 2.19M (−24%) against the byte-comparable Run-2
+  baseline. The paired in-run tail measurement attributes the input collapse:
+  all 31 default-type generation agents carried exactly 10,513 uncached input
+  tokens on their first request, while all 332 typed agents carried exactly 2 —
+  the default agent's harness/tool-definition tail does not exist for the
+  hermetic type. The tail is registry-specific (9,222 in the Run-1/2 sessions,
+  10,513 here, same Claude Code version), which the hermetic type is immune to.
+- **Quality PASS (indicator-level).** Same-flavor FABRICATION disqualification
+  for the third consecutive run, gate canary clean, trust verdict robust with
+  champion = rating leader, zero fallback tiebreaks, and the fielded original
+  in the same bottom quartile (27/32 vs Run 2's 31/32). Scope: one completed
+  run, prose field, behavioral indicators — not a head-to-head judging-quality
+  benchmark (ADR 0001).
 
 ## Revisit Triggers
 
@@ -115,4 +144,7 @@ Negative:
   `tests/fixtures/judge-probe/2026-07-12-claude-code-2.1.207-fable-5.json`.
 - Interrupted dogfood record:
   `tests/fixtures/judge-probe/2026-07-11-run2-field-dogfood.json`.
+- Completed dogfood record:
+  `tests/fixtures/judge-probe/2026-07-11-run3-field-dogfood.json`.
+- Cost retrospective and roadmap: `docs/token-cost.md`.
 - Doctrine: `worldcup/SKILL.md`, `worldcup/references/judging.md` §10.

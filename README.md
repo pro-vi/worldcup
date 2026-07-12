@@ -269,6 +269,8 @@ for the runs and [`canary/README.md`](canary/README.md) for the rules.
 - `tests/` - Node test suites: live-view fold/render, canary validator, and the
   end-to-end tournament harness.
 - `docs/adr/` - durable architecture decisions.
+- `docs/token-cost.md` - the measured token-cost arc across three instrumented
+  runs: what was cut, what was traded, what was refused, and what's next.
 - `docs/media/` - screenshots and the committed sample report.
 
 ## Status
