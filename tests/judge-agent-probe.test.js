@@ -9,6 +9,7 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const PROBE = path.join(__dirname, '..', 'worldcup', 'references', 'workflow-judge-agent-probe.js')
 const RECORD = path.join(__dirname, 'fixtures', 'judge-probe', '2026-07-12-claude-code-2.1.207-fable-5.json')
 const DOGFOOD = path.join(__dirname, 'fixtures', 'judge-probe', '2026-07-11-run2-field-dogfood.json')
+const DOGFOOD_RUN3 = path.join(__dirname, 'fixtures', 'judge-probe', '2026-07-11-run3-field-dogfood.json')
 
 test('judge-agent probe pairs byte-identical realistic prompts across typed and control arms', async () => {
   const raw = fs.readFileSync(PROBE, 'utf8')
@@ -95,4 +96,47 @@ test('dogfood record separates execution evidence from rate-limited quality evid
   assert.equal(record.verdict.capability, 'INCONCLUSIVE')
   assert.equal(record.verdict.cost, 'INCONCLUSIVE')
   assert.equal(record.verdict.quality, 'INCONCLUSIVE')
+})
+
+test('completed run-3 dogfood closes capability, cost, and quality', () => {
+  const record = JSON.parse(fs.readFileSync(DOGFOOD_RUN3, 'utf8'))
+  assert.equal(record.schemaVersion, 2)
+  assert.equal(record.observed.status, 'completed')
+  // Capability: every judge surface typed, zero ordinary tool calls, one schema call per judge.
+  assert.equal(record.observed.observedAgentTypes['worldcup-judge'], 332)
+  assert.equal(record.observed.observedAgentTypes['workflow-subagent'], 31)
+  assert.equal(record.observed.typedOrdinaryToolCalls, 0)
+  assert.equal(record.observed.typedStructuredOutputCalls, record.observed.observedAgentTypes['worldcup-judge'])
+  // Cost: judge surfaces at exactly one request per invocation, strictly below the Run-2 baseline.
+  // The exact totals are pinned so a quiet edit to any headline number fails loudly here.
+  assert.equal(record.observed.invocations, 363)
+  assert.equal(record.observed.requests, 419)
+  assert.equal(record.observed.logicalInput, 5809297)
+  assert.equal(record.observed.output, 2193990)
+  assert.equal(record.judgeSurfaces.invocations, 331)
+  assert.equal(record.judgeSurfaces.requests, record.judgeSurfaces.invocations)
+  assert.equal(record.judgeSurfaces.logicalInput, 3194007)
+  assert.equal(record.judgeSurfaces.output, 1876173)
+  assert.ok(record.judgeSurfaces.logicalInput < record.run2JudgeBaseline.logicalInput)
+  assert.ok(record.judgeSurfaces.output < record.run2JudgeBaseline.output)
+  assert.ok(record.judgeSurfaces.inputEquivalentAt5xOutput < record.run2JudgeBaseline.inputEquivalentAt5xOutput)
+  // The paired in-run tail measurement: typed agents carry no default-agent uncached tail.
+  // 332 typed agents = the 331 scoring judge surfaces plus the pre-generation sentinel.
+  const tail = record.judgeSurfaces.firstRequestUncachedInput
+  assert.equal(tail.typedAgentsMeasured, 332)
+  assert.equal(tail.typedMedian, 2)
+  assert.equal(tail.typedMin, 2)
+  assert.equal(tail.typedMax, 2)
+  assert.equal(tail.defaultTypeGenSameRun, 10513)
+  // Quality: gate, canary, and trust indicators recorded; verdicts closed.
+  for (const key of ['gate', 'gateCanary', 'trust', 'originalPlacement', 'champion']) {
+    assert.ok(record.qualityIndicators[key], `qualityIndicators.${key} missing`)
+  }
+  assert.match(record.qualityIndicators.gate, /FABRICATION/)
+  assert.match(record.qualityIndicators.trust, /rating leader/)
+  assert.deepEqual(
+    { capability: record.verdict.capability, cost: record.verdict.cost, quality: record.verdict.quality },
+    { capability: 'PASS', cost: 'PASS', quality: 'PASS' }
+  )
+  assert.ok(record.verdict.notes.includes('not a head-to-head judging-quality benchmark'))
 })
