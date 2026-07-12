@@ -1,0 +1,2706 @@
+{
+  "schema": "worldcup-group-panel-replay/v1",
+  "policyVersion": "2026-07-11",
+  "panel": {
+    "kind": "default-unit-three",
+    "seats": [
+      "substance",
+      "fit",
+      "craft"
+    ],
+    "weights": [
+      1,
+      1,
+      1
+    ],
+    "sections": false
+  },
+  "run": {
+    "id": "wf_fbf2b7a4-f80",
+    "workflowName": "worldcup",
+    "status": "completed",
+    "timestamp": "2026-07-10T21:34:56.372Z",
+    "stateSha256": "c86d689dd5f8c9a68a5250430a3f58dccfbe3b842746ef413e948265f525d0f9",
+    "transcriptSetSha256": "b07d77c7a7a889f05a231658d88e61ca6996c48bd3bd38e9016aad257def622c"
+  },
+  "entrants": [
+    {
+      "label": "champions-road",
+      "poolIndex": 25,
+      "seedRank": 1,
+      "seedRating": 1592.5469577285378,
+      "seededOrder": 0,
+      "drawOrder": 0,
+      "group": "A",
+      "groupIndex": 0,
+      "withinGroup": 0,
+      "disqualified": false
+    },
+    {
+      "label": "honest-scope",
+      "poolIndex": 12,
+      "seedRank": 16,
+      "seedRating": 1523.515840286225,
+      "seededOrder": 15,
+      "drawOrder": 1,
+      "group": "A",
+      "groupIndex": 0,
+      "withinGroup": 1,
+      "disqualified": false
+    },
+    {
+      "label": "trust-verdict",
+      "poolIndex": 13,
+      "seedRank": 17,
+      "seedRating": 1476.484159713775,
+      "seededOrder": 16,
+      "drawOrder": 2,
+      "group": "A",
+      "groupIndex": 0,
+      "withinGroup": 2,
+      "disqualified": false
+    },
+    {
+      "label": "the original",
+      "poolIndex": 0,
+      "seedRank": 32,
+      "seedRating": 1407.3259496849096,
+      "seededOrder": 31,
+      "drawOrder": 3,
+      "group": "A",
+      "groupIndex": 0,
+      "withinGroup": 3,
+      "disqualified": false
+    },
+    {
+      "label": "integrity-center",
+      "poolIndex": 29,
+      "seedRank": 2,
+      "seedRating": 1590.8805201468012,
+      "seededOrder": 1,
+      "drawOrder": 4,
+      "group": "B",
+      "groupIndex": 1,
+      "withinGroup": 0,
+      "disqualified": false
+    },
+    {
+      "label": "two-sentence",
+      "poolIndex": 16,
+      "seedRank": 15,
+      "seedRating": 1525.4635373454892,
+      "seededOrder": 14,
+      "drawOrder": 5,
+      "group": "B",
+      "groupIndex": 1,
+      "withinGroup": 1,
+      "disqualified": false
+    },
+    {
+      "label": "breadth-lead",
+      "poolIndex": 9,
+      "seedRank": 18,
+      "seedRating": 1474.670900822749,
+      "seededOrder": 17,
+      "drawOrder": 6,
+      "group": "B",
+      "groupIndex": 1,
+      "withinGroup": 2,
+      "disqualified": false
+    },
+    {
+      "label": "groups-to-knockout",
+      "poolIndex": 28,
+      "seedRank": 31,
+      "seedRating": 1409.1194798531988,
+      "seededOrder": 30,
+      "drawOrder": 7,
+      "group": "B",
+      "groupIndex": 1,
+      "withinGroup": 3,
+      "disqualified": false
+    },
+    {
+      "label": "minimal-punch",
+      "poolIndex": 30,
+      "seedRank": 3,
+      "seedRating": 1586.9914495658368,
+      "seededOrder": 2,
+      "drawOrder": 8,
+      "group": "C",
+      "groupIndex": 2,
+      "withinGroup": 0,
+      "disqualified": false
+    },
+    {
+      "label": "skill-first",
+      "poolIndex": 22,
+      "seedRank": 14,
+      "seedRating": 1525.8772426087685,
+      "seededOrder": 13,
+      "drawOrder": 9,
+      "group": "C",
+      "groupIndex": 2,
+      "withinGroup": 1,
+      "disqualified": false
+    },
+    {
+      "label": "metaphor-forward",
+      "poolIndex": 6,
+      "seedRank": 19,
+      "seedRating": 1474.1227573912315,
+      "seededOrder": 18,
+      "drawOrder": 10,
+      "group": "C",
+      "groupIndex": 2,
+      "withinGroup": 2,
+      "disqualified": false
+    },
+    {
+      "label": "audience-lead",
+      "poolIndex": 14,
+      "seedRank": 30,
+      "seedRating": 1413.0085504341632,
+      "seededOrder": 29,
+      "drawOrder": 11,
+      "group": "C",
+      "groupIndex": 2,
+      "withinGroup": 3,
+      "disqualified": false
+    },
+    {
+      "label": "problem-first",
+      "poolIndex": 7,
+      "seedRank": 4,
+      "seedRating": 1585.0610054836006,
+      "seededOrder": 3,
+      "drawOrder": 12,
+      "group": "D",
+      "groupIndex": 3,
+      "withinGroup": 0,
+      "disqualified": false
+    },
+    {
+      "label": "rigor-lead",
+      "poolIndex": 11,
+      "seedRank": 13,
+      "seedRating": 1525.8772426087685,
+      "seededOrder": 12,
+      "drawOrder": 13,
+      "group": "D",
+      "groupIndex": 3,
+      "withinGroup": 1,
+      "disqualified": false
+    },
+    {
+      "label": "plain-spoken",
+      "poolIndex": 20,
+      "seedRank": 20,
+      "seedRating": 1474.1227573912315,
+      "seededOrder": 19,
+      "drawOrder": 14,
+      "group": "D",
+      "groupIndex": 3,
+      "withinGroup": 2,
+      "disqualified": false
+    },
+    {
+      "label": "selection-science",
+      "poolIndex": 23,
+      "seedRank": 29,
+      "seedRating": 1414.9389945163994,
+      "seededOrder": 28,
+      "drawOrder": 15,
+      "group": "D",
+      "groupIndex": 3,
+      "withinGroup": 3,
+      "disqualified": false
+    },
+    {
+      "label": "quote-lead",
+      "poolIndex": 21,
+      "seedRank": 5,
+      "seedRating": 1585.0610054836006,
+      "seededOrder": 4,
+      "drawOrder": 16,
+      "group": "E",
+      "groupIndex": 4,
+      "withinGroup": 0,
+      "disqualified": false
+    },
+    {
+      "label": "legibility",
+      "poolIndex": 4,
+      "seedRank": 12,
+      "seedRating": 1525.8772426087685,
+      "seededOrder": 11,
+      "drawOrder": 17,
+      "group": "E",
+      "groupIndex": 4,
+      "withinGroup": 1,
+      "disqualified": false
+    },
+    {
+      "label": "one-hook-expand",
+      "poolIndex": 27,
+      "seedRank": 21,
+      "seedRating": 1474.1227573912315,
+      "seededOrder": 20,
+      "drawOrder": 18,
+      "group": "E",
+      "groupIndex": 4,
+      "withinGroup": 2,
+      "disqualified": false
+    },
+    {
+      "label": "dev-experience",
+      "poolIndex": 10,
+      "seedRank": 28,
+      "seedRating": 1414.9389945163994,
+      "seededOrder": 27,
+      "drawOrder": 19,
+      "group": "E",
+      "groupIndex": 4,
+      "withinGroup": 3,
+      "disqualified": false
+    },
+    {
+      "label": "anti-hype",
+      "poolIndex": 26,
+      "seedRank": 6,
+      "seedRating": 1585.0610054836006,
+      "seededOrder": 5,
+      "drawOrder": 20,
+      "group": "F",
+      "groupIndex": 5,
+      "withinGroup": 0,
+      "disqualified": false
+    },
+    {
+      "label": "mechanism-first",
+      "poolIndex": 1,
+      "seedRank": 11,
+      "seedRating": 1529.6782647857028,
+      "seededOrder": 10,
+      "drawOrder": 21,
+      "group": "F",
+      "groupIndex": 5,
+      "withinGroup": 1,
+      "disqualified": false
+    },
+    {
+      "label": "skeptic-rebuttal",
+      "poolIndex": 8,
+      "seedRank": 22,
+      "seedRating": 1466.6685840803625,
+      "seededOrder": 21,
+      "drawOrder": 22,
+      "group": "F",
+      "groupIndex": 5,
+      "withinGroup": 2,
+      "disqualified": false
+    },
+    {
+      "label": "report-deliverable",
+      "poolIndex": 5,
+      "seedRank": 27,
+      "seedRating": 1414.9389945163994,
+      "seededOrder": 26,
+      "drawOrder": 23,
+      "group": "F",
+      "groupIndex": 5,
+      "withinGroup": 3,
+      "disqualified": false
+    },
+    {
+      "label": "gate-headline",
+      "poolIndex": 3,
+      "seedRank": 7,
+      "seedRating": 1583.3346563921323,
+      "seededOrder": 6,
+      "drawOrder": 24,
+      "group": "G",
+      "groupIndex": 6,
+      "withinGroup": 0,
+      "disqualified": false
+    },
+    {
+      "label": "story-of-a-run",
+      "poolIndex": 31,
+      "seedRank": 10,
+      "seedRating": 1535.1108285952773,
+      "seededOrder": 9,
+      "drawOrder": 25,
+      "group": "G",
+      "groupIndex": 6,
+      "withinGroup": 1,
+      "disqualified": false
+    },
+    {
+      "label": "bring-your-own",
+      "poolIndex": 24,
+      "seedRank": 23,
+      "seedRating": 1466.1135573683507,
+      "seededOrder": 22,
+      "drawOrder": 26,
+      "group": "G",
+      "groupIndex": 6,
+      "withinGroup": 2,
+      "disqualified": false
+    },
+    {
+      "label": "taste-engine",
+      "poolIndex": 19,
+      "seedRank": 26,
+      "seedRating": 1416.6653436078677,
+      "seededOrder": 25,
+      "drawOrder": 27,
+      "group": "G",
+      "groupIndex": 6,
+      "withinGroup": 3,
+      "disqualified": false
+    },
+    {
+      "label": "contrast-lead",
+      "poolIndex": 18,
+      "seedRank": 8,
+      "seedRating": 1583.3346563921323,
+      "seededOrder": 7,
+      "drawOrder": 28,
+      "group": "H",
+      "groupIndex": 7,
+      "withinGroup": 0,
+      "disqualified": false
+    },
+    {
+      "label": "verb-first",
+      "poolIndex": 17,
+      "seedRank": 9,
+      "seedRating": 1537.5322481838984,
+      "seededOrder": 8,
+      "drawOrder": 29,
+      "group": "H",
+      "groupIndex": 7,
+      "withinGroup": 1,
+      "disqualified": false
+    },
+    {
+      "label": "delight-lead",
+      "poolIndex": 15,
+      "seedRank": 24,
+      "seedRating": 1464.8891714047227,
+      "seededOrder": 23,
+      "drawOrder": 30,
+      "group": "H",
+      "groupIndex": 7,
+      "withinGroup": 2,
+      "disqualified": false
+    },
+    {
+      "label": "origin-failure",
+      "poolIndex": 2,
+      "seedRank": 25,
+      "seedRating": 1416.6653436078677,
+      "seededOrder": 24,
+      "drawOrder": 31,
+      "group": "H",
+      "groupIndex": 7,
+      "withinGroup": 3,
+      "disqualified": true
+    }
+  ],
+  "matches": [
+    {
+      "ordinal": 0,
+      "group": "A",
+      "groupIndex": 0,
+      "a": "champions-road",
+      "b": "honest-scope",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "honest-scope",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "champions-road",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "champions-road",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "champions-road"
+    },
+    {
+      "ordinal": 1,
+      "group": "A",
+      "groupIndex": 0,
+      "a": "champions-road",
+      "b": "trust-verdict",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "champions-road",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "champions-road",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "champions-road",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "champions-road"
+    },
+    {
+      "ordinal": 2,
+      "group": "A",
+      "groupIndex": 0,
+      "a": "champions-road",
+      "b": "the original",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "champions-road",
+          "margin": "decisive",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "the original",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "champions-road",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "champions-road"
+    },
+    {
+      "ordinal": 3,
+      "group": "A",
+      "groupIndex": 0,
+      "a": "honest-scope",
+      "b": "trust-verdict",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "honest-scope",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "trust-verdict",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "trust-verdict",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "trust-verdict"
+    },
+    {
+      "ordinal": 4,
+      "group": "A",
+      "groupIndex": 0,
+      "a": "honest-scope",
+      "b": "the original",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "honest-scope",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "the original",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "honest-scope",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "honest-scope"
+    },
+    {
+      "ordinal": 5,
+      "group": "A",
+      "groupIndex": 0,
+      "a": "trust-verdict",
+      "b": "the original",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "trust-verdict",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "trust-verdict",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "trust-verdict",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "trust-verdict"
+    },
+    {
+      "ordinal": 6,
+      "group": "B",
+      "groupIndex": 1,
+      "a": "integrity-center",
+      "b": "two-sentence",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "integrity-center",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "integrity-center",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "integrity-center",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "integrity-center"
+    },
+    {
+      "ordinal": 7,
+      "group": "B",
+      "groupIndex": 1,
+      "a": "integrity-center",
+      "b": "breadth-lead",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "breadth-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "breadth-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "integrity-center",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "breadth-lead"
+    },
+    {
+      "ordinal": 8,
+      "group": "B",
+      "groupIndex": 1,
+      "a": "integrity-center",
+      "b": "groups-to-knockout",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "integrity-center",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "integrity-center",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "integrity-center",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "integrity-center"
+    },
+    {
+      "ordinal": 9,
+      "group": "B",
+      "groupIndex": 1,
+      "a": "two-sentence",
+      "b": "breadth-lead",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "breadth-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "breadth-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "two-sentence",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "breadth-lead"
+    },
+    {
+      "ordinal": 10,
+      "group": "B",
+      "groupIndex": 1,
+      "a": "two-sentence",
+      "b": "groups-to-knockout",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "two-sentence",
+          "margin": "decisive",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "two-sentence",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "two-sentence",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "two-sentence"
+    },
+    {
+      "ordinal": 11,
+      "group": "B",
+      "groupIndex": 1,
+      "a": "breadth-lead",
+      "b": "groups-to-knockout",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "breadth-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "breadth-lead",
+          "margin": "decisive",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "breadth-lead",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "breadth-lead"
+    },
+    {
+      "ordinal": 12,
+      "group": "C",
+      "groupIndex": 2,
+      "a": "minimal-punch",
+      "b": "skill-first",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "skill-first",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "minimal-punch",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "skill-first",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "skill-first"
+    },
+    {
+      "ordinal": 13,
+      "group": "C",
+      "groupIndex": 2,
+      "a": "minimal-punch",
+      "b": "metaphor-forward",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "metaphor-forward",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "metaphor-forward",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "metaphor-forward",
+          "margin": "narrow",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "metaphor-forward"
+    },
+    {
+      "ordinal": 14,
+      "group": "C",
+      "groupIndex": 2,
+      "a": "minimal-punch",
+      "b": "audience-lead",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "audience-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "audience-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "audience-lead",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "audience-lead"
+    },
+    {
+      "ordinal": 15,
+      "group": "C",
+      "groupIndex": 2,
+      "a": "skill-first",
+      "b": "metaphor-forward",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "skill-first",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "skill-first",
+          "margin": "decisive",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "skill-first",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "skill-first"
+    },
+    {
+      "ordinal": 16,
+      "group": "C",
+      "groupIndex": 2,
+      "a": "skill-first",
+      "b": "audience-lead",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "audience-lead",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "audience-lead",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "skill-first",
+          "margin": "narrow",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "audience-lead"
+    },
+    {
+      "ordinal": 17,
+      "group": "C",
+      "groupIndex": 2,
+      "a": "metaphor-forward",
+      "b": "audience-lead",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "audience-lead",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "audience-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "metaphor-forward",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "audience-lead"
+    },
+    {
+      "ordinal": 18,
+      "group": "D",
+      "groupIndex": 3,
+      "a": "problem-first",
+      "b": "rigor-lead",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "problem-first",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "rigor-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "problem-first",
+          "margin": "narrow",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "problem-first"
+    },
+    {
+      "ordinal": 19,
+      "group": "D",
+      "groupIndex": 3,
+      "a": "problem-first",
+      "b": "plain-spoken",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "problem-first",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "plain-spoken",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "problem-first",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "problem-first"
+    },
+    {
+      "ordinal": 20,
+      "group": "D",
+      "groupIndex": 3,
+      "a": "problem-first",
+      "b": "selection-science",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "problem-first",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "problem-first",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "problem-first",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "problem-first"
+    },
+    {
+      "ordinal": 21,
+      "group": "D",
+      "groupIndex": 3,
+      "a": "rigor-lead",
+      "b": "plain-spoken",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "rigor-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "rigor-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "rigor-lead",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "rigor-lead"
+    },
+    {
+      "ordinal": 22,
+      "group": "D",
+      "groupIndex": 3,
+      "a": "rigor-lead",
+      "b": "selection-science",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "rigor-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "rigor-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "selection-science",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "rigor-lead"
+    },
+    {
+      "ordinal": 23,
+      "group": "D",
+      "groupIndex": 3,
+      "a": "plain-spoken",
+      "b": "selection-science",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "plain-spoken",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "selection-science",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "selection-science",
+          "margin": "narrow",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "selection-science"
+    },
+    {
+      "ordinal": 24,
+      "group": "E",
+      "groupIndex": 4,
+      "a": "quote-lead",
+      "b": "legibility",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "quote-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "legibility",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "quote-lead",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "quote-lead"
+    },
+    {
+      "ordinal": 25,
+      "group": "E",
+      "groupIndex": 4,
+      "a": "quote-lead",
+      "b": "one-hook-expand",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "quote-lead",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "quote-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "quote-lead",
+          "margin": "narrow",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "quote-lead"
+    },
+    {
+      "ordinal": 26,
+      "group": "E",
+      "groupIndex": 4,
+      "a": "quote-lead",
+      "b": "dev-experience",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "quote-lead",
+          "margin": "decisive",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "quote-lead",
+          "margin": "decisive",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "quote-lead",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "quote-lead"
+    },
+    {
+      "ordinal": 27,
+      "group": "E",
+      "groupIndex": 4,
+      "a": "legibility",
+      "b": "one-hook-expand",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "one-hook-expand",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "one-hook-expand",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "one-hook-expand",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "one-hook-expand"
+    },
+    {
+      "ordinal": 28,
+      "group": "E",
+      "groupIndex": 4,
+      "a": "legibility",
+      "b": "dev-experience",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "legibility",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "legibility",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "legibility",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "legibility"
+    },
+    {
+      "ordinal": 29,
+      "group": "E",
+      "groupIndex": 4,
+      "a": "one-hook-expand",
+      "b": "dev-experience",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "one-hook-expand",
+          "margin": "decisive",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "one-hook-expand",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "one-hook-expand",
+          "margin": "decisive",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "one-hook-expand"
+    },
+    {
+      "ordinal": 30,
+      "group": "F",
+      "groupIndex": 5,
+      "a": "anti-hype",
+      "b": "mechanism-first",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "mechanism-first",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "anti-hype",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "anti-hype",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "anti-hype"
+    },
+    {
+      "ordinal": 31,
+      "group": "F",
+      "groupIndex": 5,
+      "a": "anti-hype",
+      "b": "skeptic-rebuttal",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "anti-hype",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "anti-hype",
+          "margin": "decisive",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "skeptic-rebuttal",
+          "margin": "narrow",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "anti-hype"
+    },
+    {
+      "ordinal": 32,
+      "group": "F",
+      "groupIndex": 5,
+      "a": "anti-hype",
+      "b": "report-deliverable",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "report-deliverable",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "anti-hype",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "anti-hype",
+          "margin": "narrow",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "anti-hype"
+    },
+    {
+      "ordinal": 33,
+      "group": "F",
+      "groupIndex": 5,
+      "a": "mechanism-first",
+      "b": "skeptic-rebuttal",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "mechanism-first",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "mechanism-first",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "mechanism-first",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "mechanism-first"
+    },
+    {
+      "ordinal": 34,
+      "group": "F",
+      "groupIndex": 5,
+      "a": "mechanism-first",
+      "b": "report-deliverable",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "mechanism-first",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "mechanism-first",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "report-deliverable",
+          "margin": "narrow",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "mechanism-first"
+    },
+    {
+      "ordinal": 35,
+      "group": "F",
+      "groupIndex": 5,
+      "a": "skeptic-rebuttal",
+      "b": "report-deliverable",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "skeptic-rebuttal",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "skeptic-rebuttal",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "skeptic-rebuttal",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "skeptic-rebuttal"
+    },
+    {
+      "ordinal": 36,
+      "group": "G",
+      "groupIndex": 6,
+      "a": "gate-headline",
+      "b": "story-of-a-run",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "gate-headline",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "gate-headline",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "gate-headline",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "gate-headline"
+    },
+    {
+      "ordinal": 37,
+      "group": "G",
+      "groupIndex": 6,
+      "a": "gate-headline",
+      "b": "bring-your-own",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "bring-your-own",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "gate-headline",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "gate-headline",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "gate-headline"
+    },
+    {
+      "ordinal": 38,
+      "group": "G",
+      "groupIndex": 6,
+      "a": "gate-headline",
+      "b": "taste-engine",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "gate-headline",
+          "margin": "decisive",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "gate-headline",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "gate-headline",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "gate-headline"
+    },
+    {
+      "ordinal": 39,
+      "group": "G",
+      "groupIndex": 6,
+      "a": "story-of-a-run",
+      "b": "bring-your-own",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "bring-your-own",
+          "margin": "decisive",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "bring-your-own",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "story-of-a-run",
+          "margin": "narrow",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "bring-your-own"
+    },
+    {
+      "ordinal": 40,
+      "group": "G",
+      "groupIndex": 6,
+      "a": "story-of-a-run",
+      "b": "taste-engine",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "story-of-a-run",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "taste-engine",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "taste-engine",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "taste-engine"
+    },
+    {
+      "ordinal": 41,
+      "group": "G",
+      "groupIndex": 6,
+      "a": "bring-your-own",
+      "b": "taste-engine",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "bring-your-own",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "taste-engine",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "taste-engine",
+          "margin": "clear",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "taste-engine"
+    },
+    {
+      "ordinal": 42,
+      "group": "H",
+      "groupIndex": 7,
+      "a": "contrast-lead",
+      "b": "verb-first",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "contrast-lead",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "verb-first",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "verb-first",
+          "margin": "narrow",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "verb-first"
+    },
+    {
+      "ordinal": 43,
+      "group": "H",
+      "groupIndex": 7,
+      "a": "contrast-lead",
+      "b": "delight-lead",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "contrast-lead",
+          "margin": "narrow",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "contrast-lead",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "contrast-lead",
+          "margin": "narrow",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "contrast-lead"
+    },
+    {
+      "ordinal": 44,
+      "group": "H",
+      "groupIndex": 7,
+      "a": "contrast-lead",
+      "b": "origin-failure",
+      "walkover": true,
+      "votes": [],
+      "officialWinner": "contrast-lead"
+    },
+    {
+      "ordinal": 45,
+      "group": "H",
+      "groupIndex": 7,
+      "a": "verb-first",
+      "b": "delight-lead",
+      "walkover": false,
+      "votes": [
+        {
+          "seat": 0,
+          "lens": "substance",
+          "status": "valid",
+          "winner": "verb-first",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 1,
+          "lens": "fit",
+          "status": "valid",
+          "winner": "verb-first",
+          "margin": "clear",
+          "weight": 1
+        },
+        {
+          "seat": 2,
+          "lens": "craft",
+          "status": "valid",
+          "winner": "verb-first",
+          "margin": "narrow",
+          "weight": 1
+        }
+      ],
+      "officialWinner": "verb-first"
+    },
+    {
+      "ordinal": 46,
+      "group": "H",
+      "groupIndex": 7,
+      "a": "verb-first",
+      "b": "origin-failure",
+      "walkover": true,
+      "votes": [],
+      "officialWinner": "verb-first"
+    },
+    {
+      "ordinal": 47,
+      "group": "H",
+      "groupIndex": 7,
+      "a": "delight-lead",
+      "b": "origin-failure",
+      "walkover": true,
+      "votes": [],
+      "officialWinner": "delight-lead"
+    }
+  ],
+  "official": {
+    "standings": [
+      {
+        "group": "A",
+        "table": [
+          {
+            "label": "champions-road",
+            "pts": 9,
+            "w": 3,
+            "d": 0,
+            "l": 0
+          },
+          {
+            "label": "trust-verdict",
+            "pts": 6,
+            "w": 2,
+            "d": 0,
+            "l": 1
+          },
+          {
+            "label": "honest-scope",
+            "pts": 3,
+            "w": 1,
+            "d": 0,
+            "l": 2
+          },
+          {
+            "label": "the original",
+            "pts": 0,
+            "w": 0,
+            "d": 0,
+            "l": 3
+          }
+        ],
+        "advanced": [
+          "champions-road",
+          "trust-verdict"
+        ]
+      },
+      {
+        "group": "B",
+        "table": [
+          {
+            "label": "breadth-lead",
+            "pts": 9,
+            "w": 3,
+            "d": 0,
+            "l": 0
+          },
+          {
+            "label": "integrity-center",
+            "pts": 6,
+            "w": 2,
+            "d": 0,
+            "l": 1
+          },
+          {
+            "label": "two-sentence",
+            "pts": 3,
+            "w": 1,
+            "d": 0,
+            "l": 2
+          },
+          {
+            "label": "groups-to-knockout",
+            "pts": 0,
+            "w": 0,
+            "d": 0,
+            "l": 3
+          }
+        ],
+        "advanced": [
+          "breadth-lead",
+          "integrity-center"
+        ]
+      },
+      {
+        "group": "C",
+        "table": [
+          {
+            "label": "audience-lead",
+            "pts": 9,
+            "w": 3,
+            "d": 0,
+            "l": 0
+          },
+          {
+            "label": "skill-first",
+            "pts": 6,
+            "w": 2,
+            "d": 0,
+            "l": 1
+          },
+          {
+            "label": "metaphor-forward",
+            "pts": 3,
+            "w": 1,
+            "d": 0,
+            "l": 2
+          },
+          {
+            "label": "minimal-punch",
+            "pts": 0,
+            "w": 0,
+            "d": 0,
+            "l": 3
+          }
+        ],
+        "advanced": [
+          "audience-lead",
+          "skill-first"
+        ]
+      },
+      {
+        "group": "D",
+        "table": [
+          {
+            "label": "problem-first",
+            "pts": 9,
+            "w": 3,
+            "d": 0,
+            "l": 0
+          },
+          {
+            "label": "rigor-lead",
+            "pts": 6,
+            "w": 2,
+            "d": 0,
+            "l": 1
+          },
+          {
+            "label": "selection-science",
+            "pts": 3,
+            "w": 1,
+            "d": 0,
+            "l": 2
+          },
+          {
+            "label": "plain-spoken",
+            "pts": 0,
+            "w": 0,
+            "d": 0,
+            "l": 3
+          }
+        ],
+        "advanced": [
+          "problem-first",
+          "rigor-lead"
+        ]
+      },
+      {
+        "group": "E",
+        "table": [
+          {
+            "label": "quote-lead",
+            "pts": 9,
+            "w": 3,
+            "d": 0,
+            "l": 0
+          },
+          {
+            "label": "one-hook-expand",
+            "pts": 6,
+            "w": 2,
+            "d": 0,
+            "l": 1
+          },
+          {
+            "label": "legibility",
+            "pts": 3,
+            "w": 1,
+            "d": 0,
+            "l": 2
+          },
+          {
+            "label": "dev-experience",
+            "pts": 0,
+            "w": 0,
+            "d": 0,
+            "l": 3
+          }
+        ],
+        "advanced": [
+          "quote-lead",
+          "one-hook-expand"
+        ]
+      },
+      {
+        "group": "F",
+        "table": [
+          {
+            "label": "anti-hype",
+            "pts": 9,
+            "w": 3,
+            "d": 0,
+            "l": 0
+          },
+          {
+            "label": "mechanism-first",
+            "pts": 6,
+            "w": 2,
+            "d": 0,
+            "l": 1
+          },
+          {
+            "label": "skeptic-rebuttal",
+            "pts": 3,
+            "w": 1,
+            "d": 0,
+            "l": 2
+          },
+          {
+            "label": "report-deliverable",
+            "pts": 0,
+            "w": 0,
+            "d": 0,
+            "l": 3
+          }
+        ],
+        "advanced": [
+          "anti-hype",
+          "mechanism-first"
+        ]
+      },
+      {
+        "group": "G",
+        "table": [
+          {
+            "label": "gate-headline",
+            "pts": 9,
+            "w": 3,
+            "d": 0,
+            "l": 0
+          },
+          {
+            "label": "taste-engine",
+            "pts": 6,
+            "w": 2,
+            "d": 0,
+            "l": 1
+          },
+          {
+            "label": "bring-your-own",
+            "pts": 3,
+            "w": 1,
+            "d": 0,
+            "l": 2
+          },
+          {
+            "label": "story-of-a-run",
+            "pts": 0,
+            "w": 0,
+            "d": 0,
+            "l": 3
+          }
+        ],
+        "advanced": [
+          "gate-headline",
+          "taste-engine"
+        ]
+      },
+      {
+        "group": "H",
+        "table": [
+          {
+            "label": "verb-first",
+            "pts": 9,
+            "w": 3,
+            "d": 0,
+            "l": 0
+          },
+          {
+            "label": "contrast-lead",
+            "pts": 6,
+            "w": 2,
+            "d": 0,
+            "l": 1
+          },
+          {
+            "label": "delight-lead",
+            "pts": 3,
+            "w": 1,
+            "d": 0,
+            "l": 2
+          },
+          {
+            "label": "origin-failure",
+            "pts": 0,
+            "w": 0,
+            "d": 0,
+            "l": 3
+          }
+        ],
+        "advanced": [
+          "verb-first",
+          "contrast-lead"
+        ]
+      }
+    ],
+    "qualifiers": [
+      "champions-road",
+      "trust-verdict",
+      "breadth-lead",
+      "integrity-center",
+      "audience-lead",
+      "skill-first",
+      "problem-first",
+      "rigor-lead",
+      "quote-lead",
+      "one-hook-expand",
+      "anti-hype",
+      "mechanism-first",
+      "gate-headline",
+      "taste-engine",
+      "verb-first",
+      "contrast-lead"
+    ]
+  },
+  "warnings": [],
+  "analysis": {
+    "schema": "worldcup-group-panel-replay/v1",
+    "policyVersion": "2026-07-11",
+    "baseline": {
+      "standingsMatch": true,
+      "qualifiersMatch": true,
+      "calls": 135
+    },
+    "marginEvidence": {
+      "narrow": {
+        "votes": 31,
+        "disagreements": 9
+      },
+      "clear": {
+        "votes": 93,
+        "disagreements": 14
+      },
+      "decisive": {
+        "votes": 11,
+        "disagreements": 0
+      },
+      "missing": {
+        "votes": 0,
+        "disagreements": 0
+      }
+    },
+    "counterfactual": {
+      "supported": true
+    },
+    "policies": [
+      {
+        "kind": "fixed-seat",
+        "seat": 0,
+        "calls": 45,
+        "callsSaved": 90,
+        "outcomeMismatches": 9,
+        "incomplete": false,
+        "positionalChanges": 8,
+        "qualifierChanges": 2,
+        "qualifiers": [
+          "honest-scope",
+          "champions-road",
+          "breadth-lead",
+          "integrity-center",
+          "audience-lead",
+          "skill-first",
+          "problem-first",
+          "rigor-lead",
+          "quote-lead",
+          "one-hook-expand",
+          "mechanism-first",
+          "anti-hype",
+          "bring-your-own",
+          "gate-headline",
+          "contrast-lead",
+          "verb-first"
+        ]
+      },
+      {
+        "kind": "fixed-seat",
+        "seat": 1,
+        "calls": 45,
+        "callsSaved": 90,
+        "outcomeMismatches": 6,
+        "incomplete": false,
+        "positionalChanges": 4,
+        "qualifierChanges": 2,
+        "qualifiers": [
+          "champions-road",
+          "trust-verdict",
+          "breadth-lead",
+          "integrity-center",
+          "audience-lead",
+          "minimal-punch",
+          "rigor-lead",
+          "problem-first",
+          "quote-lead",
+          "legibility",
+          "anti-hype",
+          "mechanism-first",
+          "gate-headline",
+          "taste-engine",
+          "verb-first",
+          "contrast-lead"
+        ]
+      },
+      {
+        "kind": "fixed-seat",
+        "seat": 2,
+        "calls": 45,
+        "callsSaved": 90,
+        "outcomeMismatches": 8,
+        "incomplete": false,
+        "positionalChanges": 7,
+        "qualifierChanges": 4,
+        "qualifiers": [
+          "champions-road",
+          "trust-verdict",
+          "integrity-center",
+          "two-sentence",
+          "skill-first",
+          "metaphor-forward",
+          "problem-first",
+          "selection-science",
+          "quote-lead",
+          "one-hook-expand",
+          "skeptic-rebuttal",
+          "anti-hype",
+          "gate-headline",
+          "taste-engine",
+          "verb-first",
+          "contrast-lead"
+        ]
+      },
+      {
+        "kind": "rotating-seat",
+        "offset": 0,
+        "calls": 45,
+        "callsSaved": 90,
+        "outcomeMismatches": 7,
+        "incomplete": false,
+        "positionalChanges": 8,
+        "qualifierChanges": 2,
+        "qualifiers": [
+          "honest-scope",
+          "champions-road",
+          "breadth-lead",
+          "integrity-center",
+          "skill-first",
+          "metaphor-forward",
+          "problem-first",
+          "rigor-lead",
+          "quote-lead",
+          "one-hook-expand",
+          "mechanism-first",
+          "anti-hype",
+          "gate-headline",
+          "taste-engine",
+          "contrast-lead",
+          "verb-first"
+        ]
+      },
+      {
+        "kind": "rotating-seat",
+        "offset": 1,
+        "calls": 45,
+        "callsSaved": 90,
+        "outcomeMismatches": 11,
+        "incomplete": false,
+        "positionalChanges": 10,
+        "qualifierChanges": 4,
+        "qualifiers": [
+          "champions-road",
+          "trust-verdict",
+          "integrity-center",
+          "breadth-lead",
+          "skill-first",
+          "audience-lead",
+          "rigor-lead",
+          "problem-first",
+          "quote-lead",
+          "legibility",
+          "skeptic-rebuttal",
+          "report-deliverable",
+          "gate-headline",
+          "bring-your-own",
+          "verb-first",
+          "contrast-lead"
+        ]
+      },
+      {
+        "kind": "rotating-seat",
+        "offset": 2,
+        "calls": 45,
+        "callsSaved": 90,
+        "outcomeMismatches": 5,
+        "incomplete": false,
+        "positionalChanges": 3,
+        "qualifierChanges": 2,
+        "qualifiers": [
+          "champions-road",
+          "trust-verdict",
+          "integrity-center",
+          "two-sentence",
+          "audience-lead",
+          "skill-first",
+          "problem-first",
+          "rigor-lead",
+          "quote-lead",
+          "one-hook-expand",
+          "anti-hype",
+          "mechanism-first",
+          "gate-headline",
+          "story-of-a-run",
+          "verb-first",
+          "contrast-lead"
+        ]
+      },
+      {
+        "kind": "margin-trigger",
+        "offset": 0,
+        "calls": 63,
+        "callsSaved": 72,
+        "outcomeMismatches": 4,
+        "incomplete": false,
+        "positionalChanges": 4,
+        "qualifierChanges": 1,
+        "qualifiers": [
+          "champions-road",
+          "trust-verdict",
+          "breadth-lead",
+          "integrity-center",
+          "skill-first",
+          "metaphor-forward",
+          "problem-first",
+          "rigor-lead",
+          "quote-lead",
+          "one-hook-expand",
+          "mechanism-first",
+          "anti-hype",
+          "gate-headline",
+          "taste-engine",
+          "verb-first",
+          "contrast-lead"
+        ]
+      },
+      {
+        "kind": "margin-trigger",
+        "offset": 1,
+        "calls": 65,
+        "callsSaved": 70,
+        "outcomeMismatches": 7,
+        "incomplete": false,
+        "positionalChanges": 6,
+        "qualifierChanges": 2,
+        "qualifiers": [
+          "champions-road",
+          "trust-verdict",
+          "integrity-center",
+          "breadth-lead",
+          "audience-lead",
+          "minimal-punch",
+          "rigor-lead",
+          "problem-first",
+          "quote-lead",
+          "one-hook-expand",
+          "anti-hype",
+          "mechanism-first",
+          "gate-headline",
+          "bring-your-own",
+          "verb-first",
+          "contrast-lead"
+        ]
+      },
+      {
+        "kind": "margin-trigger",
+        "offset": 2,
+        "calls": 69,
+        "callsSaved": 66,
+        "outcomeMismatches": 3,
+        "incomplete": false,
+        "positionalChanges": 3,
+        "qualifierChanges": 2,
+        "qualifiers": [
+          "champions-road",
+          "trust-verdict",
+          "integrity-center",
+          "two-sentence",
+          "audience-lead",
+          "skill-first",
+          "problem-first",
+          "rigor-lead",
+          "quote-lead",
+          "one-hook-expand",
+          "anti-hype",
+          "mechanism-first",
+          "gate-headline",
+          "story-of-a-run",
+          "verb-first",
+          "contrast-lead"
+        ]
+      },
+      {
+        "kind": "majority-lock",
+        "heldOutSeat": 0,
+        "calls": 104,
+        "callsSaved": 31,
+        "outcomeMismatches": 0,
+        "incomplete": false,
+        "positionalChanges": 0,
+        "qualifierChanges": 0,
+        "qualifiers": [
+          "champions-road",
+          "trust-verdict",
+          "breadth-lead",
+          "integrity-center",
+          "audience-lead",
+          "skill-first",
+          "problem-first",
+          "rigor-lead",
+          "quote-lead",
+          "one-hook-expand",
+          "anti-hype",
+          "mechanism-first",
+          "gate-headline",
+          "taste-engine",
+          "verb-first",
+          "contrast-lead"
+        ]
+      },
+      {
+        "kind": "majority-lock",
+        "heldOutSeat": 1,
+        "calls": 107,
+        "callsSaved": 28,
+        "outcomeMismatches": 0,
+        "incomplete": false,
+        "positionalChanges": 0,
+        "qualifierChanges": 0,
+        "qualifiers": [
+          "champions-road",
+          "trust-verdict",
+          "breadth-lead",
+          "integrity-center",
+          "audience-lead",
+          "skill-first",
+          "problem-first",
+          "rigor-lead",
+          "quote-lead",
+          "one-hook-expand",
+          "anti-hype",
+          "mechanism-first",
+          "gate-headline",
+          "taste-engine",
+          "verb-first",
+          "contrast-lead"
+        ]
+      },
+      {
+        "kind": "majority-lock",
+        "heldOutSeat": 2,
+        "calls": 105,
+        "callsSaved": 30,
+        "outcomeMismatches": 0,
+        "incomplete": false,
+        "positionalChanges": 0,
+        "qualifierChanges": 0,
+        "qualifiers": [
+          "champions-road",
+          "trust-verdict",
+          "breadth-lead",
+          "integrity-center",
+          "audience-lead",
+          "skill-first",
+          "problem-first",
+          "rigor-lead",
+          "quote-lead",
+          "one-hook-expand",
+          "anti-hype",
+          "mechanism-first",
+          "gate-headline",
+          "taste-engine",
+          "verb-first",
+          "contrast-lead"
+        ]
+      }
+    ]
+  }
+}

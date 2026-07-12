@@ -207,6 +207,7 @@ const DQ_FAMILY = {
 const GEN_SCHEMA = { type: 'object', additionalProperties: false,
   required: ['markdown'],
   properties: { title: { type: 'string' }, oneLineAngle: { type: 'string' }, markdown: { type: 'string' } } }
+const GENERATION_DISCIPLINE = 'Work from the inline brief and artifact. Do not call tools merely to measure length or word count, and do not iteratively redraft toward an unstated length target; length is free unless the criteria explicitly impose a hard limit.'
 // The flaw schema's category enum MUST track the hard-DQ vocabulary, or the gate prompts/tallies for
 // one category set while the schema permits another. Derive it from a category list (not a captured
 // constant) so a custom EVALUATOR with custom hardDqCategories gets a matching schema via
@@ -827,6 +828,7 @@ Return JSON { axes: [ { name, values: [ { value, fragment } ] } ] }.`
 ${fragments}
 Realize every setting above faithfully. Constraints / criteria:
 ${SPEC}
+${GENERATION_DISCIPLINE}
 BASE ARTIFACT:
 ---
 ${BASE}
@@ -847,6 +849,7 @@ const slotGenPrompt = (s, k, BASE, SPEC) => `Produce ONE candidate for the "${s.
 Write ONLY this section, but make it fit the WHOLE piece (given as fixed context): it must hand off cleanly to the sections around it, in one consistent voice. Do not rewrite the rest.
 Constraints / criteria:
 ${SPEC}
+${GENERATION_DISCIPLINE}
 THE WHOLE PIECE (fixed context — the rest of the squad this section plays with):
 ---
 ${BASE}
@@ -1019,6 +1022,7 @@ const SPEC = CRITERIA_BLOCK
 const flatGenPrompt = (name, brief) => `Produce a distinct VARIANT of the artifact below. ANGLE: ${name}: ${brief}.
 Realize the angle fully; keep what the brief says must stay true. Constraints / criteria:
 ${SPEC}
+${GENERATION_DISCIPLINE}
 BASE ARTIFACT:
 ---
 ${BASE}
@@ -1181,9 +1185,11 @@ groupPlayed.forEach((r, i) => {
   groupResults.push({ ...r, gi: groupSpecs[i].gi })
   if (r.winner) decided.push({ winnerId: r.winner.id, loserId: r.loser.id })
 })
-// NOTE: the template default runs the 3-lens panel for group matches (see panelFor); for FIELD=48
-// or tight budgets, override panelFor('GROUP') to a single rotated 'craft' juror — the group stage
-// has its own stakes key precisely so this knob cannot silently downgrade the 48-format R32 knockout.
+// NOTE: the template default runs the 3-lens panel for group matches (see panelFor). A lean tier may
+// override panelFor('GROUP') to one FIXED, domain-chosen lens. panelFor receives only the stakes name,
+// not a match index, so this seam cannot rotate jurors per match. Historical replay changed group
+// qualifiers under every one-seat policy tested; this is an explicit quality trade, not equivalence.
+// The GROUP key remains separate so the knob cannot silently downgrade the 48-format R32 knockout.
 
 const adv = groups.map((g, gi) => { const s = standings(g, gi, groupResults); return { ...s, gi } })
 let qualifiers = null, bestThirdIds = new Set()
@@ -1360,7 +1366,7 @@ let playoff = null
 if (PLAYOFF && effects && !effects.predictedOptimum.inField && DESIGN.resolved && DESIGN.resolved.frag) {
   const opt = effects.predictedOptimum.coords
   const fragments = DESIGN.resolved.axes.map(a => `- ${a.name} = ${opt[a.name]}: ${DESIGN.resolved.frag[a.name][opt[a.name]]}`).join('\n')
-  const optPrompt = `Produce a VARIANT of the artifact below at this exact design point:\n${fragments}\nRealize every setting. Constraints / criteria:\n${SPEC}\nBASE ARTIFACT:\n---\n${BASE}\n---\nReturn JSON { title, oneLineAngle, markdown }.`
+  const optPrompt = `Produce a VARIANT of the artifact below at this exact design point:\n${fragments}\nRealize every setting. Constraints / criteria:\n${SPEC}\n${GENERATION_DISCIPLINE}\nBASE ARTIFACT:\n---\n${BASE}\n---\nReturn JSON { title, oneLineAngle, markdown }.`
   const og = await agent(optPrompt, { label: 'predicted-optimum', phase: 'Knockout', schema: GEN_SCHEMA })
   if (og) {
     const optEntry = { id: -2, label: 'PREDICTED-OPTIMUM', coords: opt, markdown: og.markdown, rating: 1500, group: '-' }

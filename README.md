@@ -237,8 +237,10 @@ for the runs and [`canary/README.md`](canary/README.md) for the rules.
   - `references/coordinates.md`, `references/design-pass.md` - candidate
     generation references for flat, axes, and section/recombination runs.
 - `canary/` - the release-canary contract, record shape, and recorded runs.
+- `evidence/` - dated, machine-replayable measurements that support cost and
+  judging-doctrine claims without entering tournament report surfaces.
 - `scripts/` - launch checks, the fake-judge harness loader, the sample-report
-  generator.
+  generator, cost reporter, and offline group-panel replay.
 - `tests/` - Node test suites: live-view fold/render, canary validator, and the
   end-to-end tournament harness.
 - `docs/adr/` - durable architecture decisions.
