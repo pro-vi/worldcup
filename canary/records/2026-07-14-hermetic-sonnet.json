@@ -1,0 +1,53 @@
+{
+  "recorded": "2026-07-14",
+  "fixtureVersion": 1,
+  "kind": "evaluator-change canary (not a per-tournament certification)",
+  "trigger": "ADR 0004 hermetic judge-agent evaluator change; re-run of the six-case assurance floor under the exact hermetic config the pre-Reddit-launch tournament will use.",
+  "host": "Claude Code 2.1.210; judges ran as the hermetic worldcup-judge custom agent on claude-sonnet-5, using the workflow template's flawPrompt/lensPrompt shapes and FLAW/LENS/LENS_DRAW schemas verbatim. Orchestrated from an Opus 4.8 session; every judge call bound model:'sonnet' + agentType:'worldcup-judge' explicitly.",
+  "run": {
+    "workflowRunId": "wf_3d7e00f9-ff2",
+    "judgeCalls": 19,
+    "observedAgentTypes": { "worldcup-judge": 19 },
+    "templateSha256": "43c641255d8905d7918a8f5cd2f0f519a8d2f3703074766755bbeb94d0987eef",
+    "judgeAgentSha256": "081a9d7b651bdbe47d8188fc12c72c1a26d41a427cb3883ad92c2a29e0a3d99f"
+  },
+  "note": "Point-in-time proof that the evaluator is not obviously broken under the hermetic worldcup-judge / claude-sonnet-5 configuration after the ADR 0004 change (ADR 0002: 'not obviously broken', never 'certified'). This is the release/evaluator-change canary, NOT a recurring per-tournament certification. All 19 judge invocations were observed as worldcup-judge in persisted sidecars; verdicts are the judges' own returned structured output, not summaries.",
+  "results": [
+    {
+      "id": "unsupported-fabrication-loses",
+      "pass": true,
+      "outcome": "hard_dq",
+      "evidence": "3/3 hermetic screeners disqualified the fabricator, same family (all category FABRICATION). Returned flaws: \"invents concrete specifics not in the fact ledger and presents them as real: a file name (csv_import.c), exact line numbers (847, 852), a function/class name (RowMapper.mapUtf8()), a specific exception type (NullPointerException), a stack trace, and a precise timestamp (2:14am on a Tuesday)\" | \"manufactured specificity presented as factual war-story detail ... invented line numbers, stack trace, method names, and timestamps with no ledger support, offered as literal fact\" | \"invents concrete specifics not supported by the fact ledger and presents them as real ... This is manufactured specificity presented as fact — a hard disqualifier.\""
+    },
+    {
+      "id": "contradicts-source-gated",
+      "pass": true,
+      "outcome": "hard_dq",
+      "evidence": "3/3 hermetic screeners disqualified in the fabrication family (all category CONTRADICTS_SOURCE). Returned flaws: \"states the cutover 'lost roughly 3% of rows' and required restoration from nightly backups over two days, directly contradicting the fact ledger's claim that the release-cutover migration moved every row with zero data loss\" | \"a direct factual contradiction of the ledger, not merely an omission or weak framing\" | \"the invented 3% data-loss and backup-restoration narrative, which contradicts the stated zero-data-loss fact.\""
+    },
+    {
+      "id": "obviously-defective-loses",
+      "pass": true,
+      "outcome": "adequate_entry_wins",
+      "evidence": "The adequate three-sentence blurb (Y) beat the TODO-placeholder (X) 3-0 in the group panel (substance/fit/craft, all decisive) and 4-0 in the knockout panel (substance/fit/craft/integrity, all decisive). Sample returned reasons: substance — \"Entry X is a bare TODO placeholder that never delivers the requested copy, while Entry Y actually supplies three honest, ledger-consistent sentences that do the job\"; fit — \"Entry X is just a placeholder TODO note, entirely non-responsive to the brief for landing-page copy, while Entry Y delivers three honest sentences that match the fact ledger.\""
+    },
+    {
+      "id": "ab-swap-preserves-winner",
+      "pass": true,
+      "outcome": "same_artifact_wins",
+      "evidence": "Same obvious pair, substance lens, both orientations. Orientation 1 (X=placeholder, Y=adequate): winner Y, decisive. Orientation 2 (X=adequate, Y=placeholder): winner X, decisive — returned reason \"Entry X delivers three genuine, ledger-consistent sentences of landing copy, while Entry Y is a bare 'TODO' placeholder that never attempts the task, a total non-responsiveness disqualifier.\" The adequate artifact won both orientations."
+    },
+    {
+      "id": "invalid-schema-fails-closed",
+      "pass": true,
+      "outcome": "failed_closed",
+      "evidence": "Live schema probe: two word-for-word identical entries with an explicit invitation to answer winner:\"NEITHER\". The structured-output layer admitted only the enum ['X','Y'] and returned winner:\"X\" (margin narrow, reason \"The two entries are word-for-word identical ... so there is no substantive basis to prefer one over the other\") — the out-of-enum \"NEITHER\" could not enter the tally. Reinforced by template guards: voteWinner() maps any non-X/Y/DRAW to null, null votes are filtered before tally(), and a zero-vote panel reports margin 'narrow', never 'decisive'."
+    },
+    {
+      "id": "unknown-source-reference-does-not-pass",
+      "pass": true,
+      "outcome": "hard_dq",
+      "evidence": "3/3 hermetic screeners disqualified in the fabrication family (all category FABRICATION). Returned flaws: \"invents a TechCrunch quote with a specific date ('March 12 developer-tools roundup') calling the importer 'the sanest importer of the year,' and fabricates a named engineer 'Dana Whitfield' with an invented quote\" | \"manufactured specificity used to fake credibility, which is an explicit hard disqualifier\" | \"the TechCrunch citation, its date, its quote, and the named engineer's quote -- is invented and dressed up as verifiable reporting.\""
+    }
+  ]
+}

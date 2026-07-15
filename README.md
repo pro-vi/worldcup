@@ -4,35 +4,30 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node >= 20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](package.json)
 
-A general best-of-N selection engine wearing a World Cup-style tournament
-bracket, packaged as an agent skill.
+Give it 32 or 48 candidates you can judge by reading — taglines, names, essay
+drafts, even code as text — and `worldcup` runs them through LLM-judged group
+and knockout rounds, disqualifies any entry that invents a fact it can't back
+up, and returns a self-contained HTML report: the champion, its road to the
+title, and a trust verdict that flags a lucky-looking bracket. It's a general
+best-of-N selection engine wearing a World Cup bracket, packaged as an agent
+skill. You provide the axes that diversify the candidates and the lenses the
+judges score on; the fabrication gate and Elo-calibrated seeding come with the
+engine.
 
-Mass-produce many candidates, or bring a field you already have. `worldcup`
-stages them through round-robin groups into a single-elimination knockout judged
-by taste-calibrated LLM panels, then emits a self-contained HTML report of the
-final bracket. The engine is artifact-agnostic: anything text-representable that
-a panel can rank by reading — taglines, names, designs, prompts, configs, plans,
-code solutions — runs through the same machinery. Full disclosure: prose
-(essays, taglines) is where it has real mileage; the non-prose path is exercised
-by the test harness and a committed code sample, not yet by battle.
-
-**The judge is the point:** a vivid fabricated entry forfeits; it does not lose
-"some points." Truth and authorial fidelity are gates; seeding is calibrated
-pairwise with an Elo rating, not 0–100 scores; and the trust verdict says
-plainly when the bracket winner looks like a lucky draw. Taste begins only
-after an entry proves it is not cheating.
-
-![A live worldcup bracket in the arena theme, champion crowned](docs/media/hero-arena.png)
-
-`worldcup` is an independent open-source project. It is not affiliated with,
-endorsed by, or sponsored by FIFA or any tournament organizer.
+Honest scope, up front: there is no benchmark showing this picks *better* than
+one strong single or listwise judge call — that comparison is future work.
+Prose is where it has real mileage; the code path is exercised by tests and one
+committed sample, not yet by battle. The release canary means "not obviously
+broken," never "certified." It's an independent project, not affiliated with,
+endorsed by, or sponsored by FIFA.
 
 ## See it in sixty seconds
 
 ![worldcup demo: group tables filling in, a live match glowing, an entry thrown out at the fabrication gate, and the champion crowned with confetti](docs/media/demo.gif)
 
-No agents, no API keys — a bundled demo tournament plays itself through the real
-live-view pipeline:
+The bundled demo needs no agents and no API key — it self-plays a tournament
+through the real live-view pipeline. (A real run is different: it needs Claude
+Code's Workflow tool and hundreds of model calls; see [Requirements](#requirements).)
 
 ```bash
 git clone https://github.com/pro-vi/worldcup.git
@@ -40,43 +35,33 @@ cd worldcup
 npm run demo
 ```
 
-Open the URL it prints and watch the group tables build, the knockout fill
-slot by slot, and a champion get crowned — including one entry thrown out at the
-fabrication gate, because that is the whole point of this engine.
+Open the URL it prints. Group tables build, the knockout fills in slot by slot,
+a champion gets crowned — and one entry gets red-carded at the fabrication gate
+along the way, because that gate is the point.
 
-## Why a tournament?
+## Why this shape — and what it hasn't proved
 
-This skill exists because the naive version fails in a specific way. An early
-run let an essay win by fabricating concrete detail — invented line numbers, a
-fake stack trace — that read as "authentic" to a single tasteless judge. The fix
-is not a bigger model. It is a judging architecture with taste: a fact-ledger
+worldcup exists because the naive version failed in a specific way: an early run
+let an essay win by fabricating concrete detail — invented line numbers, a fake
+stack trace — that read as "authentic" to a single tasteless judge. A bigger
+model doesn't fix that; a judging architecture with taste does. So: a
 fabrication gate that disqualifies liars outright, adversarial lenses that each
-attack one axis, the original fielded as one of the N so the champion beats it on
-merit, panels that scale with the stakes, and a global pairwise rating over every
-decided match (Elo in the shipped template) that calls out a lucky bracket.
+attack one axis, the original fielded as one of the N so the champion has to
+beat it on merit, and a global pairwise Elo rating that flags a lucky bracket.
 
-The tournament shape is not just theater. It makes selection *legible*: instead
-of an opaque "the model liked #17," you get group standings, upsets, a
-champion's road with the deciding reasons round by round, and a trust verdict
-that says plainly when the bracket and the rating disagree.
-
-## Why not one big judge call?
-
-Fair question, and the honest answer is *we have not measured it.* A single
-strong-model call handed the same fact-ledger packet is the obvious cheaper
-baseline, and nothing here has beaten it on a benchmark — because there is no
-benchmark yet. Per [ADR 0001](docs/adr/0001-single-domain-general-judge.md),
-with no eval harness "every alternative judge design is argument, not
-measurement"; per
-[ADR 0002](docs/adr/0002-no-judge-certification-canary-floor.md), a passing
-release canary means "not obviously broken," never "certified."
-
-What the tournament *demonstrably* adds over one opaque score is the legibility
-described above — standings, the champion's road, the global rating, the trust
-verdict — plus a fabrication veto that is mechanism-validated, not asserted:
-each of the release canary's three fabrication cases was disqualified 3-of-3 by
-real judges (`canary/records/2026-07-v0.1.0.json`). A head-to-head eval against
-the single-call baseline is named future work.
+What that buys is **legibility, not a proven-better pick**. Instead of an opaque
+"the model liked #17," you get group standings, upsets, the champion's road with
+the deciding reason each round, and a trust verdict for when the bracket and the
+rating disagree — plus a fabrication veto that is mechanism-validated, not
+asserted: each of the release canary's three fabrication cases was disqualified
+3-of-3 by real judges (`canary/records/2026-07-v0.1.0.json`). What it does *not*
+give you is a measured quality win over one strong judge call. Per
+[ADR 0001](docs/adr/0001-single-domain-general-judge.md), with no eval harness
+"every alternative judge design is argument, not measurement," and
+[ADR 0002](docs/adr/0002-no-judge-certification-canary-floor.md) keeps the canary
+a floor, not a certification. A head-to-head against the
+single-call baseline is named future work; a dated one-field concordance run
+lives in [`evidence/`](evidence/) for anyone who wants the raw numbers.
 
 ## What a run produces
 
@@ -86,75 +71,41 @@ the single-call baseline is named future work.
   headlines, group tables, the champion's road to the title, the global rating,
   disqualifications, and the trust verdict. Every entry is clickable, with its
   full text and match log.
-- **The champion** — plus how it won the final, and every opponent it beat.
 - **The original as a contestant** — field the current version as one of the N
   (`INCLUDE_BASE`, or a `given` item) and it competes like any entry. "Keep the
-  original" is simply the result that it won or out-rated the field — a real
-  outcome, not a failure. (No privileged bar, and no anchor bias from pasting the
-  original into every juror's prompt.)
+  original" is then simply the result that it won or out-rated the field — no
+  privileged bar, and no anchor bias from pasting the original into every juror's
+  prompt.
 - **The trust verdict** — a single-elimination winner can be a lucky draw; the
   report says so and offers a runoff.
-- **The confetti** — the trophy throws a burst when the report opens; click the
-  cup to replay it. Doctrine-aware: a champion that failed the fabrication gate
-  gets no party (the verdict says DO NOT TRUST, and the page won't contradict
-  it), and the auto-fire respects `prefers-reduced-motion`.
 
-Two committed samples, both reproduced byte-for-byte by
-`node scripts/render-sample-report.js` (the whole tournament run with
-deterministic stub judges; `npm run check` fails if they drift). See them
-rendered live — no clone required:
+Two committed samples, reproduced byte-for-byte by
+`node scripts/render-sample-report.js` (`npm run check` fails if they drift) and
+viewable live with no clone:
 
 - [**Taglines sample**](https://pro-vi.github.io/worldcup/media/sample-report.html)
   — 32 tagline variants, the prose-shaped case.
 - [**Code sample**](https://pro-vi.github.io/worldcup/media/sample-report-code.html)
   — the same machinery on **code**: 32 generated `debounce` implementations, one
-  disqualified at the gate for a fabricated benchmark claim. Code entries render
-  as code in the report's info sheets.
-
-Offline instead: clone the repo and open `docs/media/sample-report.html` or
-`docs/media/sample-report-code.html` in a browser, or regenerate them locally
-with the command above.
-
-![The code sample: a debounce implementation open in the report info sheet](docs/media/report-code.png)
+  disqualified at the gate for a fabricated benchmark claim.
 
 ## Quickstart
 
-### Claude Code
-
-From inside the clone (where the demo left you), link the skill folder into
-Claude Code's personal skill directory (`-sfn` makes re-runs safe):
+It's a skill. You can either paste this repo into your agent and ask it to
+install worldcup, or set it up by hand — you'll want the clone either way, since
+it runs the demo and holds the Workflow template:
 
 ```bash
 git clone https://github.com/pro-vi/worldcup.git && cd worldcup   # skip if you ran the demo
 mkdir -p ~/.claude/skills
-ln -sfn "$(pwd)/worldcup" ~/.claude/skills/worldcup
-ls ~/.claude/skills/worldcup/SKILL.md   # verify: should list the file
+ln -sfn "$(pwd)/worldcup" ~/.claude/skills/worldcup   # symlink stays in sync with git pull
+npm run check                                         # confirm the repo is coherent
 ```
 
-Restart Claude Code so it reloads skill metadata, then ask for `/worldcup` or
-describe a task like "generate 32 tagline variants and pick the best."
-
-### Codex CLI
-
-> **On Codex today:** a full tournament run needs Claude Code's ultracode
-> Workflow tool, which Codex does not provide. Installing the skill on Codex
-> still gets you the self-playing `npm run demo`, the fabrication-gated judging
-> doctrine, and the portable Workflow template you can drive from any
-> orchestrator — see [Without the Workflow tool](#the-workflow-dependency).
-
-Codex loads skills from `$CODEX_HOME/skills`, defaulting to `~/.codex/skills`.
-Same shape, from inside the clone:
-
-```bash
-git clone https://github.com/pro-vi/worldcup.git && cd worldcup   # skip if you ran the demo
-mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
-ln -sfn "$(pwd)/worldcup" "${CODEX_HOME:-$HOME/.codex}/skills/worldcup"
-ls "${CODEX_HOME:-$HOME/.codex}/skills/worldcup/SKILL.md"   # verify
-```
-
-Restart Codex so it reloads skill frontmatter. In a new session, mention
-`worldcup` to pull in the judging doctrine and the portable template; run the
-full bracket from a Claude Code host (see the note above).
+A full tournament drives Claude Code's ultracode Workflow tool; see
+[Requirements](#requirements). Restart Claude Code so it reloads skills, then run
+`/worldcup` — or just describe the task: "generate 32 tagline variants and pick
+the best."
 
 ## Requirements
 
@@ -166,63 +117,50 @@ full bracket from a Claude Code host (see the note above).
 
 Real tournament runs need the
 **[ultracode Workflow tool](https://code.claude.com/docs/en/workflows)**: a
-multi-agent orchestration feature of the agent host (Claude Code's ultracode
-mode) that takes a plain-JavaScript script exposing `agent()` / `parallel()` /
-`log()` / `phase()` and runs it as one deterministic background run. It needs
-Claude Code v2.1.154 or later on a paid plan — enable it with `/effort
-ultracode`, or just ask for a workflow in any prompt. The skill fills that
-script in from `worldcup/references/workflow-template.js`.
+multi-agent orchestration feature (Claude Code's ultracode mode) that takes a
+plain-JavaScript script exposing `agent()` / `parallel()` / `log()` / `phase()`
+and runs it as one deterministic background run. It needs Claude Code v2.1.154 or
+later on a paid plan — enable it with `/effort ultracode`, or just ask for a
+workflow in any prompt. The skill fills that script in from
+`worldcup/references/workflow-template.js`. A real 32-team run is hundreds of
+judge and generation agent calls; the skill states the ballpark and the tier
+before launching.
 
-### Optional hermetic judges
+Without the Workflow tool you still get `npm run demo`, the standalone
+fabrication-gated judging doctrine in `worldcup/references/judging.md`, and the
+portable template — plain JS with marked fill-in seams, adaptable to any
+orchestrator whose `parallel()` returns results in input order (`Promise.all`
+semantics; a completion-order pool silently breaks determinism).
+
+<details>
+<summary><b>Optional: isolate tournament judges from tools and repo access</b></summary>
 
 Claude Code operators can prevent tournament judges from reading the repository,
 running shell commands, or using the web. Copy
-`worldcup/references/agents/worldcup-judge.md` to either
-`.claude/agents/worldcup-judge.md` in the project or
-`~/.claude/agents/worldcup-judge.md`, then **start a new Claude session** so the
-agent registry reloads. In the copied Workflow template set:
+`worldcup/references/agents/worldcup-judge.md` to `.claude/agents/worldcup-judge.md`
+(project) or `~/.claude/agents/worldcup-judge.md`, start a new Claude session so
+the agent registry reloads, and in the copied template set:
 
 ```js
 EVALUATOR.agentOptions = { ...EVALUATOR.agentOptions, agentType: 'worldcup-judge' }
 ```
 
-This is judge-only: generation and any phase-0 fetch/research agent keep their
-normal tools. The agent definition uses Claude Code's documented
-`disallowedTools` frontmatter for built-in, MCP, and MCP-resource tools. The
-paired host probe must show an unrestricted control actually using an ordinary
-tool while the typed judge cannot; prompt refusal alone does not count. The
-template runs a schema-bound sentinel before generation; a
-missing definition, stale session, or schema-incompatible agent fails the run
-before it spends calls generating the field. The default remains `{}` for
-portable orchestrators that do not implement Claude Code custom agent types.
-
-Honest cost note: a real 32-team run is hundreds of judge and generation agent
-calls — the skill states the ballpark and the tier before launching (see the
-Cost section of `worldcup/SKILL.md`).
-
-Without the Workflow tool, you still get:
-
-- `npm run demo` — the full live-view experience on a bundled fixture;
-- `worldcup/references/judging.md` — a standalone, fabrication-gated
-  LLM-judging doctrine you can lift into any evaluation setup;
-- `worldcup/references/workflow-template.js` — portable plain JS with clearly
-  marked fill-in seams, adaptable to any orchestrator that can spawn judge
-  agents (the repo's own test harness drives it with stub judges). Porting
-  contract: the host's `parallel()` must return results in input positions
-  (`Promise.all` semantics) — a pool that returns results in completion order
-  silently breaks the byte-identical determinism this repo advertises.
+This is judge-only — generation and any fetch/research agent keep their normal
+tools. The agent definition uses Claude Code's documented `disallowedTools`
+frontmatter, and a schema-bound sentinel runs before generation so a missing
+definition or stale session fails the run before it spends calls. The paired host
+probe (`worldcup/references/agents/workflow-judge-agent-probe.js`) must show an
+unrestricted control using an ordinary tool while the typed judge cannot; prompt
+refusal alone does not count. The default stays `{}` for portable orchestrators.
+</details>
 
 ## The live view
 
-![The three live-view themes: arena, concrete, 2026](docs/media/themes-strip.png)
-
-Every run is watchable for free in `/workflows` (Tier-0). Tier-1 is a
-dependency-free HTML bracket that fills in *while the run happens*: group tables
-building, knockout games "playing", winners advancing. Three curated themes —
-`arena`, `concrete`, `2026` — plus `--switcher` to flip between them and
-`--serve` for a flicker-free page on `127.0.0.1`. When the champion is crowned,
-the page throws confetti (click the champion card to replay). Preview any time
-with `npm run demo`; wiring into a real run is step 4 of `worldcup/SKILL.md`.
+Every run is watchable for free in `/workflows`. On top of that, a
+dependency-free HTML bracket fills in *while the run happens* — group tables
+building, knockout games playing, the champion crowned with a confetti burst
+(three themes; `--serve` for a flicker-free localhost page). Preview it any time
+with `npm run demo`; wiring it into a real run is step 4 of `worldcup/SKILL.md`.
 
 ## Verify the repo
 
@@ -230,57 +168,17 @@ with `npm run demo`; wiring into a real run is step 4 of `worldcup/SKILL.md`.
 npm run check
 ```
 
-That runs syntax checks for the executable JavaScript, the live-view parser/fold
-tests, the canary-validator tests, a **fake-judge end-to-end harness** that
-plays the entire tournament template with deterministic stub judges (including
-a completion-order-invariance test: same verdicts, byte-identical report), and
-the release-canary fixture contract. CI runs the same on Linux (Node 20/22/24)
-and Windows (Node 20).
-
-The six-case judge canary is also run through real judges before each release,
-and the validated record is committed: see [`canary/records/`](canary/records/)
-for the runs and [`canary/README.md`](canary/README.md) for the rules.
-
-## Layout
-
-- `worldcup/` - the skill itself.
-  - `SKILL.md` - triggers, inputs to settle, procedure, judging doctrine, cost tiers.
-  - `references/judging.md` - the taste engine: deterministic preflight,
-    fabrication gate, diverse-lens panels, calibration, rating, fielding the
-    original as a contestant, and domain profile sockets.
-  - `references/brackets.md` - exact 32-team and 48-team bracket math, snake
-    seeding, group advancement, and strict-fidelity notes.
-  - `references/workflow-template.js` - the ultracode Workflow template the skill
-    copies and fills; it encodes seeding, group->knockout, judging, Elo,
-    `INCLUDE_BASE` (field the original as a contestant), and the final HTML report.
-  - `references/agents/worldcup-judge.md` and `workflow-judge-agent-probe.js` -
-    optional Claude Code judge-hermeticity definition and its paired host probe.
-  - `references/live-view.js` and `live-view.md` - the live view and its event
-    contract; also home of the `--demo` mode.
-  - `references/profiles/` - optional domain/voice taste you plug into the
-    domain-general judge. The engine ships taste-neutral; bring your own profile.
-  - `references/coordinates.md`, `references/design-pass.md` - candidate
-    generation references for flat, axes, and section/recombination runs.
-- `canary/` - the release-canary contract, record shape, and recorded runs.
-- `evidence/` - dated, machine-replayable measurements that support cost and
-  judging-doctrine claims without entering tournament report surfaces.
-- `scripts/` - launch checks, the fake-judge harness loader, the sample-report
-  generator, cost reporter, and offline group-panel replay.
-- `tests/` - Node test suites: live-view fold/render, canary validator, and the
-  end-to-end tournament harness.
-- `docs/adr/` - durable architecture decisions.
-- `docs/token-cost.md` - the measured token-cost arc across three instrumented
-  runs: what was cut, what was traded, what was refused, and what's next.
-- `docs/media/` - screenshots and the committed sample report.
+Runs syntax checks, the live-view parser/fold tests, canary validation, and a
+deterministic fake-judge harness that plays the entire tournament template with
+stub judges (including a completion-order-invariance test: same verdicts,
+byte-identical report). CI mirrors it on Linux (Node 20/22/24) and Windows
+(Node 20). The six-case judge canary is also run through real judges before each
+release and the validated record committed — see [`canary/`](canary/).
 
 ## Status
 
-Shipped: hand-authored flat fields, factorial/axes generation, section
-recombination with a coherence judge, snake seeding, group-stage draws, 32-team
-and 48-team advancement, best-third surfacing, the fabrication gate, Elo,
-the original fielded as a contestant (`INCLUDE_BASE`), live view with demo mode,
-match-day headlines, and the final HTML report — plus a fake-judge e2e harness
-that keeps all of it honest.
-
-Deferred: genetic evolve mode, optimal-design solver for mixed-radix fractions,
-and domain-specific bundled profiles.
+Shipped: flat and factorial/axes generation, section recombination, snake
+seeding, 32- and 48-team advancement, the fabrication gate, Elo, the original as
+a contestant (`INCLUDE_BASE`), the live view, and the final HTML report — all
+kept honest by the fake-judge end-to-end harness. Deferred: genetic evolve mode,
+a mixed-radix optimal-design solver, and bundled domain profiles.
