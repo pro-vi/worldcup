@@ -1,0 +1,688 @@
+{
+  "measurement": "reddit-launch v2 B1 single-call listwise baseline vs 32-entry tournament — one-field concordance & stability observation",
+  "recorded": "2026-07-14",
+  "supersedes": "2026-07-14-reddit-launch (v1): v1 omitted worldcup's true origin story from the fact ledger, so 8 honest drafts improvised it with WRONG specifics and were correctly hard-DQ'd; v2 adds the true origin story to supported_facts and tells the taste panels the ledger is permission, not a scoring rubric. Mechanism (template, judge agent, gate, panels, model) is byte-identical to v1; only per-run FILL content changed.",
+  "disclaimer": "This is a ONE-FIELD concordance and stability observation, NOT a benchmark and NOT a quality comparison. There is no oracle; neither method is established as more correct. No claim of superiority for either method is made or implied.",
+  "identity": {
+    "claudeCode": "2.1.210",
+    "model": "claude-sonnet-5 (bound explicitly per agent; orchestrated from an Opus 4.8 session)",
+    "judgeAgentType": "worldcup-judge (hermetic)",
+    "templateSha256": "43c641255d8905d7918a8f5cd2f0f519a8d2f3703074766755bbeb94d0987eef",
+    "judgeAgentSha256": "081a9d7b651bdbe47d8188fc12c72c1a26d41a427cb3883ad92c2a29e0a3d99f",
+    "filledScriptSha256": "7d36e51644f94103a61336d7540e9e45218af3c248173e634cb2262059ec7b9f",
+    "runIds": {
+      "tournament": "wf_c2760647-7d2",
+      "b1": "wf_63e55133-b98"
+    },
+    "canaryReused": "2026-07-14-hermetic-sonnet (evaluator mechanism unchanged from v1; ADR 0002 scopes the canary to mechanism changes, not per-run ledger/criteria content)",
+    "config": {
+      "source": "generate",
+      "field": 32,
+      "includeBase": false,
+      "screeners": 3,
+      "panels": "substance/fit/craft through R16; +integrity from QF; tiebreak integrity",
+      "liveBeacons": true
+    }
+  },
+  "field": {
+    "size": 32,
+    "fieldHash": "d9b64c176d14b661f47c6d1fe3e789b80851e860a5224f28bee72bf8b34ce094",
+    "canonicalSerialization": "JSON.stringify(field.map({id,label,markdown}) sorted by id asc)"
+  },
+  "permutationRule": "For k in 1,2,3: sort entrant labels ascending by SHA256(fieldHash + \":b1:\" + k + \":\" + label). Predeclared before the field existed.",
+  "b1Orders": [
+    {
+      "k": 1,
+      "order": [
+        "no-api-keys",
+        "seriously-built-underbelly",
+        "weekend-build-log",
+        "analogy-stack",
+        "best-of-n-evangelist",
+        "community-question",
+        "quiet-competent",
+        "report-flex",
+        "subverted-listicle",
+        "use-case-list",
+        "dogfood-meta",
+        "demo-first",
+        "origin-story",
+        "red-card-hero",
+        "bracket-nerd",
+        "problem-to-build",
+        "anti-hype-manifesto",
+        "visual-tour",
+        "self-roast",
+        "honest-flex",
+        "cost-transparency",
+        "commentator",
+        "punchy-short",
+        "skeptic-faq",
+        "changelog-deadpan",
+        "confetti-closer",
+        "brag-then-caveat",
+        "soccer-metaphor",
+        "one-liner-and-clip",
+        "pick-the-best-of-anything",
+        "cheap-model-hypothesis",
+        "token-burner"
+      ]
+    },
+    {
+      "k": 2,
+      "order": [
+        "no-api-keys",
+        "visual-tour",
+        "cost-transparency",
+        "punchy-short",
+        "dogfood-meta",
+        "commentator",
+        "token-burner",
+        "confetti-closer",
+        "quiet-competent",
+        "changelog-deadpan",
+        "self-roast",
+        "origin-story",
+        "one-liner-and-clip",
+        "honest-flex",
+        "cheap-model-hypothesis",
+        "skeptic-faq",
+        "report-flex",
+        "soccer-metaphor",
+        "anti-hype-manifesto",
+        "subverted-listicle",
+        "red-card-hero",
+        "community-question",
+        "demo-first",
+        "bracket-nerd",
+        "problem-to-build",
+        "pick-the-best-of-anything",
+        "seriously-built-underbelly",
+        "weekend-build-log",
+        "brag-then-caveat",
+        "best-of-n-evangelist",
+        "use-case-list",
+        "analogy-stack"
+      ]
+    },
+    {
+      "k": 3,
+      "order": [
+        "report-flex",
+        "pick-the-best-of-anything",
+        "analogy-stack",
+        "soccer-metaphor",
+        "confetti-closer",
+        "punchy-short",
+        "problem-to-build",
+        "visual-tour",
+        "skeptic-faq",
+        "bracket-nerd",
+        "self-roast",
+        "one-liner-and-clip",
+        "seriously-built-underbelly",
+        "best-of-n-evangelist",
+        "no-api-keys",
+        "weekend-build-log",
+        "red-card-hero",
+        "demo-first",
+        "token-burner",
+        "anti-hype-manifesto",
+        "quiet-competent",
+        "honest-flex",
+        "changelog-deadpan",
+        "cost-transparency",
+        "cheap-model-hypothesis",
+        "dogfood-meta",
+        "community-question",
+        "origin-story",
+        "brag-then-caveat",
+        "subverted-listicle",
+        "commentator",
+        "use-case-list"
+      ]
+    }
+  ],
+  "tournament": {
+    "champion": {
+      "label": "punchy-short",
+      "title": "worldcup Reddit launch post — punchy-short variant",
+      "seedRank": 13,
+      "rating": 1697
+    },
+    "trustVerdict": "robust: bracket champion is also the rating leader",
+    "championIsRatingLeader": true,
+    "recommendation": "ADOPT THE CHAMPION: bracket winner is also the rating leader",
+    "final": {
+      "winner": "punchy-short",
+      "loser": "problem-to-build",
+      "margin": "decisive",
+      "reason": "Y earns its extra credit with a genuine, specific closer that invites replies (\"What would you throw 32 of into a bracket?\") and explicitly surfaces the self-contained HTML report as the concrete visual payoff, where X ends on a flat \"feedback welcome\" and never names that artifact."
+    },
+    "disqualified": [],
+    "globalRanking": [
+      {
+        "rank": 1,
+        "label": "punchy-short",
+        "rating": 1697
+      },
+      {
+        "rank": 2,
+        "label": "problem-to-build",
+        "rating": 1645
+      },
+      {
+        "rank": 3,
+        "label": "seriously-built-underbelly",
+        "rating": 1618
+      },
+      {
+        "rank": 4,
+        "label": "red-card-hero",
+        "rating": 1589
+      },
+      {
+        "rank": 5,
+        "label": "skeptic-faq",
+        "rating": 1566
+      },
+      {
+        "rank": 6,
+        "label": "confetti-closer",
+        "rating": 1554
+      },
+      {
+        "rank": 7,
+        "label": "origin-story",
+        "rating": 1537
+      },
+      {
+        "rank": 8,
+        "label": "one-liner-and-clip",
+        "rating": 1536
+      },
+      {
+        "rank": 9,
+        "label": "brag-then-caveat",
+        "rating": 1532
+      },
+      {
+        "rank": 10,
+        "label": "subverted-listicle",
+        "rating": 1530
+      },
+      {
+        "rank": 11,
+        "label": "pick-the-best-of-anything",
+        "rating": 1528
+      },
+      {
+        "rank": 12,
+        "label": "soccer-metaphor",
+        "rating": 1510
+      },
+      {
+        "rank": 13,
+        "label": "report-flex",
+        "rating": 1508
+      },
+      {
+        "rank": 14,
+        "label": "cost-transparency",
+        "rating": 1504
+      },
+      {
+        "rank": 15,
+        "label": "dogfood-meta",
+        "rating": 1501
+      },
+      {
+        "rank": 16,
+        "label": "demo-first",
+        "rating": 1501
+      },
+      {
+        "rank": 17,
+        "label": "honest-flex",
+        "rating": 1498
+      },
+      {
+        "rank": 18,
+        "label": "self-roast",
+        "rating": 1497
+      },
+      {
+        "rank": 19,
+        "label": "best-of-n-evangelist",
+        "rating": 1473
+      },
+      {
+        "rank": 20,
+        "label": "anti-hype-manifesto",
+        "rating": 1472
+      },
+      {
+        "rank": 21,
+        "label": "community-question",
+        "rating": 1471
+      },
+      {
+        "rank": 22,
+        "label": "quiet-competent",
+        "rating": 1471
+      },
+      {
+        "rank": 23,
+        "label": "use-case-list",
+        "rating": 1470
+      },
+      {
+        "rank": 24,
+        "label": "bracket-nerd",
+        "rating": 1470
+      },
+      {
+        "rank": 25,
+        "label": "cheap-model-hypothesis",
+        "rating": 1467
+      },
+      {
+        "rank": 26,
+        "label": "weekend-build-log",
+        "rating": 1411
+      },
+      {
+        "rank": 27,
+        "label": "token-burner",
+        "rating": 1409
+      },
+      {
+        "rank": 28,
+        "label": "changelog-deadpan",
+        "rating": 1409
+      },
+      {
+        "rank": 29,
+        "label": "no-api-keys",
+        "rating": 1408
+      },
+      {
+        "rank": 30,
+        "label": "commentator",
+        "rating": 1407
+      },
+      {
+        "rank": 31,
+        "label": "visual-tour",
+        "rating": 1407
+      },
+      {
+        "rank": 32,
+        "label": "analogy-stack",
+        "rating": 1406
+      }
+    ]
+  },
+  "b1Raw": [
+    {
+      "k": 1,
+      "order": [
+        "no-api-keys",
+        "seriously-built-underbelly",
+        "weekend-build-log",
+        "analogy-stack",
+        "best-of-n-evangelist",
+        "community-question",
+        "quiet-competent",
+        "report-flex",
+        "subverted-listicle",
+        "use-case-list",
+        "dogfood-meta",
+        "demo-first",
+        "origin-story",
+        "red-card-hero",
+        "bracket-nerd",
+        "problem-to-build",
+        "anti-hype-manifesto",
+        "visual-tour",
+        "self-roast",
+        "honest-flex",
+        "cost-transparency",
+        "commentator",
+        "punchy-short",
+        "skeptic-faq",
+        "changelog-deadpan",
+        "confetti-closer",
+        "brag-then-caveat",
+        "soccer-metaphor",
+        "one-liner-and-clip",
+        "pick-the-best-of-anything",
+        "cheap-model-hypothesis",
+        "token-burner"
+      ],
+      "response": {
+        "top5": [
+          {
+            "label": "seriously-built-underbelly",
+            "reason": "The strongest all-around package: a genuinely funny hook ('Dumber than it sounds. Also more rigorous than it has any right to be'), specific engineering flex (Elo seeding, trust verdict, fabrication gate) that earns the 'seriously built underneath' promise, honest limits stated plainly without over-caveating, and a warm, specific closing invite ('a better name for the judge that catches you lying') that reads like a real person, not a pitch."
+          },
+          {
+            "label": "self-roast",
+            "reason": "The single best-matched voice for the requested vibe — 'I couldn't decide on a tagline, so I built a 32-team World Cup bracket... instead of just... picking one' and 'This is not a healthy relationship with scope, and I'm aware of that as I post it' nail lighthearted self-awareness while still landing the origin story and honest limits without padding."
+          },
+          {
+            "label": "skeptic-faq",
+            "reason": "Smartly disarms the exact objection a jaded r/ClaudeAI reader has already formed ('why not just paste all 32 into one strong model') before they can lodge it, stays honest that there's no benchmark, and closes with a genuine, low-ego invite to poke holes."
+          },
+          {
+            "label": "subverted-listicle",
+            "reason": "A genuinely funny, self-aware subversion of the listicle format ('there are 5, I'm padding for the algorithm' / 'this list should have stopped at point 5') that avoids every banned AI-slop tell while still delivering the fabrication-gate story, cost honesty, and demo pointer cleanly."
+          },
+          {
+            "label": "soccer-metaphor",
+            "reason": "Sustains a coherent, funny sports conceit ('I'm the ref, the pitch, and the guy who wrote the fixture list' ... 'straight red card: no points, gone, no arguing with the ref') through the whole post, stays within the fact ledger, and ends on a real question that invites comparison-of-approach replies."
+          }
+        ],
+        "disqualified": [
+          {
+            "label": "bracket-nerd",
+            "category": "FABRICATION"
+          }
+        ],
+        "topConfidence": "medium"
+      }
+    },
+    {
+      "k": 2,
+      "order": [
+        "no-api-keys",
+        "visual-tour",
+        "cost-transparency",
+        "punchy-short",
+        "dogfood-meta",
+        "commentator",
+        "token-burner",
+        "confetti-closer",
+        "quiet-competent",
+        "changelog-deadpan",
+        "self-roast",
+        "origin-story",
+        "one-liner-and-clip",
+        "honest-flex",
+        "cheap-model-hypothesis",
+        "skeptic-faq",
+        "report-flex",
+        "soccer-metaphor",
+        "anti-hype-manifesto",
+        "subverted-listicle",
+        "red-card-hero",
+        "community-question",
+        "demo-first",
+        "bracket-nerd",
+        "problem-to-build",
+        "pick-the-best-of-anything",
+        "seriously-built-underbelly",
+        "weekend-build-log",
+        "brag-then-caveat",
+        "best-of-n-evangelist",
+        "use-case-list",
+        "analogy-stack"
+      ],
+      "response": {
+        "top5": [
+          {
+            "label": "token-burner",
+            "reason": "The hook (\"I chose violence\") is the sharpest one-liner in the field, and it's the only draft that also owns the Workflow-tooling dependency alongside cost, confetti, and the fabrication gate without ever tipping into a caveat dump."
+          },
+          {
+            "label": "best-of-n-evangelist",
+            "reason": "Uniquely foregrounds the exact insight the brief flags as most important — \"the World Cup part is just packaging\" — landing the best-of-N idea more clearly than any other draft, plus correctly frames it as a cheap-model (Haiku) tool rather than a flex on the good model."
+          },
+          {
+            "label": "commentator",
+            "reason": "Best word-count discipline in the whole field (right in the 120-220 sweet spot), sustains a genuinely funny sports-commentary voice without padding, hits confetti/live-bracket visuals explicitly, and closes with the exact \"open for feedback\" the brief calls out as acceptable."
+          },
+          {
+            "label": "problem-to-build",
+            "reason": "Tightest, punchiest title (\"gave it 32 rivals and a lie detector\") paired with an efficient origin-story-to-mechanism-to-honesty arc that never overstays its welcome."
+          },
+          {
+            "label": "soccer-metaphor",
+            "reason": "Fully commits to the ref/pitch/fixture-list bit without breaking character, and closes with a genuine, specific question inviting other devs' best-of-N approaches rather than a generic sign-off."
+          }
+        ],
+        "disqualified": [
+          {
+            "label": "visual-tour",
+            "category": "PLAGIARISTIC_OR_NON_RESPONSIVE"
+          },
+          {
+            "label": "quiet-competent",
+            "category": "PLAGIARISTIC_OR_NON_RESPONSIVE"
+          },
+          {
+            "label": "self-roast",
+            "category": "PLAGIARISTIC_OR_NON_RESPONSIVE"
+          },
+          {
+            "label": "community-question",
+            "category": "PLAGIARISTIC_OR_NON_RESPONSIVE"
+          },
+          {
+            "label": "bracket-nerd",
+            "category": "PLAGIARISTIC_OR_NON_RESPONSIVE"
+          },
+          {
+            "label": "seriously-built-underbelly",
+            "category": "PLAGIARISTIC_OR_NON_RESPONSIVE"
+          }
+        ],
+        "topConfidence": "medium"
+      }
+    },
+    {
+      "k": 3,
+      "order": [
+        "report-flex",
+        "pick-the-best-of-anything",
+        "analogy-stack",
+        "soccer-metaphor",
+        "confetti-closer",
+        "punchy-short",
+        "problem-to-build",
+        "visual-tour",
+        "skeptic-faq",
+        "bracket-nerd",
+        "self-roast",
+        "one-liner-and-clip",
+        "seriously-built-underbelly",
+        "best-of-n-evangelist",
+        "no-api-keys",
+        "weekend-build-log",
+        "red-card-hero",
+        "demo-first",
+        "token-burner",
+        "anti-hype-manifesto",
+        "quiet-competent",
+        "honest-flex",
+        "changelog-deadpan",
+        "cost-transparency",
+        "cheap-model-hypothesis",
+        "dogfood-meta",
+        "community-question",
+        "origin-story",
+        "brag-then-caveat",
+        "subverted-listicle",
+        "commentator",
+        "use-case-list"
+      ],
+      "response": {
+        "top5": [
+          {
+            "label": "problem-to-build",
+            "reason": "The tightest package in the field: a razor-sharp hook (fake stack trace -> 32 rivals and a lie detector), honest limits stated in one clean breath, a genuine 'feedback welcome' close, and not a single wasted line."
+          },
+          {
+            "label": "soccer-metaphor",
+            "reason": "Best sustained personality in the field (the ref/pitch/fixture-list opener lands immediately), covers every fact point without feeling like a checklist, and closes with a real question inviting replies."
+          },
+          {
+            "label": "skeptic-faq",
+            "reason": "Smartly preempts the exact skeptical top-comment r/ClaudeAI would leave ('why not just ask one model'), which is the most reddit-native move in the field, and stays honest about the missing benchmark without hedging."
+          },
+          {
+            "label": "token-burner",
+            "reason": "'I chose violence' is the funniest, most human single line in the whole set, the cost number is stated upfront as the hook rather than buried, and the token-burn-as-feature joke lands exactly on brief."
+          },
+          {
+            "label": "anti-hype-manifesto",
+            "reason": "The self-imposed hype-word ban is a clever, on-theme joke that disarms the marketing-speak criticism before anyone can make it, stays clean of any style tells, and ends on a genuinely curious, humble note."
+          }
+        ],
+        "disqualified": [
+          {
+            "label": "red-card-hero",
+            "category": "FABRICATION"
+          },
+          {
+            "label": "demo-first",
+            "category": "FABRICATION"
+          }
+        ],
+        "topConfidence": "medium"
+      }
+    }
+  ],
+  "metrics": {
+    "tournamentChampion": "punchy-short",
+    "b1TopChoices": {
+      "k1": "seriously-built-underbelly",
+      "k2": "token-burner",
+      "k3": "problem-to-build"
+    },
+    "championWasB1TopChoice": {
+      "k1": false,
+      "k2": false,
+      "k3": false,
+      "count": "0/3"
+    },
+    "championInB1Top5": {
+      "k1": false,
+      "k2": false,
+      "k3": false,
+      "count": "0/3"
+    },
+    "pairwiseTop5Overlap": {
+      "k1∩k2": {
+        "count": 1,
+        "labels": [
+          "soccer-metaphor"
+        ]
+      },
+      "k1∩k3": {
+        "count": 2,
+        "labels": [
+          "skeptic-faq",
+          "soccer-metaphor"
+        ]
+      },
+      "k2∩k3": {
+        "count": 3,
+        "labels": [
+          "token-burner",
+          "problem-to-build",
+          "soccer-metaphor"
+        ]
+      }
+    },
+    "dqDisagreement": {
+      "tournamentDQ": [],
+      "b1DQ": {
+        "k1": [
+          {
+            "label": "bracket-nerd",
+            "category": "FABRICATION"
+          }
+        ],
+        "k2": [
+          {
+            "label": "visual-tour",
+            "category": "PLAGIARISTIC_OR_NON_RESPONSIVE"
+          },
+          {
+            "label": "quiet-competent",
+            "category": "PLAGIARISTIC_OR_NON_RESPONSIVE"
+          },
+          {
+            "label": "self-roast",
+            "category": "PLAGIARISTIC_OR_NON_RESPONSIVE"
+          },
+          {
+            "label": "community-question",
+            "category": "PLAGIARISTIC_OR_NON_RESPONSIVE"
+          },
+          {
+            "label": "bracket-nerd",
+            "category": "PLAGIARISTIC_OR_NON_RESPONSIVE"
+          },
+          {
+            "label": "seriously-built-underbelly",
+            "category": "PLAGIARISTIC_OR_NON_RESPONSIVE"
+          }
+        ],
+        "k3": [
+          {
+            "label": "red-card-hero",
+            "category": "FABRICATION"
+          },
+          {
+            "label": "demo-first",
+            "category": "FABRICATION"
+          }
+        ]
+      },
+      "dqOnlyInTournament": [],
+      "dqOnlyInB1": [
+        "bracket-nerd",
+        "visual-tour",
+        "quiet-competent",
+        "self-roast",
+        "community-question",
+        "seriously-built-underbelly",
+        "red-card-hero",
+        "demo-first"
+      ],
+      "note": "v2 tournament DQ'd 0 entries. With the true origin story now in the ledger, honest drafts had a real fact to anchor to instead of improvising wrong specifics. Reported as a divergence, NOT as evidence either gate is correct.",
+      "b1Top5EntriesTournamentDQd": {
+        "k1": [],
+        "k2": [],
+        "k3": []
+      }
+    },
+    "cost": {
+      "tournament": {
+        "agents": 400,
+        "tokens": 5135794,
+        "toolCalls": 496,
+        "durationMs": 1291786
+      },
+      "b1": {
+        "agents": 3,
+        "tokens": 101038,
+        "toolCalls": 3,
+        "durationMs": 272062
+      },
+      "b1_vs_tournament": {
+        "callRatio": 0.0075,
+        "tokenRatio": 0.0197
+      }
+    }
+  },
+  "limitations": [
+    "One field, one run. No oracle: neither the tournament nor the single-call baseline is established as more correct.",
+    "This does not show worldcup beats a single/listwise judge, is more accurate/rigorous/reliable, or is benchmarked. It is a concordance and stability observation only.",
+    "Prose field (Reddit post drafts). Indicator-level, not a head-to-head judging-quality benchmark (ADR 0001).",
+    "v2 supersedes v1: the v1 run's fact ledger omitted worldcup's true origin story, causing 8 wrongful-by-ledger FABRICATION DQs of otherwise-honest drafts. v2 adds that fact and instructs panels not to reward fact-coverage as a checklist. The change is per-run FILL content; the evaluator mechanism is byte-identical (same template/judge-agent/gate/panels/model SHAs).",
+    "B1 top-5s remain order-unstable, so B1 is not a single stable ranking either."
+  ]
+}
